@@ -253,9 +253,16 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
                         speakCurrentSentence()
                     }
                 } else {
-                    _state.value = TTSState.IDLE
-                    _shouldAutoContinue.value = true
-                    onChapterComplete?.invoke()
+                    // Chapter complete - run on main thread with delay
+                    scope.launch {
+                        _state.value = TTSState.IDLE
+                        _shouldAutoContinue.value = true
+
+                        // Add delay before loading next chapter to avoid network issues
+                        delay(1000)
+
+                        onChapterComplete?.invoke()
+                    }
                 }
             }
 

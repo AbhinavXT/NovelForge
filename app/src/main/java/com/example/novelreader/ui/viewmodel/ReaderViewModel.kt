@@ -8,7 +8,6 @@ import com.example.novelreader.data.model.Chapter
 import com.example.novelreader.data.model.ReaderSettings
 import com.example.novelreader.data.model.ReaderTheme
 import com.example.novelreader.data.model.ReaderFont
-import com.example.novelreader.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -94,7 +93,7 @@ class ReaderViewModel(
 
                 loadChapter()
             } catch (e: Exception) {
-                Logger.e("Error", e)
+                e.printStackTrace()
                 loadChapter()
             }
         }
@@ -109,7 +108,7 @@ class ReaderViewModel(
                 novelTitle = novel.title
             }
         } catch (e: Exception) {
-            Logger.e("Error", e)
+            e.printStackTrace()
         }
     }
 
@@ -121,11 +120,21 @@ class ReaderViewModel(
             .filter { it.isNotEmpty() }
     }
 
+    // Flag to indicate if we should auto-retry on failure (for TTS)
+    private var autoRetryEnabled = false
+    private val maxAutoRetries = 3
+    private var autoRetryCount = 0
+
     private fun loadChapter() {
         viewModelScope.launch {
             _uiState.value = ReaderUiState.Loading
 
             try {
+                // Add small delay to avoid rate limiting when rapidly loading chapters
+                if (autoRetryEnabled && autoRetryCount > 0) {
+                    kotlinx.coroutines.delay(autoRetryCount * 1000L)
+                }
+
                 val content = repository.getChapterContent(
                     novelId = novelId,
                     chapterId = currentChapterId,
@@ -135,6 +144,7 @@ class ReaderViewModel(
 
                 if (content != null) {
                     retryCount = 0
+                    autoRetryCount = 0
 
                     val currentIndex = chapterList.indexOfFirst { it.id == currentChapterId }
                     val currentChapter = chapterList.getOrNull(currentIndex)
@@ -191,29 +201,35 @@ class ReaderViewModel(
                     saveProgress(currentIndex + 1, savedParagraphIndex)
 
                     shouldRestorePosition = false
+                    autoRetryEnabled = false
                 } else {
-                    _uiState.value = ReaderUiState.Error(
-                        "Failed to load chapter content. The source may be temporarily unavailable. Tap to retry."
-                    )
+                    handleLoadError("Failed to load chapter content. The source may be temporarily unavailable.")
                 }
             } catch (e: java.net.SocketTimeoutException) {
-                _uiState.value = ReaderUiState.Error(
-                    "Connection timed out. The source is responding slowly. Tap to retry."
-                )
+                handleLoadError("Connection timed out. The source is responding slowly.")
             } catch (e: java.net.UnknownHostException) {
-                _uiState.value = ReaderUiState.Error(
-                    "No internet connection. Please check your network and tap to retry."
-                )
+                handleLoadError("No internet connection. Please check your network.")
             } catch (e: java.io.IOException) {
-                _uiState.value = ReaderUiState.Error(
-                    "Network error: ${e.message ?: "Connection failed"}. Tap to retry."
-                )
+                handleLoadError("Network error: ${e.message ?: "Connection failed"}")
             } catch (e: Exception) {
-                Logger.e("Error", e)
-                _uiState.value = ReaderUiState.Error(
-                    "Error: ${e.message ?: "Something went wrong"}. Tap to retry."
-                )
+                e.printStackTrace()
+                handleLoadError("Error: ${e.message ?: "Something went wrong"}")
             }
+        }
+    }
+
+    private fun handleLoadError(message: String) {
+        // Auto-retry if enabled and not exceeded max retries
+        if (autoRetryEnabled && autoRetryCount < maxAutoRetries) {
+            autoRetryCount++
+            viewModelScope.launch {
+                kotlinx.coroutines.delay(1500L * autoRetryCount) // Exponential backoff
+                loadChapter()
+            }
+        } else {
+            autoRetryEnabled = false
+            autoRetryCount = 0
+            _uiState.value = ReaderUiState.Error("$message Tap to retry.")
         }
     }
 
@@ -250,7 +266,7 @@ class ReaderViewModel(
                     paragraphIndex = paragraphIndex
                 )
             } catch (e: Exception) {
-                Logger.e("Error", e)
+                e.printStackTrace()
             }
         }
     }
@@ -268,7 +284,7 @@ class ReaderViewModel(
                         paragraphIndex = paragraphIndex
                     )
                 } catch (e: Exception) {
-                    Logger.e("Error", e)
+                    e.printStackTrace()
                 }
             }
         }
@@ -279,6 +295,8 @@ class ReaderViewModel(
         if (currentState is ReaderUiState.Success) {
             currentState.chapter.prevChapter?.let { prev ->
                 shouldRestorePosition = false
+                autoRetryEnabled = false
+                autoRetryCount = 0
                 currentChapterId = prev.id
                 currentChapterUrl = prev.url
                 loadChapter()
@@ -287,10 +305,21 @@ class ReaderViewModel(
     }
 
     fun goToNextChapter() {
+        goToNextChapter(withAutoRetry = false)
+    }
+
+    // Separate function for TTS auto-continue with retry
+    fun goToNextChapterWithRetry() {
+        goToNextChapter(withAutoRetry = true)
+    }
+
+    private fun goToNextChapter(withAutoRetry: Boolean) {
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
             currentState.chapter.nextChapter?.let { next ->
                 shouldRestorePosition = false
+                autoRetryEnabled = withAutoRetry
+                autoRetryCount = 0
                 currentChapterId = next.id
                 currentChapterUrl = next.url
                 loadChapter()
@@ -300,6 +329,8 @@ class ReaderViewModel(
 
     fun goToChapter(chapterId: String, chapterUrl: String) {
         shouldRestorePosition = false
+        autoRetryEnabled = false
+        autoRetryCount = 0
         currentChapterId = chapterId
         currentChapterUrl = chapterUrl
         loadChapter()

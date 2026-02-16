@@ -130,9 +130,9 @@ fun ReaderScreen(
             // Small delay to ensure UI is ready
             kotlinx.coroutines.delay(500)
             ttsManager.autoContinueIfNeeded(state.chapter.content) {
-                // On this chapter complete, go to next
+                // On this chapter complete, go to next with auto-retry enabled
                 if (viewModel.canGoNext()) {
-                    viewModel.goToNextChapter()
+                    viewModel.goToNextChapterWithRetry()
                 }
             }
         }
@@ -166,6 +166,7 @@ fun ReaderScreen(
                 },
                 onPreviousChapter = { viewModel.goToPreviousChapter() },
                 onNextChapter = { viewModel.goToNextChapter() },
+                onNextChapterWithRetry = { viewModel.goToNextChapterWithRetry() },
                 onIncreaseFontSize = { viewModel.increaseFontSize() },
                 onDecreaseFontSize = { viewModel.decreaseFontSize() },
                 onCycleTheme = { viewModel.cycleTheme() },
@@ -262,6 +263,7 @@ private fun ReaderContent(
     onBackClick: () -> Unit,
     onPreviousChapter: () -> Unit,
     onNextChapter: () -> Unit,
+    onNextChapterWithRetry: () -> Unit,
     onIncreaseFontSize: () -> Unit,
     onDecreaseFontSize: () -> Unit,
     onCycleTheme: () -> Unit,
@@ -403,6 +405,7 @@ private fun ReaderContent(
                     chapterContent = chapter.content,
                     canGoNext = canGoNext,
                     onNextChapter = onNextChapter,
+                    onNextChapterWithRetry = onNextChapterWithRetry,
                     onClose = {
                         ttsManager.stop()
                         onToggleTTSControls()
@@ -423,6 +426,7 @@ private fun TTSControlsPanel(
     chapterContent: String,
     canGoNext: Boolean,
     onNextChapter: () -> Unit,
+    onNextChapterWithRetry: () -> Unit,
     onClose: () -> Unit
 ) {
     var showSettings by remember { mutableStateOf(false) }
@@ -617,7 +621,7 @@ private fun TTSControlsPanel(
                             else -> {
                                 ttsManager.speakText(chapterContent) {
                                     if (canGoNext) {
-                                        onNextChapter()
+                                        onNextChapterWithRetry()
                                     }
                                 }
                             }
