@@ -8,6 +8,7 @@ import com.example.novelreader.data.model.Chapter
 import com.example.novelreader.data.model.ReaderSettings
 import com.example.novelreader.data.model.ReaderTheme
 import com.example.novelreader.data.model.ReaderFont
+import com.example.novelreader.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -93,7 +94,7 @@ class ReaderViewModel(
 
                 loadChapter()
             } catch (e: Exception) {
-                e.printStackTrace()
+                Logger.e("Error", e)
                 loadChapter()
             }
         }
@@ -108,7 +109,7 @@ class ReaderViewModel(
                 novelTitle = novel.title
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Logger.e("Error", e)
         }
     }
 
@@ -208,7 +209,7 @@ class ReaderViewModel(
                     "Network error: ${e.message ?: "Connection failed"}. Tap to retry."
                 )
             } catch (e: Exception) {
-                e.printStackTrace()
+                Logger.e("Error", e)
                 _uiState.value = ReaderUiState.Error(
                     "Error: ${e.message ?: "Something went wrong"}. Tap to retry."
                 )
@@ -249,7 +250,7 @@ class ReaderViewModel(
                     paragraphIndex = paragraphIndex
                 )
             } catch (e: Exception) {
-                e.printStackTrace()
+                Logger.e("Error", e)
             }
         }
     }
@@ -267,7 +268,7 @@ class ReaderViewModel(
                         paragraphIndex = paragraphIndex
                     )
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Logger.e("Error", e)
                 }
             }
         }

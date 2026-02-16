@@ -4,10 +4,15 @@ import android.content.Context
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
-import android.util.Log
+import com.example.novelreader.util.Logger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 enum class TTSState {
@@ -21,7 +26,16 @@ enum class TTSState {
 data class TTSSettings(
     val speed: Float = 1.0f,
     val pitch: Float = 1.0f,
-    val voiceName: String? = null
+    val voiceName: String? = null,
+    val sentencePauseMs: Long = 300L,      // Pause after each sentence
+    val paragraphPauseMs: Long = 800L,     // Pause after paragraphs
+    val volume: Float = 1.0f               // Volume 0.0 - 1.0
+)
+
+// Represents a text segment with its type
+private data class TextSegment(
+    val text: String,
+    val isParagraphEnd: Boolean = false
 )
 
 class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
@@ -31,6 +45,8 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     private var requestedEngine: String? = null
 
     private val prefs = context.getSharedPreferences("tts_prefs", Context.MODE_PRIVATE)
+    private val scope = CoroutineScope(Dispatchers.Main + Job())
+    private var pauseJob: Job? = null
 
     private val _state = MutableStateFlow(TTSState.IDLE)
     val state: StateFlow<TTSState> = _state.asStateFlow()
@@ -50,16 +66,14 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     private val _shouldAutoContinue = MutableStateFlow(false)
     val shouldAutoContinue: StateFlow<Boolean> = _shouldAutoContinue.asStateFlow()
 
-    private var sentences: List<String> = emptyList()
+    private var segments: List<TextSegment> = emptyList()
     private var currentIndex = 0
     private var onChapterComplete: (() -> Unit)? = null
 
     init {
-        // Get the default TTS engine from system settings
         requestedEngine = getDefaultTtsEngine()
-        Log.d("TTSManager", "Default TTS engine from settings: $requestedEngine")
+        Logger.d("TTSManager", "Default TTS engine from settings: $requestedEngine")
 
-        // Use the constructor that specifies the engine
         tts = if (requestedEngine != null) {
             TextToSpeech(context, this, requestedEngine)
         } else {
@@ -69,9 +83,6 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         loadSavedSettings()
     }
 
-    /**
-     * Get the default TTS engine package name from system settings
-     */
     private fun getDefaultTtsEngine(): String? {
         return try {
             val resolver = context.contentResolver
@@ -80,15 +91,11 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
                 "tts_default_synth"
             )
         } catch (e: Exception) {
-            Log.e("TTSManager", "Error getting default TTS engine", e)
+            Logger.e("TTSManager", "Error getting default TTS engine", e)
             null
         }
     }
 
-    /**
-     * Check if the current engine is a non-standard TTS (like Sherpa/Piper)
-     * These engines often don't support setLanguage properly
-     */
     private fun isNonStandardEngine(): Boolean {
         val engine = tts?.defaultEngine ?: return false
         return engine.contains("sherpa", ignoreCase = true) ||
@@ -103,7 +110,18 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         val speed = prefs.getFloat("tts_speed", 1.0f)
         val pitch = prefs.getFloat("tts_pitch", 1.0f)
         val voiceName = prefs.getString("tts_voice", null)
-        _settings.value = TTSSettings(speed, pitch, voiceName)
+        val sentencePause = prefs.getLong("tts_sentence_pause", 300L)
+        val paragraphPause = prefs.getLong("tts_paragraph_pause", 800L)
+        val volume = prefs.getFloat("tts_volume", 1.0f)
+
+        _settings.value = TTSSettings(
+            speed = speed,
+            pitch = pitch,
+            voiceName = voiceName,
+            sentencePauseMs = sentencePause,
+            paragraphPauseMs = paragraphPause,
+            volume = volume
+        )
     }
 
     private fun saveSettings() {
@@ -111,85 +129,79 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
             .putFloat("tts_speed", _settings.value.speed)
             .putFloat("tts_pitch", _settings.value.pitch)
             .putString("tts_voice", _settings.value.voiceName)
+            .putLong("tts_sentence_pause", _settings.value.sentencePauseMs)
+            .putLong("tts_paragraph_pause", _settings.value.paragraphPauseMs)
+            .putFloat("tts_volume", _settings.value.volume)
             .apply()
     }
 
     override fun onInit(status: Int) {
-        Log.d("TTSManager", "onInit called with status: $status")
-        Log.d("TTSManager", "Requested engine: $requestedEngine")
-        Log.d("TTSManager", "Actual engine: ${tts?.defaultEngine}")
+        Logger.d("TTSManager", "onInit called with status: $status")
+        Logger.d("TTSManager", "Requested engine: $requestedEngine")
+        Logger.d("TTSManager", "Actual engine: ${tts?.defaultEngine}")
 
         if (status == TextToSpeech.SUCCESS) {
             val actualEngine = tts?.defaultEngine
 
-            // Check if we got the engine we requested
             if (requestedEngine != null && actualEngine != requestedEngine) {
-                Log.w("TTSManager", "Engine mismatch! Requested: $requestedEngine, Got: $actualEngine")
-                Log.w("TTSManager", "This usually means the requested engine failed to initialize")
+                Logger.w("TTSManager", "Engine mismatch! Requested: $requestedEngine, Got: $actualEngine")
             }
 
-            // For non-standard engines (Sherpa/Piper), skip setLanguage
-            // These engines have language built into the voice model
             if (isNonStandardEngine()) {
-                Log.d("TTSManager", "Non-standard TTS engine detected, skipping setLanguage")
+                Logger.d("TTSManager", "Non-standard TTS engine detected, skipping setLanguage")
                 isInitialized = true
                 loadAvailableVoices()
                 setupUtteranceListener()
                 restoreSavedVoice()
-                Log.d("TTSManager", "TTS initialized successfully with ${tts?.defaultEngine}")
+                Logger.d("TTSManager", "TTS initialized successfully with ${tts?.defaultEngine}")
             } else {
-                // Standard engine (Google, Samsung, etc.) - set language normally
                 val result = tts?.setLanguage(Locale.US)
 
                 if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    Log.e("TTSManager", "Language not supported")
+                    Logger.e("TTSManager", "Language not supported")
                     _state.value = TTSState.ERROR
                 } else {
                     isInitialized = true
                     loadAvailableVoices()
                     setupUtteranceListener()
                     restoreSavedVoice()
-                    Log.d("TTSManager", "TTS initialized successfully with ${tts?.defaultEngine}")
+                    Logger.d("TTSManager", "TTS initialized successfully with ${tts?.defaultEngine}")
                 }
             }
 
-            // Debug: Log all available voices
-            Log.d("TTSManager", "TTS Engine: ${tts?.defaultEngine}")
-            Log.d("TTSManager", "Current Voice: ${tts?.voice?.name}")
-            Log.d("TTSManager", "Available voices count: ${tts?.voices?.size ?: 0}")
+            Logger.d("TTSManager", "TTS Engine: ${tts?.defaultEngine}")
+            Logger.d("TTSManager", "Current Voice: ${tts?.voice?.name}")
+            Logger.d("TTSManager", "Available voices count: ${tts?.voices?.size ?: 0}")
 
         } else {
-            Log.e("TTSManager", "TTS initialization failed with status: $status")
+            Logger.e("TTSManager", "TTS initialization failed with status: $status")
             _state.value = TTSState.ERROR
         }
     }
 
     private fun loadAvailableVoices() {
         tts?.voices?.let { voices ->
-            // For non-standard engines, load ALL voices (they might not have standard locale info)
             val filteredVoices = if (isNonStandardEngine()) {
                 voices.sortedBy { it.name }
             } else {
-                // For standard engines, filter to English voices
                 voices.filter {
                     it.locale.language == "en"
                 }.sortedWith(
                     compareBy(
-                        { it.isNetworkConnectionRequired },  // Offline voices first
+                        { it.isNetworkConnectionRequired },
                         { it.name }
                     )
                 )
             }
 
             _availableVoices.value = filteredVoices.toList()
-            Log.d("TTSManager", "Loaded ${filteredVoices.size} voices")
+            Logger.d("TTSManager", "Loaded ${filteredVoices.size} voices")
 
-            // Log available voices for debugging
             filteredVoices.take(10).forEach { voice ->
-                Log.d("TTSManager", "Voice: ${voice.name}, Locale: ${voice.locale}, Network: ${voice.isNetworkConnectionRequired}")
+                Logger.d("TTSManager", "Voice: ${voice.name}, Locale: ${voice.locale}, Network: ${voice.isNetworkConnectionRequired}")
             }
         } ?: run {
-            Log.w("TTSManager", "No voices available from TTS engine")
+            Logger.w("TTSManager", "No voices available from TTS engine")
         }
     }
 
@@ -200,7 +212,7 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
             if (voice != null) {
                 tts?.voice = voice
                 _currentVoice.value = voice
-                Log.d("TTSManager", "Restored voice: ${voice.name}")
+                Logger.d("TTSManager", "Restored voice: ${voice.name}")
             }
         } else {
             _currentVoice.value = tts?.voice
@@ -210,17 +222,36 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     private fun setupUtteranceListener() {
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {
-                Log.d("TTSManager", "Utterance started: $utteranceId")
+                Logger.d("TTSManager", "Utterance started: $utteranceId")
                 _state.value = TTSState.PLAYING
             }
 
             override fun onDone(utteranceId: String?) {
-                Log.d("TTSManager", "Utterance done: $utteranceId")
+                Logger.d("TTSManager", "Utterance done: $utteranceId")
+
+                val currentSegment = segments.getOrNull(currentIndex)
                 currentIndex++
                 _currentSentenceIndex.value = currentIndex
 
-                if (currentIndex < sentences.size) {
-                    speakCurrentSentence()
+                if (currentIndex < segments.size) {
+                    // Determine pause duration
+                    val pauseMs = if (currentSegment?.isParagraphEnd == true) {
+                        _settings.value.paragraphPauseMs
+                    } else {
+                        _settings.value.sentencePauseMs
+                    }
+
+                    // Apply pause before next sentence
+                    if (pauseMs > 0) {
+                        pauseJob = scope.launch {
+                            delay(pauseMs)
+                            if (_state.value == TTSState.PLAYING) {
+                                speakCurrentSentence()
+                            }
+                        }
+                    } else {
+                        speakCurrentSentence()
+                    }
                 } else {
                     _state.value = TTSState.IDLE
                     _shouldAutoContinue.value = true
@@ -229,39 +260,66 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
             }
 
             override fun onError(utteranceId: String?) {
-                Log.e("TTSManager", "TTS error on utterance: $utteranceId")
+                Logger.e("TTSManager", "TTS error on utterance: $utteranceId")
                 _state.value = TTSState.ERROR
             }
 
             override fun onError(utteranceId: String?, errorCode: Int) {
-                Log.e("TTSManager", "TTS error on utterance: $utteranceId, errorCode: $errorCode")
+                Logger.e("TTSManager", "TTS error on utterance: $utteranceId, errorCode: $errorCode")
                 _state.value = TTSState.ERROR
             }
         })
     }
 
+    /**
+     * Parse text into segments, tracking paragraph endings
+     */
+    private fun parseTextIntoSegments(text: String): List<TextSegment> {
+        val result = mutableListOf<TextSegment>()
+
+        // Split by paragraphs first (double newline or single newline)
+        val paragraphs = text.split(Regex("\n\n+|\n"))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+
+        paragraphs.forEachIndexed { pIndex, paragraph ->
+            // Split paragraph into sentences
+            val sentences = paragraph
+                .split(Regex("(?<=[.!?])\\s+"))
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+
+            sentences.forEachIndexed { sIndex, sentence ->
+                val isLastSentenceInParagraph = sIndex == sentences.size - 1
+                val isLastParagraph = pIndex == paragraphs.size - 1
+
+                result.add(TextSegment(
+                    text = sentence,
+                    isParagraphEnd = isLastSentenceInParagraph && !isLastParagraph
+                ))
+            }
+        }
+
+        return result
+    }
+
     fun speakText(text: String, onComplete: (() -> Unit)? = null) {
         if (!isInitialized) {
-            Log.e("TTSManager", "TTS not initialized")
+            Logger.e("TTSManager", "TTS not initialized")
             return
         }
 
         stop()
         _shouldAutoContinue.value = false
 
-        sentences = text
-            .replace("\n\n", ". ")
-            .replace("\n", " ")
-            .split(Regex("(?<=[.!?])\\s+"))
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
+        segments = parseTextIntoSegments(text)
 
-        if (sentences.isEmpty()) {
-            Log.e("TTSManager", "No sentences to speak")
+        if (segments.isEmpty()) {
+            Logger.e("TTSManager", "No sentences to speak")
             return
         }
 
-        Log.d("TTSManager", "Speaking ${sentences.size} sentences with engine: ${tts?.defaultEngine}")
+        Logger.d("TTSManager", "Speaking ${segments.size} segments with engine: ${tts?.defaultEngine}")
 
         currentIndex = 0
         _currentSentenceIndex.value = 0
@@ -273,7 +331,7 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
 
     fun autoContinueIfNeeded(text: String, onComplete: (() -> Unit)? = null) {
         if (_shouldAutoContinue.value) {
-            Log.d("TTSManager", "Auto-continuing TTS for new chapter")
+            Logger.d("TTSManager", "Auto-continuing TTS for new chapter")
             speakText(text, onComplete)
         }
     }
@@ -283,26 +341,31 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     }
 
     private fun speakCurrentSentence() {
-        if (currentIndex >= sentences.size) return
+        if (currentIndex >= segments.size) return
 
-        val sentence = sentences[currentIndex]
-        Log.d("TTSManager", "Speaking sentence $currentIndex: ${sentence.take(50)}...")
+        val segment = segments[currentIndex]
+        Logger.d("TTSManager", "Speaking sentence $currentIndex: ${segment.text.take(50)}...")
 
         tts?.setSpeechRate(_settings.value.speed)
         tts?.setPitch(_settings.value.pitch)
 
+        // Set volume using Bundle
+        val params = android.os.Bundle()
+        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, _settings.value.volume)
+
         val result = tts?.speak(
-            sentence,
+            segment.text,
             TextToSpeech.QUEUE_FLUSH,
-            null,
+            params,
             "sentence_$currentIndex"
         )
 
-        Log.d("TTSManager", "speak() returned: $result (SUCCESS=0, ERROR=-1)")
+        Logger.d("TTSManager", "speak() returned: $result (SUCCESS=0, ERROR=-1)")
     }
 
     fun pause() {
         if (_state.value == TTSState.PLAYING) {
+            pauseJob?.cancel()
             tts?.stop()
             _state.value = TTSState.PAUSED
         }
@@ -315,16 +378,18 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     }
 
     fun stop() {
+        pauseJob?.cancel()
         tts?.stop()
         currentIndex = 0
         _currentSentenceIndex.value = 0
-        sentences = emptyList()
+        segments = emptyList()
         _state.value = TTSState.IDLE
         _shouldAutoContinue.value = false
     }
 
     fun skipToNext() {
-        if (currentIndex < sentences.size - 1) {
+        if (currentIndex < segments.size - 1) {
+            pauseJob?.cancel()
             tts?.stop()
             currentIndex++
             _currentSentenceIndex.value = currentIndex
@@ -334,12 +399,15 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
 
     fun skipToPrevious() {
         if (currentIndex > 0) {
+            pauseJob?.cancel()
             tts?.stop()
             currentIndex--
             _currentSentenceIndex.value = currentIndex
             speakCurrentSentence()
         }
     }
+
+    // ============ Settings Methods ============
 
     fun setSpeed(speed: Float) {
         _settings.value = _settings.value.copy(speed = speed.coerceIn(0.5f, 2.0f))
@@ -354,6 +422,31 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     fun setPitch(pitch: Float) {
         _settings.value = _settings.value.copy(pitch = pitch.coerceIn(0.5f, 2.0f))
         saveSettings()
+
+        if (_state.value == TTSState.PLAYING) {
+            tts?.stop()
+            speakCurrentSentence()
+        }
+    }
+
+    fun setSentencePause(pauseMs: Long) {
+        _settings.value = _settings.value.copy(sentencePauseMs = pauseMs.coerceIn(0L, 2000L))
+        saveSettings()
+    }
+
+    fun setParagraphPause(pauseMs: Long) {
+        _settings.value = _settings.value.copy(paragraphPauseMs = pauseMs.coerceIn(0L, 3000L))
+        saveSettings()
+    }
+
+    fun setVolume(volume: Float) {
+        _settings.value = _settings.value.copy(volume = volume.coerceIn(0f, 1f))
+        saveSettings()
+
+        if (_state.value == TTSState.PLAYING) {
+            tts?.stop()
+            speakCurrentSentence()
+        }
     }
 
     fun setVoice(voice: Voice) {
@@ -361,9 +454,8 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         _currentVoice.value = voice
         _settings.value = _settings.value.copy(voiceName = voice.name)
         saveSettings()
-        Log.d("TTSManager", "Voice set to: ${voice.name}")
+        Logger.d("TTSManager", "Voice set to: ${voice.name}")
 
-        // If currently playing, restart with new voice
         if (_state.value == TTSState.PLAYING) {
             tts?.stop()
             speakCurrentSentence()
@@ -371,7 +463,6 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     }
 
     fun getVoiceDisplayName(voice: Voice): String {
-        // Create a user-friendly display name
         val locale = voice.locale
         val country = locale.displayCountry.ifBlank { locale.country }
         val quality = when {
@@ -401,6 +492,7 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     }
 
     fun shutdown() {
+        pauseJob?.cancel()
         tts?.stop()
         tts?.shutdown()
         tts = null
@@ -409,10 +501,7 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
 
     fun isPlaying(): Boolean = _state.value == TTSState.PLAYING
 
-    fun getSentenceCount(): Int = sentences.size
+    fun getSentenceCount(): Int = segments.size
 
-    /**
-     * Get the currently active TTS engine name
-     */
     fun getCurrentEngineName(): String? = tts?.defaultEngine
 }

@@ -11,6 +11,7 @@ import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import java.util.concurrent.TimeUnit
+import com.example.novelreader.util.Logger
 
 class RoyalRoadSource : Source {
 
@@ -27,7 +28,7 @@ class RoyalRoadSource : Source {
     private suspend fun fetchDocument(url: String): Document? {
         return withContext(Dispatchers.IO) {
             try {
-                Log.d("RoyalRoad", "Fetching: $url")
+                Logger.d("RoyalRoad", "Fetching: $url")
 
                 val request = Request.Builder()
                     .url(url)
@@ -43,12 +44,12 @@ class RoyalRoadSource : Source {
                         Jsoup.parse(html, url)
                     }
                 } else {
-                    Log.e("RoyalRoad", "Request failed: ${response.code}")
+                    Logger.e("RoyalRoad", "Request failed: ${response.code}")
                     null
                 }
             } catch (e: Exception) {
-                Log.e("RoyalRoad", "fetchDocument error", e)
-                e.printStackTrace()
+                Logger.e("RoyalRoad", "fetchDocument error", e)
+                Logger.e("Error", e)
                 null
             }
         }
@@ -74,11 +75,11 @@ class RoyalRoadSource : Source {
                 }
             }
         } catch (e: Exception) {
-            Log.e("RoyalRoad", "Search error", e)
-            e.printStackTrace()
+            Logger.e("RoyalRoad", "Search error", e)
+            Logger.e("Error", e)
         }
 
-        Log.d("RoyalRoad", "Search returned ${allNovels.size} results")
+        Logger.d("RoyalRoad", "Search returned ${allNovels.size} results")
         return allNovels
     }
 
@@ -102,8 +103,8 @@ class RoyalRoadSource : Source {
                 }
             }
         } catch (e: Exception) {
-            Log.e("RoyalRoad", "getPopular error", e)
-            e.printStackTrace()
+            Logger.e("RoyalRoad", "getPopular error", e)
+            Logger.e("Error", e)
         }
 
         return allNovels
@@ -149,8 +150,8 @@ class RoyalRoadSource : Source {
                     )
                 )
             } catch (e: Exception) {
-                Log.e("RoyalRoad", "Error parsing novel item", e)
-                e.printStackTrace()
+                Logger.e("RoyalRoad", "Error parsing novel item", e)
+                Logger.e("Error", e)
             }
         }
 
@@ -190,7 +191,7 @@ class RoyalRoadSource : Source {
             // Get ALL chapters
             val chapters = fetchAllChapters(document, id)
 
-            Log.d("RoyalRoad", "Loaded novel: $title with ${chapters.size} chapters")
+            Logger.d("RoyalRoad", "Loaded novel: $title with ${chapters.size} chapters")
 
             return Novel(
                 id = "rr_$id",
@@ -203,8 +204,8 @@ class RoyalRoadSource : Source {
                 chapters = chapters
             )
         } catch (e: Exception) {
-            Log.e("RoyalRoad", "getNovelDetails error", e)
-            e.printStackTrace()
+            Logger.e("RoyalRoad", "getNovelDetails error", e)
+            Logger.e("Error", e)
             return null
         }
     }
@@ -242,7 +243,7 @@ class RoyalRoadSource : Source {
                         )
                     )
                 } catch (e: Exception) {
-                    Log.e("RoyalRoad", "Error parsing chapter row", e)
+                    Logger.e("RoyalRoad", "Error parsing chapter row", e)
                 }
             }
 
@@ -274,8 +275,8 @@ class RoyalRoadSource : Source {
                 }
             }
         } catch (e: Exception) {
-            Log.e("RoyalRoad", "fetchAllChapters error", e)
-            e.printStackTrace()
+            Logger.e("RoyalRoad", "fetchAllChapters error", e)
+            Logger.e("Error", e)
         }
 
         return chapters
@@ -307,8 +308,8 @@ class RoyalRoadSource : Source {
                 contentElement.text()
             }
         } catch (e: Exception) {
-            Log.e("RoyalRoad", "getChapterContent error", e)
-            e.printStackTrace()
+            Logger.e("RoyalRoad", "getChapterContent error", e)
+            Logger.e("Error", e)
             return null
         }
     }

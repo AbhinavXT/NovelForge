@@ -7,6 +7,7 @@ import com.example.novelreader.data.NovelRepository
 import com.example.novelreader.data.model.NovelPreview
 import com.example.novelreader.data.source.Source
 import com.example.novelreader.data.source.SourceManager
+import com.example.novelreader.util.Logger
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,7 +78,7 @@ class SearchViewModel(
                     _popularNovels.value = novels
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Logger.e("Error", e)
             }
         }
     }

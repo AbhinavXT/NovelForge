@@ -18,6 +18,7 @@ import com.example.novelreader.data.model.ReaderChapter
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import com.example.novelreader.ui.screens.NovelDownloadInfo
+import com.example.novelreader.util.Logger
 import kotlinx.coroutines.flow.first
 
 class NovelRepository(private val database: AppDatabase) {
@@ -112,7 +113,7 @@ class NovelRepository(private val database: AppDatabase) {
                 false
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Logger.e("Error", e)
             false
         }
     }

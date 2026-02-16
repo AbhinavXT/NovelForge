@@ -4,6 +4,7 @@ import com.example.novelreader.data.database.AppDatabase
 import com.example.novelreader.data.database.ChapterEntity
 import com.example.novelreader.data.model.Chapter
 import com.example.novelreader.data.source.SourceManager
+import com.example.novelreader.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -80,7 +81,7 @@ class DownloadManager(private val database: AppDatabase) {
                     false
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Logger.e("Error", e)
                 updateChapterState(chapter.id, DownloadStatus.FAILED)
                 false
             }

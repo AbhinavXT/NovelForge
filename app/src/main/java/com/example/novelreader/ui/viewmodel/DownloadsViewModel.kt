@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.novelreader.data.DownloadManager
 import com.example.novelreader.data.NovelRepository
 import com.example.novelreader.ui.screens.NovelDownloadInfo
+import com.example.novelreader.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,7 +41,7 @@ class DownloadsViewModel(
                 // Calculate total storage
                 _totalStorageUsed.value = novels.sumOf { it.sizeBytes }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Logger.e("Error", e)
             }
 
             _isLoading.value = false

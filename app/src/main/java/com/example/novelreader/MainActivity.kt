@@ -25,10 +25,13 @@ import com.example.novelreader.data.TTSManager
 import com.example.novelreader.ui.NavigationHost
 import com.example.novelreader.ui.Screen
 import com.example.novelreader.ui.theme.NovelReaderTheme
+import com.example.novelreader.util.Logger
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+//        Logger.init(this)
 
         val app = application as NovelReaderApplication
         val repository = app.repository

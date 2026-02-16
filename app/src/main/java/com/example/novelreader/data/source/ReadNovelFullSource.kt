@@ -4,6 +4,7 @@ import android.util.Log
 import com.example.novelreader.data.model.Chapter
 import com.example.novelreader.data.model.Novel
 import com.example.novelreader.data.model.NovelPreview
+import com.example.novelreader.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -28,7 +29,7 @@ class ReadNovelFullSource : Source {
     private suspend fun fetchDocument(url: String): Document? {
         return withContext(Dispatchers.IO) {
             try {
-                Log.d("ReadNovelFull", "Fetching: $url")
+                Logger.d("ReadNovelFull", "Fetching: $url")
 
                 val request = Request.Builder()
                     .url(url)
@@ -45,12 +46,12 @@ class ReadNovelFullSource : Source {
                         Jsoup.parse(html, url)
                     }
                 } else {
-                    Log.e("ReadNovelFull", "Request failed: ${response.code}")
+                    Logger.e("ReadNovelFull", "Request failed: ${response.code}")
                     null
                 }
             } catch (e: Exception) {
-                Log.e("ReadNovelFull", "fetchDocument error", e)
-                e.printStackTrace()
+                Logger.e("ReadNovelFull", "fetchDocument error", e)
+                Logger.e("Error", e)
                 null
             }
         }
@@ -77,11 +78,11 @@ class ReadNovelFullSource : Source {
                 }
             }
         } catch (e: Exception) {
-            Log.e("ReadNovelFull", "Search error", e)
-            e.printStackTrace()
+            Logger.e("ReadNovelFull", "Search error", e)
+            Logger.e("Error", e)
         }
 
-        Log.d("ReadNovelFull", "Search returned ${allNovels.size} results")
+        Logger.d("ReadNovelFull", "Search returned ${allNovels.size} results")
         return allNovels
     }
 
@@ -122,8 +123,8 @@ class ReadNovelFullSource : Source {
                     )
                 )
             } catch (e: Exception) {
-                Log.e("ReadNovelFull", "Error parsing search result", e)
-                e.printStackTrace()
+                Logger.e("ReadNovelFull", "Error parsing search result", e)
+                Logger.e("Error", e)
             }
         }
 
@@ -150,8 +151,8 @@ class ReadNovelFullSource : Source {
                 }
             }
         } catch (e: Exception) {
-            Log.e("ReadNovelFull", "getPopular error", e)
-            e.printStackTrace()
+            Logger.e("ReadNovelFull", "getPopular error", e)
+            Logger.e("Error", e)
         }
 
         return allNovels
@@ -173,7 +174,7 @@ class ReadNovelFullSource : Source {
             val novelId = document.selectFirst("div#rating")?.attr("data-novel-id")
                 ?: document.selectFirst("[data-novel-id]")?.attr("data-novel-id")
 
-            Log.d("ReadNovelFull", "Novel slug: $slug, novelId: $novelId")
+            Logger.d("ReadNovelFull", "Novel slug: $slug, novelId: $novelId")
 
             // Title: div.books > div.desc > h3.title
             val bookInfo = document.selectFirst("div.col-info-desc > div.info-holder > div.books")
@@ -210,7 +211,7 @@ class ReadNovelFullSource : Source {
                 fetchChaptersFromPage(document, slug)
             }
 
-            Log.d("ReadNovelFull", "Loaded novel: $title with ${chapters.size} chapters")
+            Logger.d("ReadNovelFull", "Loaded novel: $title with ${chapters.size} chapters")
 
             return Novel(
                 id = "rnf_$slug",
@@ -223,8 +224,8 @@ class ReadNovelFullSource : Source {
                 chapters = chapters
             )
         } catch (e: Exception) {
-            Log.e("ReadNovelFull", "getNovelDetails error", e)
-            e.printStackTrace()
+            Logger.e("ReadNovelFull", "getNovelDetails error", e)
+            Logger.e("Error", e)
             return null
         }
     }
@@ -252,7 +253,7 @@ class ReadNovelFullSource : Source {
             // Selector from QuickNovel: div.panel-body > div.row > div > ul.list-chapter > li > a
             val chapterLinks = document.select("div.panel-body > div.row > div > ul.list-chapter > li > a")
 
-            Log.d("ReadNovelFull", "Found ${chapterLinks.size} chapters from AJAX")
+            Logger.d("ReadNovelFull", "Found ${chapterLinks.size} chapters from AJAX")
 
             for ((index, link) in chapterLinks.withIndex()) {
                 try {
@@ -280,12 +281,12 @@ class ReadNovelFullSource : Source {
                         )
                     )
                 } catch (e: Exception) {
-                    Log.e("ReadNovelFull", "Error parsing chapter", e)
+                    Logger.e("ReadNovelFull", "Error parsing chapter", e)
                 }
             }
         } catch (e: Exception) {
-            Log.e("ReadNovelFull", "fetchChaptersFromAjax error", e)
-            e.printStackTrace()
+            Logger.e("ReadNovelFull", "fetchChaptersFromAjax error", e)
+            Logger.e("Error", e)
         }
 
         return chapters
@@ -299,7 +300,7 @@ class ReadNovelFullSource : Source {
         try {
             val chapterLinks = document.select("#list-chapter a, .list-chapter a, ul.list-chapter li a")
 
-            Log.d("ReadNovelFull", "Found ${chapterLinks.size} chapters from page")
+            Logger.d("ReadNovelFull", "Found ${chapterLinks.size} chapters from page")
 
             for ((index, link) in chapterLinks.withIndex()) {
                 try {
@@ -327,12 +328,12 @@ class ReadNovelFullSource : Source {
                         )
                     )
                 } catch (e: Exception) {
-                    Log.e("ReadNovelFull", "Error parsing chapter from page", e)
+                    Logger.e("ReadNovelFull", "Error parsing chapter from page", e)
                 }
             }
         } catch (e: Exception) {
-            Log.e("ReadNovelFull", "fetchChaptersFromPage error", e)
-            e.printStackTrace()
+            Logger.e("ReadNovelFull", "fetchChaptersFromPage error", e)
+            Logger.e("Error", e)
         }
 
         return chapters
@@ -388,8 +389,8 @@ class ReadNovelFullSource : Source {
                 extractTextFromHtml(cleanedElement)
             }
         } catch (e: Exception) {
-            Log.e("ReadNovelFull", "getChapterContent error", e)
-            e.printStackTrace()
+            Logger.e("ReadNovelFull", "getChapterContent error", e)
+            Logger.e("Error", e)
             return null
         }
     }

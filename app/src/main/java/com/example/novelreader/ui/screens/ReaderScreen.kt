@@ -82,15 +82,13 @@ import android.speech.tts.Voice
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material3.AlertDialog
 import androidx.compose.ui.text.font.Font
 import com.example.novelreader.R
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import kotlinx.coroutines.delay
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -159,7 +157,7 @@ fun ReaderScreen(
                 ttsManager = ttsManager,
                 ttsState = ttsState,
                 currentSentence = currentSentence,
-                ttsSpeed = ttsSettings.speed,
+                ttsSettings = ttsSettings,
                 showTTSControls = showTTSControls,
                 onToggleTTSControls = { showTTSControls = !showTTSControls },
                 onBackClick = {
@@ -174,7 +172,7 @@ fun ReaderScreen(
                 onCycleFont = { viewModel.cycleFont() },
                 canGoPrevious = viewModel.canGoPrevious(),
                 canGoNext = viewModel.canGoNext(),
-                onSaveParagraphIndex = { index ->  // ADD THIS
+                onSaveParagraphIndex = { index ->
                     viewModel.saveParagraphIndex(index)
                 }
             )
@@ -258,7 +256,7 @@ private fun ReaderContent(
     ttsManager: TTSManager,
     ttsState: TTSState,
     currentSentence: Int,
-    ttsSpeed: Float,
+    ttsSettings: com.example.novelreader.data.TTSSettings,
     showTTSControls: Boolean,
     onToggleTTSControls: () -> Unit,
     onBackClick: () -> Unit,
@@ -270,31 +268,26 @@ private fun ReaderContent(
     onCycleFont: () -> Unit,
     canGoPrevious: Boolean,
     canGoNext: Boolean,
-    onSaveParagraphIndex: (Int) -> Unit  // ADD THIS
+    onSaveParagraphIndex: (Int) -> Unit
 ) {
     val colors = getThemeColors(settings.theme)
 
-    // CHANGE: Use LazyListState instead of ScrollState
     val listState = rememberLazyListState()
 
-    // Track swipe gestures for chapter navigation
     var swipeOffset by remember { mutableFloatStateOf(0f) }
 
-    // CHANGE: Restore to saved paragraph when chapter loads
     LaunchedEffect(chapter.chapterId) {
         if (chapter.savedParagraphIndex > 0) {
-            delay(100)  // Wait for layout
+            delay(100)
             listState.scrollToItem(chapter.savedParagraphIndex)
         }
     }
 
-    // CHANGE: Save paragraph index when scrolling stops
     LaunchedEffect(listState.firstVisibleItemIndex) {
-        delay(500)  // Debounce
+        delay(500)
         onSaveParagraphIndex(listState.firstVisibleItemIndex)
     }
 
-    // Save position when leaving the screen
     DisposableEffect(Unit) {
         onDispose {
             onSaveParagraphIndex(listState.firstVisibleItemIndex)
@@ -337,7 +330,6 @@ private fun ReaderContent(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // CHANGE: Use LazyColumn instead of Column with verticalScroll
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -363,7 +355,6 @@ private fun ReaderContent(
                     }
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                // CHANGE: Render each paragraph as a separate item
                 itemsIndexed(
                     items = chapter.paragraphs,
                     key = { index, _ -> "${chapter.chapterId}_$index" }
@@ -398,7 +389,6 @@ private fun ReaderContent(
                 }
             }
 
-            // TTS Controls overlay (same as before)
             AnimatedVisibility(
                 visible = showTTSControls,
                 enter = slideInVertically(initialOffsetY = { it }),
@@ -409,7 +399,7 @@ private fun ReaderContent(
                     ttsManager = ttsManager,
                     ttsState = ttsState,
                     currentSentence = currentSentence,
-                    speed = ttsSpeed,
+                    ttsSettings = ttsSettings,
                     chapterContent = chapter.content,
                     canGoNext = canGoNext,
                     onNextChapter = onNextChapter,
@@ -429,7 +419,7 @@ private fun TTSControlsPanel(
     ttsManager: TTSManager,
     ttsState: TTSState,
     currentSentence: Int,
-    speed: Float,
+    ttsSettings: com.example.novelreader.data.TTSSettings,
     chapterContent: String,
     canGoNext: Boolean,
     onNextChapter: () -> Unit,
@@ -497,7 +487,7 @@ private fun TTSControlsPanel(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Settings panel (collapsible)
+            // Settings panel (collapsible) - EXPANDED
             AnimatedVisibility(visible = showSettings) {
                 Column(
                     modifier = Modifier
@@ -505,19 +495,63 @@ private fun TTSControlsPanel(
                         .padding(bottom = 8.dp)
                 ) {
                     // Speed slider
-                    Text(
-                        text = "Speed: ${String.format("%.1fx", speed)}",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Slider(
-                        value = speed,
+                    SettingSlider(
+                        label = "Speed",
+                        value = ttsSettings.speed,
+                        valueDisplay = String.format("%.1fx", ttsSettings.speed),
                         onValueChange = { ttsManager.setSpeed(it) },
                         valueRange = 0.5f..2.0f,
-                        steps = 5,
-                        modifier = Modifier.fillMaxWidth()
+                        steps = 5
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
+
+                    // Pitch slider
+                    SettingSlider(
+                        label = "Pitch",
+                        value = ttsSettings.pitch,
+                        valueDisplay = String.format("%.1f", ttsSettings.pitch),
+                        onValueChange = { ttsManager.setPitch(it) },
+                        valueRange = 0.5f..2.0f,
+                        steps = 5
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Volume slider
+                    SettingSlider(
+                        label = "Volume",
+                        value = ttsSettings.volume,
+                        valueDisplay = "${(ttsSettings.volume * 100).toInt()}%",
+                        onValueChange = { ttsManager.setVolume(it) },
+                        valueRange = 0f..1f
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Sentence pause slider
+                    SettingSlider(
+                        label = "Sentence Pause",
+                        value = ttsSettings.sentencePauseMs.toFloat(),
+                        valueDisplay = "${ttsSettings.sentencePauseMs}ms",
+                        onValueChange = { ttsManager.setSentencePause(it.toLong()) },
+                        valueRange = 0f..2000f,
+                        steps = 7
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Paragraph pause slider
+                    SettingSlider(
+                        label = "Paragraph Pause",
+                        value = ttsSettings.paragraphPauseMs.toFloat(),
+                        valueDisplay = "${ttsSettings.paragraphPauseMs}ms",
+                        onValueChange = { ttsManager.setParagraphPause(it.toLong()) },
+                        valueRange = 0f..3000f,
+                        steps = 5
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // Voice selector button
                     OutlinedButton(
@@ -673,6 +707,40 @@ private fun TTSControlsPanel(
             currentVoice = currentVoice,
             ttsManager = ttsManager,
             onDismiss = { showVoiceSelector = false }
+        )
+    }
+}
+
+@Composable
+private fun SettingSlider(
+    label: String,
+    value: Float,
+    valueDisplay: String,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int = 0
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = valueDisplay,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            steps = steps,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
@@ -892,7 +960,6 @@ private fun ReaderTopBar(
     backgroundColor: Color,
     contentColor: Color
 ) {
-    // Minimal top bar - no extra padding
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -964,7 +1031,6 @@ private fun ReaderBottomBar(
     backgroundColor: Color,
     contentColor: Color
 ) {
-    // Minimal bottom bar - no extra padding
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1018,7 +1084,6 @@ private fun ReaderBottomBar(
             }
         }
 
-        // Font selector button
         TextButton(onClick = onCycleFont) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -1042,19 +1107,17 @@ private fun ReaderBottomBar(
             }
         }
 
-
-        // Theme selector button
         TextButton(onClick = onCycleTheme) {
             Text(
                 text = when (settings.theme) {
-                    ReaderTheme.LIGHT -> "☀️" // Sun for light mode
-                    ReaderTheme.DARK -> "🌙"  // Moon for dark mode
-                    ReaderTheme.SEPIA -> "📜" // Scroll for old paper look
-                    ReaderTheme.GREY -> "🐘"  // An elephant or a cloud (☁️) for grey
-                    ReaderTheme.PAPER -> "📄" // A sheet of paper for the paper theme
-                    ReaderTheme.NAVY -> "🌌"  // A galaxy or night sky for the navy blue theme
-                    ReaderTheme.SOLARIZED_LIGHT -> "🏜️" // A desert for the warm, low-contrast light theme
-                    ReaderTheme.SOLARIZED_DARK -> "🌃" // A city at night for the cool, low-contrast dark theme
+                    ReaderTheme.LIGHT -> "☀️"
+                    ReaderTheme.DARK -> "🌙"
+                    ReaderTheme.SEPIA -> "📜"
+                    ReaderTheme.GREY -> "🐘"
+                    ReaderTheme.PAPER -> "📄"
+                    ReaderTheme.NAVY -> "🌌"
+                    ReaderTheme.SOLARIZED_LIGHT -> "🏜️"
+                    ReaderTheme.SOLARIZED_DARK -> "🌃"
                 },
                 fontSize = 18.sp
             )
@@ -1073,12 +1136,11 @@ private fun ReaderBottomBar(
     }
 }
 
-// Theme colors
 data class ThemeColors(
     val background: Color,
     val text: Color,
     val secondaryText: Color,
-    val isPaper: Boolean = false  // Flag for paper texture
+    val isPaper: Boolean = false
 )
 
 fun getThemeColors(theme: ReaderTheme): ThemeColors {
@@ -1099,41 +1161,34 @@ fun getThemeColors(theme: ReaderTheme): ThemeColors {
             secondaryText = Color(0xFF8B7355)
         )
         ReaderTheme.GREY -> ThemeColors(
-            background = Color(0xFF3C3F41), // A medium-dark grey
+            background = Color(0xFF3C3F41),
             text = Color(0xFFE0E0E0),
             secondaryText = Color(0xFFB0B0B0)
         )
-
-        // UPDATED: Realistic paper theme
         ReaderTheme.PAPER -> ThemeColors(
-            background = Color(0xFFF8F4EC),  // Warm cream/ivory
-            text = Color(0xFF2C2416),         // Dark brown (like printed ink)
+            background = Color(0xFFF8F4EC),
+            text = Color(0xFF2C2416),
             secondaryText = Color(0xFF5C5347),
             isPaper = true
         )
-
         ReaderTheme.NAVY -> ThemeColors(
-            background = Color(0xFF001B2E), // Deep navy blue
+            background = Color(0xFF001B2E),
             text = Color(0xFFCDE5FF),
             secondaryText = Color(0xFF8A9FAC)
         )
-
         ReaderTheme.SOLARIZED_LIGHT -> ThemeColors(
-            background = Color(0xFFFDF6E3), // Solarized base
-            text = Color(0xFF657B83),       // Solarized text
+            background = Color(0xFFFDF6E3),
+            text = Color(0xFF657B83),
             secondaryText = Color(0xFF93A1A1)
         )
-
         ReaderTheme.SOLARIZED_DARK -> ThemeColors(
-            background = Color(0xFF002B36), // Solarized base
-            text = Color(0xFF839496),       // Solarized text
+            background = Color(0xFF002B36),
+            text = Color(0xFF839496),
             secondaryText = Color(0xFF586E75)
         )
     }
 }
 
-
-// Convert ReaderFont enum to Compose FontFamily
 fun ReaderFont.toFontFamily(): FontFamily {
     return when (this) {
         ReaderFont.SANS_SERIF -> FontFamily.SansSerif
@@ -1149,9 +1204,9 @@ fun paperBackgroundModifier(): Modifier {
         .background(
             brush = Brush.linearGradient(
                 colors = listOf(
-                    Color(0xFFFBF8F2),  // Lighter top-left (like light hitting paper)
-                    Color(0xFFF8F4EC),  // Main paper color
-                    Color(0xFFF3EEE4),  // Slightly darker bottom-right
+                    Color(0xFFFBF8F2),
+                    Color(0xFFF8F4EC),
+                    Color(0xFFF3EEE4),
                 ),
                 start = Offset(0f, 0f),
                 end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)

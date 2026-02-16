@@ -7,6 +7,7 @@ import org.xmlpull.v1.XmlPullParserFactory
 import java.io.InputStream
 import java.util.zip.ZipInputStream
 import android.util.Log
+import com.example.novelreader.util.Logger
 
 /**
  * Data class representing a parsed EPUB book
@@ -62,7 +63,7 @@ class EpubParser(private val context: Context) {
                 parseEpub(inputStream)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing EPUB", e)
+            Logger.e(TAG, "Error parsing EPUB", e)
             null
         }
     }
@@ -86,14 +87,14 @@ class EpubParser(private val context: Context) {
 
         // Step 1: Find the root file path from container.xml
         val containerXml = zipEntries["META-INF/container.xml"]
-            ?: return null.also { Log.e(TAG, "No container.xml found") }
+            ?: return null.also { Logger.e(TAG, "No container.xml found") }
 
         val rootFilePath = parseContainerXml(containerXml.decodeToString())
-            ?: return null.also { Log.e(TAG, "Could not find rootfile in container.xml") }
+            ?: return null.also { Logger.e(TAG, "Could not find rootfile in container.xml") }
 
         // Step 2: Parse the OPF file (content.opf or similar)
         val opfContent = zipEntries[rootFilePath]
-            ?: return null.also { Log.e(TAG, "OPF file not found: $rootFilePath") }
+            ?: return null.also { Logger.e(TAG, "OPF file not found: $rootFilePath") }
 
         val opfDir = rootFilePath.substringBeforeLast("/", "")
         val opfData = parseOpfFile(opfContent.decodeToString(), opfDir)
@@ -153,7 +154,7 @@ class EpubParser(private val context: Context) {
                 eventType = parser.next()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing container.xml", e)
+            Logger.e(TAG, "Error parsing container.xml", e)
         }
         return null
     }
@@ -256,7 +257,7 @@ class EpubParser(private val context: Context) {
                 eventType = parser.next()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing OPF", e)
+            Logger.e(TAG, "Error parsing OPF", e)
         }
 
         // Build spine items from manifest

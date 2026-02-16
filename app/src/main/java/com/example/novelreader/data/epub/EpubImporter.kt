@@ -5,6 +5,7 @@ import android.net.Uri
 import com.example.novelreader.data.database.AppDatabase
 import com.example.novelreader.data.database.ChapterEntity
 import com.example.novelreader.data.database.NovelEntity
+import com.example.novelreader.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -91,7 +92,7 @@ class EpubImporter(private val context: Context) {
             )
 
         } catch (e: Exception) {
-            e.printStackTrace()
+            Logger.e("Error", e)
             ImportResult.Error("Import failed: ${e.message ?: "Unknown error"}")
         }
     }
@@ -114,7 +115,7 @@ class EpubImporter(private val context: Context) {
 
             coverFile.absolutePath
         } catch (e: Exception) {
-            e.printStackTrace()
+            Logger.e("Error", e)
             null
         }
     }
