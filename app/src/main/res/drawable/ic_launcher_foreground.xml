@@ -1,0 +1,38 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Book icon centered in the safe zone (24dp padding on each side) -->
+    <group
+        android:translateX="27"
+        android:translateY="27">
+
+        <!-- Open book shape -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M27,5.5C27,5.5 21,4 13.5,4S0,5.5 0,5.5V44.5C0,44.5 6,43 13.5,43S27,44.5 27,44.5V5.5Z"/>
+
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M27,5.5C27,5.5 33,4 40.5,4S54,5.5 54,5.5V44.5C54,44.5 48,43 40.5,43S27,44.5 27,44.5V5.5Z"/>
+
+        <!-- Book spine -->
+        <path
+            android:fillColor="#E8EAF6"
+            android:pathData="M25,5.5V44.5H29V5.5H25Z"/>
+
+        <!-- Page lines left -->
+        <path
+            android:strokeColor="#E8EAF6"
+            android:strokeWidth="1.5"
+            android:pathData="M6,15H20M6,21H20M6,27H20M6,33H20"/>
+
+        <!-- Page lines right -->
+        <path
+            android:strokeColor="#E8EAF6"
+            android:strokeWidth="1.5"
+            android:pathData="M34,15H48M34,21H48M34,27H48M34,33H48"/>
+    </group>
+</vector>

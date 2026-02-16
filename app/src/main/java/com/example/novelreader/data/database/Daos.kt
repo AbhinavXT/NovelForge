@@ -1,0 +1,164 @@
+package com.example.novelreader.data.database
+
+import androidx.room.Dao
+import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Update
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface NovelDao {
+
+    @Query("SELECT * FROM novels ORDER BY lastUpdatedAt DESC")
+    fun getAllNovels(): Flow<List<NovelEntity>>
+
+    @Query("SELECT * FROM novels WHERE id = :novelId")
+    suspend fun getNovelById(novelId: String): NovelEntity?
+
+    @Query("SELECT EXISTS(SELECT 1 FROM novels WHERE id = :novelId)")
+    suspend fun isNovelInLibrary(novelId: String): Boolean
+
+    @Query("SELECT EXISTS(SELECT 1 FROM novels WHERE id = :novelId)")
+    fun isNovelInLibraryFlow(novelId: String): Flow<Boolean>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertNovel(novel: NovelEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertNovels(novels: List<NovelEntity>)
+
+    @Update
+    suspend fun updateNovel(novel: NovelEntity)
+
+    @Delete
+    suspend fun deleteNovel(novel: NovelEntity)
+
+    @Query("DELETE FROM novels WHERE id = :novelId")
+    suspend fun deleteNovelById(novelId: String)
+}
+
+@Dao
+interface ChapterDao {
+
+    @Query("SELECT * FROM chapters WHERE novelId = :novelId ORDER BY number ASC")
+    fun getChaptersForNovel(novelId: String): Flow<List<ChapterEntity>>
+
+    @Query("SELECT * FROM chapters WHERE id = :chapterId")
+    suspend fun getChapterById(chapterId: String): ChapterEntity?
+
+    @Query("SELECT COUNT(*) FROM chapters WHERE novelId = :novelId")
+    suspend fun getChapterCount(novelId: String): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChapter(chapter: ChapterEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChapters(chapters: List<ChapterEntity>)
+
+    @Query("UPDATE chapters SET isDownloaded = 1, content = :content, downloadedAt = :downloadedAt WHERE id = :chapterId")
+    suspend fun markChapterDownloaded(chapterId: String, content: String, downloadedAt: Long)
+
+    @Query("DELETE FROM chapters WHERE novelId = :novelId")
+    suspend fun deleteChaptersForNovel(novelId: String)
+
+    @Query("UPDATE chapters SET isDownloaded = :isDownloaded, content = :content, downloadedAt = :downloadedAt WHERE id = :chapterId")
+    suspend fun updateDownloadStatus(
+        chapterId: String,
+        isDownloaded: Boolean,
+        content: String?,
+        downloadedAt: Long?
+    )
+
+    @Query("SELECT * FROM chapters WHERE novelId = :novelId AND isDownloaded = 1 ORDER BY number ASC")
+    fun getDownloadedChapters(novelId: String): Flow<List<ChapterEntity>>
+
+    @Query("SELECT COUNT(*) FROM chapters WHERE novelId = :novelId AND isDownloaded = 1")
+    fun getDownloadedChapterCount(novelId: String): Flow<Int>
+
+    @Query("UPDATE chapters SET isDownloaded = 0, content = NULL, downloadedAt = NULL WHERE novelId = :novelId")
+    suspend fun deleteAllDownloadsForNovel(novelId: String)
+
+    @Query("UPDATE chapters SET isDownloaded = 0, content = NULL, downloadedAt = NULL WHERE id = :chapterId")
+    suspend fun deleteDownload(chapterId: String)
+
+    @Query("SELECT * FROM chapters WHERE novelId = :novelId ORDER BY number ASC")
+    suspend fun getChaptersForNovelOnce(novelId: String): List<ChapterEntity>
+
+    @Delete
+    suspend fun deleteChapter(chapter: ChapterEntity)
+}
+
+@Dao
+interface ReadingProgressDao {
+
+    @Query("SELECT * FROM reading_progress WHERE novelId = :novelId")
+    suspend fun getProgress(novelId: String): ReadingProgressEntity?
+
+    @Query("SELECT * FROM reading_progress WHERE novelId = :novelId")
+    suspend fun getProgressForNovel(novelId: String): ReadingProgressEntity?
+
+    @Query("SELECT * FROM reading_progress WHERE novelId = :novelId")
+    fun getProgressFlow(novelId: String): Flow<ReadingProgressEntity?>
+
+    @Query("SELECT * FROM reading_progress ORDER BY lastReadAt DESC")
+    fun getAllProgress(): Flow<List<ReadingProgressEntity>>
+
+    @Query("SELECT * FROM reading_progress ORDER BY lastReadAt DESC LIMIT 1")
+    suspend fun getMostRecentProgress(): ReadingProgressEntity?
+
+    @Query("SELECT SUM(chaptersRead) FROM reading_progress")
+    suspend fun getTotalChaptersRead(): Int?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveProgress(progress: ReadingProgressEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertProgress(progress: ReadingProgressEntity)
+
+    // Updated to use paragraphIndex instead of scrollPosition
+    @Query("""
+        UPDATE reading_progress 
+        SET currentChapterId = :chapterId, 
+            currentChapterNumber = :chapterNumber,
+            paragraphIndex = :paragraphIndex,
+            lastReadAt = :timestamp 
+        WHERE novelId = :novelId
+    """)
+    suspend fun updateProgress(
+        novelId: String,
+        chapterId: String,
+        chapterNumber: Int = 0,
+        paragraphIndex: Int = 0,
+        timestamp: Long = System.currentTimeMillis()
+    )
+
+    @Query("UPDATE reading_progress SET chaptersRead = chaptersRead + 1, lastReadAt = :timestamp WHERE novelId = :novelId")
+    suspend fun incrementChaptersRead(novelId: String, timestamp: Long = System.currentTimeMillis())
+
+    @Query("DELETE FROM reading_progress WHERE novelId = :novelId")
+    suspend fun deleteProgress(novelId: String)
+
+    @Query("DELETE FROM reading_progress WHERE novelId = :novelId")
+    suspend fun deleteProgressForNovel(novelId: String)
+}
+
+@Dao
+interface ReaderSettingsDao {
+
+    @Query("SELECT * FROM reader_settings WHERE id = 1")
+    suspend fun getSettings(): ReaderSettingsEntity?
+
+    @Query("SELECT * FROM reader_settings WHERE id = 1")
+    fun getSettingsFlow(): Flow<ReaderSettingsEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveSettings(settings: ReaderSettingsEntity)
+
+    @Query("UPDATE reader_settings SET fontSize = :fontSize WHERE id = 1")
+    suspend fun updateFontSize(fontSize: Int)
+
+    @Query("UPDATE reader_settings SET theme = :theme WHERE id = 1")
+    suspend fun updateTheme(theme: String)
+}
