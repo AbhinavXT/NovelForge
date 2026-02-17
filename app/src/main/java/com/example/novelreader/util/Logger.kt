@@ -12,7 +12,7 @@ import android.util.Log
  */
 object Logger {
     private const val DEFAULT_TAG = "NovelReader"
-    private var isDebug: Boolean = false
+    private var isDebug: Boolean = true
 
     fun init(context: Context) {
         isDebug = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0

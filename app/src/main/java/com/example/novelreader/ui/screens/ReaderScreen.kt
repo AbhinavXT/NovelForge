@@ -66,6 +66,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -112,6 +115,7 @@ fun ReaderScreen(
     // TTS state
     val ttsState by ttsManager.state.collectAsState()
     val currentSentence by ttsManager.currentSentenceIndex.collectAsState()
+    val currentTTSParagraph by ttsManager.currentParagraphIndex.collectAsState()
     val ttsSettings by ttsManager.settings.collectAsState()
     val shouldAutoContinue by ttsManager.shouldAutoContinue.collectAsState()
     var showTTSControls by remember { mutableStateOf(false) }
@@ -157,6 +161,7 @@ fun ReaderScreen(
                 ttsManager = ttsManager,
                 ttsState = ttsState,
                 currentSentence = currentSentence,
+                currentTTSParagraph = currentTTSParagraph,
                 ttsSettings = ttsSettings,
                 showTTSControls = showTTSControls,
                 onToggleTTSControls = { showTTSControls = !showTTSControls },
@@ -257,6 +262,7 @@ private fun ReaderContent(
     ttsManager: TTSManager,
     ttsState: TTSState,
     currentSentence: Int,
+    currentTTSParagraph: Int,
     ttsSettings: com.example.novelreader.data.TTSSettings,
     showTTSControls: Boolean,
     onToggleTTSControls: () -> Unit,
@@ -282,6 +288,19 @@ private fun ReaderContent(
         if (chapter.savedParagraphIndex > 0) {
             delay(100)
             listState.scrollToItem(chapter.savedParagraphIndex)
+        }
+    }
+
+    // Auto-scroll to current TTS paragraph
+    LaunchedEffect(currentTTSParagraph, ttsState) {
+        if (ttsState == TTSState.PLAYING && currentTTSParagraph >= 0) {
+            // Only scroll if the paragraph is not visible
+            val firstVisible = listState.firstVisibleItemIndex
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: firstVisible
+
+            if (currentTTSParagraph < firstVisible || currentTTSParagraph > lastVisible) {
+                listState.animateScrollToItem(currentTTSParagraph)
+            }
         }
     }
 
@@ -361,15 +380,31 @@ private fun ReaderContent(
                     items = chapter.paragraphs,
                     key = { index, _ -> "${chapter.chapterId}_$index" }
                 ) { index, paragraph ->
-                    Text(
-                        text = paragraph,
-                        color = colors.text,
-                        fontSize = settings.fontSize.sp,
-                        fontFamily = settings.font.toFontFamily(),
-                        lineHeight = (settings.fontSize * 1.6).sp,
-                        textAlign = TextAlign.Justify,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
+                    // Check if this paragraph contains the current TTS sentence
+                    val isCurrentParagraph = ttsState == TTSState.PLAYING && index == currentTTSParagraph
+
+                    if (isCurrentParagraph) {
+                        // Highlight the current sentence within this paragraph
+                        HighlightedParagraph(
+                            paragraph = paragraph,
+                            currentSentenceIndex = ttsManager.currentSentenceInParagraph.collectAsState().value,
+                            textColor = colors.text,
+                            highlightColor = colors.text.copy(alpha = 0.15f),
+                            fontSize = settings.fontSize,
+                            fontFamily = settings.font.toFontFamily(),
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+                    } else {
+                        Text(
+                            text = paragraph,
+                            color = colors.text,
+                            fontSize = settings.fontSize.sp,
+                            fontFamily = settings.font.toFontFamily(),
+                            lineHeight = (settings.fontSize * 1.6).sp,
+                            textAlign = TextAlign.Justify,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+                    }
                 }
 
                 item {
@@ -404,6 +439,7 @@ private fun ReaderContent(
                     ttsSettings = ttsSettings,
                     chapterContent = chapter.content,
                     canGoNext = canGoNext,
+                    startFromParagraph = listState.firstVisibleItemIndex,
                     onNextChapter = onNextChapter,
                     onNextChapterWithRetry = onNextChapterWithRetry,
                     onClose = {
@@ -425,6 +461,7 @@ private fun TTSControlsPanel(
     ttsSettings: com.example.novelreader.data.TTSSettings,
     chapterContent: String,
     canGoNext: Boolean,
+    startFromParagraph: Int,
     onNextChapter: () -> Unit,
     onNextChapterWithRetry: () -> Unit,
     onClose: () -> Unit
@@ -619,7 +656,7 @@ private fun TTSControlsPanel(
                             TTSState.PLAYING -> ttsManager.pause()
                             TTSState.PAUSED -> ttsManager.resume()
                             else -> {
-                                ttsManager.speakText(chapterContent) {
+                                ttsManager.speakText(chapterContent, startFromParagraph) {
                                     if (canGoNext) {
                                         onNextChapterWithRetry()
                                     }
@@ -1216,4 +1253,56 @@ fun paperBackgroundModifier(): Modifier {
                 end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
             )
         )
+}
+
+/**
+ * Paragraph with highlighted current sentence for TTS
+ */
+@Composable
+private fun HighlightedParagraph(
+    paragraph: String,
+    currentSentenceIndex: Int,
+    textColor: Color,
+    highlightColor: Color,
+    fontSize: Int,
+    fontFamily: FontFamily,
+    modifier: Modifier = Modifier
+) {
+    // Split paragraph into sentences
+    val sentences = remember(paragraph) {
+        paragraph.split(Regex("(?<=[.!?])\\s+"))
+            .filter { it.isNotBlank() }
+    }
+
+    val annotatedString = buildAnnotatedString {
+        sentences.forEachIndexed { index, sentence ->
+            if (index == currentSentenceIndex) {
+                // Highlight current sentence
+                withStyle(
+                    style = SpanStyle(
+                        background = highlightColor
+                    )
+                ) {
+                    append(sentence)
+                }
+            } else {
+                append(sentence)
+            }
+
+            // Add space between sentences (except after last)
+            if (index < sentences.size - 1) {
+                append(" ")
+            }
+        }
+    }
+
+    Text(
+        text = annotatedString,
+        color = textColor,
+        fontSize = fontSize.sp,
+        fontFamily = fontFamily,
+        lineHeight = (fontSize * 1.6).sp,
+        textAlign = TextAlign.Justify,
+        modifier = modifier
+    )
 }

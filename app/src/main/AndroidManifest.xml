@@ -3,6 +3,9 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".NovelReaderApplication"
@@ -14,6 +17,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.NovelReader">
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -21,10 +25,16 @@
             android:theme="@style/Theme.NovelReader">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- TTS Foreground Service -->
+        <service
+            android:name=".data.TTSForegroundService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="false" />
+
     </application>
 
 </manifest>

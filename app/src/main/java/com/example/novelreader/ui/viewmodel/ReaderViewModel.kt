@@ -130,11 +130,6 @@ class ReaderViewModel(
             _uiState.value = ReaderUiState.Loading
 
             try {
-                // Add small delay to avoid rate limiting when rapidly loading chapters
-                if (autoRetryEnabled && autoRetryCount > 0) {
-                    kotlinx.coroutines.delay(autoRetryCount * 1000L)
-                }
-
                 val content = repository.getChapterContent(
                     novelId = novelId,
                     chapterId = currentChapterId,
@@ -222,10 +217,7 @@ class ReaderViewModel(
         // Auto-retry if enabled and not exceeded max retries
         if (autoRetryEnabled && autoRetryCount < maxAutoRetries) {
             autoRetryCount++
-            viewModelScope.launch {
-                kotlinx.coroutines.delay(1500L * autoRetryCount) // Exponential backoff
-                loadChapter()
-            }
+            loadChapter()
         } else {
             autoRetryEnabled = false
             autoRetryCount = 0

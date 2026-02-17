@@ -1,18 +1,15 @@
 package com.example.novelreader.data
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import com.example.novelreader.util.Logger
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import java.util.Locale
 
 enum class TTSState {
@@ -27,14 +24,15 @@ data class TTSSettings(
     val speed: Float = 1.0f,
     val pitch: Float = 1.0f,
     val voiceName: String? = null,
-    val sentencePauseMs: Long = 300L,      // Pause after each sentence
-    val paragraphPauseMs: Long = 800L,     // Pause after paragraphs
-    val volume: Float = 1.0f               // Volume 0.0 - 1.0
+    val sentencePauseMs: Long = 0L,
+    val paragraphPauseMs: Long = 0L,
+    val volume: Float = 1.0f
 )
 
-// Represents a text segment with its type
 private data class TextSegment(
     val text: String,
+    val paragraphIndex: Int,
+    val sentenceIndexInParagraph: Int,
     val isParagraphEnd: Boolean = false
 )
 
@@ -45,14 +43,20 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     private var requestedEngine: String? = null
 
     private val prefs = context.getSharedPreferences("tts_prefs", Context.MODE_PRIVATE)
-    private val scope = CoroutineScope(Dispatchers.Main + Job())
-    private var pauseJob: Job? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private var pauseRunnable: Runnable? = null
 
     private val _state = MutableStateFlow(TTSState.IDLE)
     val state: StateFlow<TTSState> = _state.asStateFlow()
 
     private val _currentSentenceIndex = MutableStateFlow(0)
     val currentSentenceIndex: StateFlow<Int> = _currentSentenceIndex.asStateFlow()
+
+    private val _currentParagraphIndex = MutableStateFlow(0)
+    val currentParagraphIndex: StateFlow<Int> = _currentParagraphIndex.asStateFlow()
+
+    private val _currentSentenceInParagraph = MutableStateFlow(0)
+    val currentSentenceInParagraph: StateFlow<Int> = _currentSentenceInParagraph.asStateFlow()
 
     private val _availableVoices = MutableStateFlow<List<Voice>>(emptyList())
     val availableVoices: StateFlow<List<Voice>> = _availableVoices.asStateFlow()
@@ -110,8 +114,8 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         val speed = prefs.getFloat("tts_speed", 1.0f)
         val pitch = prefs.getFloat("tts_pitch", 1.0f)
         val voiceName = prefs.getString("tts_voice", null)
-        val sentencePause = prefs.getLong("tts_sentence_pause", 300L)
-        val paragraphPause = prefs.getLong("tts_paragraph_pause", 800L)
+        val sentencePause = prefs.getLong("tts_sentence_pause", 0L)
+        val paragraphPause = prefs.getLong("tts_paragraph_pause", 0L)
         val volume = prefs.getFloat("tts_volume", 1.0f)
 
         _settings.value = TTSSettings(
@@ -234,35 +238,35 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
                 _currentSentenceIndex.value = currentIndex
 
                 if (currentIndex < segments.size) {
-                    // Determine pause duration
+                    // Update paragraph tracking
+                    val nextSegment = segments[currentIndex]
+                    _currentParagraphIndex.value = nextSegment.paragraphIndex
+                    _currentSentenceInParagraph.value = nextSegment.sentenceIndexInParagraph
+
                     val pauseMs = if (currentSegment?.isParagraphEnd == true) {
                         _settings.value.paragraphPauseMs
                     } else {
                         _settings.value.sentencePauseMs
                     }
 
-                    // Apply pause before next sentence
                     if (pauseMs > 0) {
-                        pauseJob = scope.launch {
-                            delay(pauseMs)
+                        pauseRunnable = Runnable {
                             if (_state.value == TTSState.PLAYING) {
                                 speakCurrentSentence()
                             }
                         }
+                        handler.postDelayed(pauseRunnable!!, pauseMs)
                     } else {
                         speakCurrentSentence()
                     }
                 } else {
-                    // Chapter complete - run on main thread with delay
-                    scope.launch {
-                        _state.value = TTSState.IDLE
-                        _shouldAutoContinue.value = true
+                    _state.value = TTSState.IDLE
+                    _shouldAutoContinue.value = true
 
-                        // Add delay before loading next chapter to avoid network issues
-                        delay(1000)
+                    // Don't stop service here - will restart when next chapter loads
+                    // Service stops when user manually stops or leaves reader
 
-                        onChapterComplete?.invoke()
-                    }
+                    onChapterComplete?.invoke()
                 }
             }
 
@@ -278,19 +282,14 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         })
     }
 
-    /**
-     * Parse text into segments, tracking paragraph endings
-     */
     private fun parseTextIntoSegments(text: String): List<TextSegment> {
         val result = mutableListOf<TextSegment>()
 
-        // Split by paragraphs first (double newline or single newline)
         val paragraphs = text.split(Regex("\n\n+|\n"))
             .map { it.trim() }
             .filter { it.isNotBlank() }
 
         paragraphs.forEachIndexed { pIndex, paragraph ->
-            // Split paragraph into sentences
             val sentences = paragraph
                 .split(Regex("(?<=[.!?])\\s+"))
                 .map { it.trim() }
@@ -302,6 +301,8 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
 
                 result.add(TextSegment(
                     text = sentence,
+                    paragraphIndex = pIndex,
+                    sentenceIndexInParagraph = sIndex,
                     isParagraphEnd = isLastSentenceInParagraph && !isLastParagraph
                 ))
             }
@@ -310,7 +311,7 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         return result
     }
 
-    fun speakText(text: String, onComplete: (() -> Unit)? = null) {
+    fun speakText(text: String, startFromParagraph: Int = 0, onComplete: (() -> Unit)? = null) {
         if (!isInitialized) {
             Logger.e("TTSManager", "TTS not initialized")
             return
@@ -326,20 +327,36 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
             return
         }
 
-        Logger.d("TTSManager", "Speaking ${segments.size} segments with engine: ${tts?.defaultEngine}")
+        // Find the starting segment index for the given paragraph
+        val startIndex = if (startFromParagraph > 0) {
+            segments.indexOfFirst { it.paragraphIndex >= startFromParagraph }.takeIf { it >= 0 } ?: 0
+        } else {
+            0
+        }
 
-        currentIndex = 0
-        _currentSentenceIndex.value = 0
+        Logger.d("TTSManager", "Speaking ${segments.size} segments, starting from paragraph $startFromParagraph (segment $startIndex)")
+
+        currentIndex = startIndex
+        _currentSentenceIndex.value = currentIndex
+
+        // Update paragraph tracking
+        val startSegment = segments.getOrNull(currentIndex)
+        _currentParagraphIndex.value = startSegment?.paragraphIndex ?: 0
+        _currentSentenceInParagraph.value = startSegment?.sentenceIndexInParagraph ?: 0
+
         onChapterComplete = onComplete
         _state.value = TTSState.LOADING
+
+        // Start foreground service to keep callbacks working in background
+        TTSForegroundService.start(context, "Novel Reader")
 
         speakCurrentSentence()
     }
 
-    fun autoContinueIfNeeded(text: String, onComplete: (() -> Unit)? = null) {
+    fun autoContinueIfNeeded(text: String, startFromParagraph: Int = 0, onComplete: (() -> Unit)? = null) {
         if (_shouldAutoContinue.value) {
             Logger.d("TTSManager", "Auto-continuing TTS for new chapter")
-            speakText(text, onComplete)
+            speakText(text, startFromParagraph, onComplete)
         }
     }
 
@@ -356,7 +373,6 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         tts?.setSpeechRate(_settings.value.speed)
         tts?.setPitch(_settings.value.pitch)
 
-        // Set volume using Bundle
         val params = android.os.Bundle()
         params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, _settings.value.volume)
 
@@ -370,9 +386,14 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         Logger.d("TTSManager", "speak() returned: $result (SUCCESS=0, ERROR=-1)")
     }
 
+    private fun cancelPendingPause() {
+        pauseRunnable?.let { handler.removeCallbacks(it) }
+        pauseRunnable = null
+    }
+
     fun pause() {
         if (_state.value == TTSState.PLAYING) {
-            pauseJob?.cancel()
+            cancelPendingPause()
             tts?.stop()
             _state.value = TTSState.PAUSED
         }
@@ -385,36 +406,49 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     }
 
     fun stop() {
-        pauseJob?.cancel()
+        cancelPendingPause()
         tts?.stop()
         currentIndex = 0
         _currentSentenceIndex.value = 0
+        _currentParagraphIndex.value = 0
+        _currentSentenceInParagraph.value = 0
         segments = emptyList()
         _state.value = TTSState.IDLE
         _shouldAutoContinue.value = false
+
+        // Stop foreground service
+        TTSForegroundService.stop(context)
     }
 
     fun skipToNext() {
         if (currentIndex < segments.size - 1) {
-            pauseJob?.cancel()
+            cancelPendingPause()
             tts?.stop()
             currentIndex++
             _currentSentenceIndex.value = currentIndex
+
+            val segment = segments[currentIndex]
+            _currentParagraphIndex.value = segment.paragraphIndex
+            _currentSentenceInParagraph.value = segment.sentenceIndexInParagraph
+
             speakCurrentSentence()
         }
     }
 
     fun skipToPrevious() {
         if (currentIndex > 0) {
-            pauseJob?.cancel()
+            cancelPendingPause()
             tts?.stop()
             currentIndex--
             _currentSentenceIndex.value = currentIndex
+
+            val segment = segments[currentIndex]
+            _currentParagraphIndex.value = segment.paragraphIndex
+            _currentSentenceInParagraph.value = segment.sentenceIndexInParagraph
+
             speakCurrentSentence()
         }
     }
-
-    // ============ Settings Methods ============
 
     fun setSpeed(speed: Float) {
         _settings.value = _settings.value.copy(speed = speed.coerceIn(0.5f, 2.0f))
@@ -499,11 +533,14 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     }
 
     fun shutdown() {
-        pauseJob?.cancel()
+        cancelPendingPause()
         tts?.stop()
         tts?.shutdown()
         tts = null
         isInitialized = false
+
+        // Stop foreground service
+        TTSForegroundService.stop(context)
     }
 
     fun isPlaying(): Boolean = _state.value == TTSState.PLAYING
