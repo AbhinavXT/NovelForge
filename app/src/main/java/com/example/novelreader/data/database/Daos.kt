@@ -37,6 +37,30 @@ interface NovelDao {
 
     @Query("DELETE FROM novels WHERE id = :novelId")
     suspend fun deleteNovelById(novelId: String)
+
+
+    // ============ Backup/Restore Queries ============
+
+    @Query("SELECT * FROM novels")
+    suspend fun getAllNovelsOnce(): List<NovelEntity>
+
+    @Query("SELECT * FROM chapters")
+    suspend fun getAllChaptersOnce(): List<ChapterEntity>
+
+    @Query("SELECT * FROM reading_progress")
+    suspend fun getAllProgressOnce(): List<ReadingProgressEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertNovelReplace(novel: NovelEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChapterReplace(chapter: ChapterEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertProgressReplace(progress: ReadingProgressEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSettingsReplace(settings: ReaderSettingsEntity)
 }
 
 @Dao

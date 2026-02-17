@@ -20,6 +20,7 @@ import com.example.novelreader.ui.screens.*
 import java.net.URLDecoder
 import java.net.URLEncoder
 import androidx.compose.material.icons.filled.Download
+import com.example.novelreader.data.BackupManager
 import com.example.novelreader.data.TTSManager
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
@@ -80,6 +81,7 @@ fun NavigationHost(
     repository: NovelRepository,
     downloadManager: DownloadManager,
     ttsManager: TTSManager,
+    backupManager: BackupManager,
     modifier: Modifier = Modifier
 ) {
     NavHost(
@@ -138,9 +140,7 @@ fun NavigationHost(
 
         composable(Screen.Settings.route) {
             SettingsScreen(
-                onDownloadsClick = {
-                    navController.navigate(Screen.Downloads.route)
-                }
+                backupManager = backupManager
             )
         }
 

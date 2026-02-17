@@ -24,6 +24,7 @@ import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.novelreader.data.BackupManager
 import com.example.novelreader.data.DownloadManager
 import com.example.novelreader.data.NovelRepository
 import com.example.novelreader.data.TTSManager
@@ -43,6 +44,7 @@ class MainActivity : ComponentActivity() {
         val repository = app.repository
         val downloadManager = app.downloadManager
         val ttsManager = app.ttsManager
+        val backupManager = app.backupManager
 
         setContent {
             NovelReaderTheme {
@@ -53,7 +55,8 @@ class MainActivity : ComponentActivity() {
                     NovelReaderApp(
                         repository = repository,
                         downloadManager = downloadManager,
-                        ttsManager = ttsManager
+                        ttsManager = ttsManager,
+                        backupManager = backupManager
                     )
                 }
             }
@@ -81,7 +84,8 @@ class MainActivity : ComponentActivity() {
 fun NovelReaderApp(
     repository: NovelRepository,
     downloadManager: DownloadManager,
-    ttsManager: TTSManager
+    ttsManager: TTSManager,
+    backupManager: BackupManager
 ) {
     val navController = rememberNavController()
 
@@ -135,6 +139,7 @@ fun NovelReaderApp(
                 repository = repository,
                 downloadManager = downloadManager,
                 ttsManager = ttsManager,
+                backupManager = backupManager,
                 modifier = Modifier.padding(innerPadding)
             )
         }

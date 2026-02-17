@@ -348,4 +348,63 @@ class NovelRepository(private val database: AppDatabase) {
 
         return result
     }
+
+// ============ Backup/Restore Methods ============
+
+    /**
+     * Get all novels for backup (not as Flow)
+     */
+    suspend fun getAllNovelsForBackup(): List<NovelEntity> {
+        return novelDao.getAllNovelsOnce()
+    }
+
+    /**
+     * Get all chapters for backup
+     */
+    suspend fun getAllChaptersForBackup(): List<ChapterEntity> {
+        return novelDao.getAllChaptersOnce()
+    }
+
+    /**
+     * Get all reading progress for backup
+     */
+    suspend fun getAllProgressForBackup(): List<ReadingProgressEntity> {
+        return novelDao.getAllProgressOnce()
+    }
+
+    /**
+     * Insert novel during restore (replace if exists)
+     */
+    suspend fun insertNovelForRestore(novel: NovelEntity) {
+        novelDao.insertNovelReplace(novel)
+    }
+
+    /**
+     * Insert chapter during restore (replace if exists)
+     */
+    suspend fun insertChapterForRestore(chapter: ChapterEntity) {
+        novelDao.insertChapterReplace(chapter)
+    }
+
+    /**
+     * Insert progress during restore (replace if exists)
+     */
+    suspend fun insertProgressForRestore(progress: ReadingProgressEntity) {
+        novelDao.insertProgressReplace(progress)
+    }
+
+    /**
+     * Restore reader settings
+     */
+    suspend fun restoreReaderSettings(fontSize: Int, theme: String, font: String) {
+        val entity = ReaderSettingsEntity(
+            id = 1,
+            fontSize = fontSize,
+            theme = theme,
+            font = font
+        )
+        novelDao.insertSettingsReplace(entity)
+    }
 }
+
+
