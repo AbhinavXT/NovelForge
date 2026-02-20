@@ -260,7 +260,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Novel Reader v1.2.0",
+                text = "Novel Reader v1.3.0",
                 style = MaterialTheme.typography.bodyMedium
             )
             Text(
