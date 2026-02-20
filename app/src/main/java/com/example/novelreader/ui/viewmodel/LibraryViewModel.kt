@@ -23,10 +23,21 @@ sealed interface ImportState {
     data class Error(val message: String) : ImportState
 }
 
+/**
+ * Filter options for library
+ */
+enum class LibraryFilter {
+    ALL,
+    DOWNLOADED,
+    READING
+}
+
 class LibraryViewModel(
     private val repository: NovelRepository,
     private val epubImporter: EpubImporter? = null
 ) : ViewModel() {
+
+    private val _allNovels = MutableStateFlow<List<Novel>>(emptyList())
 
     private val _libraryNovels = MutableStateFlow<List<Novel>>(emptyList())
     val libraryNovels: StateFlow<List<Novel>> = _libraryNovels.asStateFlow()
@@ -34,16 +45,70 @@ class LibraryViewModel(
     private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
     val importState: StateFlow<ImportState> = _importState.asStateFlow()
 
+    private val _currentFilter = MutableStateFlow(LibraryFilter.ALL)
+    val currentFilter: StateFlow<LibraryFilter> = _currentFilter.asStateFlow()
+
+    // Track which novels have downloads
+    private val _novelsWithDownloads = MutableStateFlow<Set<String>>(emptySet())
+
+    // Track which novels are being read
+    private val _novelsBeingRead = MutableStateFlow<Set<String>>(emptySet())
+
     init {
         loadLibrary()
+        loadNovelsWithDownloads()
+        loadNovelsBeingRead()
     }
 
     private fun loadLibrary() {
         viewModelScope.launch {
             repository.getLibraryNovels().collect { novels ->
-                _libraryNovels.value = novels
+                _allNovels.value = novels
+                applyFilter()
             }
         }
+    }
+
+    private fun loadNovelsWithDownloads() {
+        viewModelScope.launch {
+            val downloadInfos = repository.getNovelsWithDownloads()
+            _novelsWithDownloads.value = downloadInfos.map { it.novelId }.toSet()
+            applyFilter()
+        }
+    }
+
+    private fun loadNovelsBeingRead() {
+        viewModelScope.launch {
+            repository.getAllReadingProgress().collect { progressList ->
+                _novelsBeingRead.value = progressList.map { it.novelId }.toSet()
+                applyFilter()
+            }
+        }
+    }
+
+    private fun applyFilter() {
+        val novels = _allNovels.value
+        val filter = _currentFilter.value
+        val withDownloads = _novelsWithDownloads.value
+        val beingRead = _novelsBeingRead.value
+
+        _libraryNovels.value = when (filter) {
+            LibraryFilter.ALL -> novels
+            LibraryFilter.DOWNLOADED -> novels.filter { it.id in withDownloads }
+            LibraryFilter.READING -> novels.filter { it.id in beingRead }
+        }
+    }
+
+    fun setFilter(filter: LibraryFilter) {
+        _currentFilter.value = filter
+        applyFilter()
+    }
+
+    /**
+     * Refresh the downloads filter data
+     */
+    fun refreshDownloads() {
+        loadNovelsWithDownloads()
     }
 
     /**
@@ -86,6 +151,9 @@ class LibraryViewModel(
                 epubImporter.deleteLocalNovel(novelId)
             }
             repository.removeFromLibrary(novelId)
+
+            // Refresh downloads list
+            loadNovelsWithDownloads()
         }
     }
 

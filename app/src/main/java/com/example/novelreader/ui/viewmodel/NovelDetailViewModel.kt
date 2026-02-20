@@ -17,7 +17,7 @@ sealed interface NovelDetailUiState {
     data class Success(
         val novel: Novel,
         val isInLibrary: Boolean,
-        val isLocalNovel: Boolean = false  // Added to track local novels
+        val isLocalNovel: Boolean = false
     ) : NovelDetailUiState
     data class Error(val message: String) : NovelDetailUiState
 }
@@ -30,6 +30,10 @@ class NovelDetailViewModel(
 
     private val _uiState = MutableStateFlow<NovelDetailUiState>(NovelDetailUiState.Loading)
     val uiState: StateFlow<NovelDetailUiState> = _uiState.asStateFlow()
+
+    // Track chapters currently being downloaded
+    private val _downloadingChapters = MutableStateFlow<Set<String>>(emptySet())
+    val downloadingChapters: StateFlow<Set<String>> = _downloadingChapters.asStateFlow()
 
     // Check if this is a local novel (imported EPUB)
     private val isLocalNovel: Boolean = novelId.startsWith("local_")
@@ -44,10 +48,8 @@ class NovelDetailViewModel(
 
             try {
                 if (isLocalNovel) {
-                    // Local novel - load from database
                     loadLocalNovel()
                 } else {
-                    // Online novel - fetch from network
                     loadOnlineNovel()
                 }
             } catch (e: Exception) {
@@ -57,14 +59,10 @@ class NovelDetailViewModel(
     }
 
     private suspend fun loadLocalNovel() {
-        // Get novel from database
         val novel = repository.getNovelById(novelId)
 
         if (novel != null) {
-            // Get chapters from database
             val chapters = repository.getChapters(novelId).first()
-
-            // Mark all chapters as downloaded (they're stored locally)
             val chaptersWithStatus = chapters.map { chapter ->
                 chapter.copy(isDownloaded = true)
             }
@@ -73,7 +71,7 @@ class NovelDetailViewModel(
 
             _uiState.value = NovelDetailUiState.Success(
                 novel = novelWithChapters,
-                isInLibrary = true,  // Local novels are always in library
+                isInLibrary = true,
                 isLocalNovel = true
             )
         } else {
@@ -82,14 +80,10 @@ class NovelDetailViewModel(
     }
 
     private suspend fun loadOnlineNovel() {
-        // Check library first
         val isInLibrary = repository.isInLibrary(novelId)
-
-        // Fetch novel details from network
         val novel = repository.fetchNovelDetails(novelId, novelUrl)
 
         if (novel != null) {
-            // Update chapters with download status
             val chaptersWithStatus = novel.chapters.map { chapter ->
                 val isDownloaded = repository.isChapterDownloaded(chapter.id)
                 chapter.copy(isDownloaded = isDownloaded)
@@ -107,12 +101,80 @@ class NovelDetailViewModel(
         }
     }
 
-    fun toggleLibrary() {
+    /**
+     * Download a single chapter
+     */
+    fun downloadChapter(chapter: Chapter) {
+        val currentState = _uiState.value
+        if (currentState !is NovelDetailUiState.Success) return
+        if (currentState.isLocalNovel) return
+        if (chapter.isDownloaded) return
+
+        viewModelScope.launch {
+            // Add to downloading set
+            _downloadingChapters.value = _downloadingChapters.value + chapter.id
+
+            try {
+                val success = repository.downloadChapter(
+                    novelId = novelId,
+                    chapterId = chapter.id,
+                    chapterUrl = chapter.url
+                )
+
+                if (success) {
+                    // Update the chapter's download status in UI state
+                    updateChapterDownloadStatus(chapter.id, true)
+                }
+            } finally {
+                // Remove from downloading set
+                _downloadingChapters.value = _downloadingChapters.value - chapter.id
+            }
+        }
+    }
+
+    /**
+     * Update a chapter's download status in the UI state
+     */
+    private fun updateChapterDownloadStatus(chapterId: String, isDownloaded: Boolean) {
         val currentState = _uiState.value
         if (currentState !is NovelDetailUiState.Success) return
 
-        // Don't allow removing local novels from library here
-        // They should be removed via LibraryScreen
+        val updatedChapters = currentState.novel.chapters.map { chapter ->
+            if (chapter.id == chapterId) {
+                chapter.copy(isDownloaded = isDownloaded)
+            } else {
+                chapter
+            }
+        }
+
+        _uiState.value = currentState.copy(
+            novel = currentState.novel.copy(chapters = updatedChapters)
+        )
+    }
+
+    /**
+     * Refresh download status for all chapters
+     */
+    fun refreshDownloadStatus() {
+        viewModelScope.launch {
+            val currentState = _uiState.value
+            if (currentState !is NovelDetailUiState.Success) return@launch
+            if (currentState.isLocalNovel) return@launch
+
+            val updatedChapters = currentState.novel.chapters.map { chapter ->
+                val isDownloaded = repository.isChapterDownloaded(chapter.id)
+                chapter.copy(isDownloaded = isDownloaded)
+            }
+
+            _uiState.value = currentState.copy(
+                novel = currentState.novel.copy(chapters = updatedChapters)
+            )
+        }
+    }
+
+    fun toggleLibrary() {
+        val currentState = _uiState.value
+        if (currentState !is NovelDetailUiState.Success) return
         if (currentState.isLocalNovel) return
 
         viewModelScope.launch {

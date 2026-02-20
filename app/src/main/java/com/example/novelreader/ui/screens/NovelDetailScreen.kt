@@ -75,11 +75,11 @@ fun NovelDetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val downloadState by downloadManager.novelDownloadState.collectAsState()
+    val downloadingChapters by viewModel.downloadingChapters.collectAsState()
     val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
-            // Minimal top bar - no extra padding
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -154,8 +154,10 @@ fun NovelDetailScreen(
                     isInLibrary = state.isInLibrary,
                     isLocalNovel = state.isLocalNovel,
                     downloadState = downloadState,
+                    downloadingChapters = downloadingChapters,
                     onToggleLibrary = { viewModel.toggleLibrary() },
                     onChapterClick = onChapterClick,
+                    onDownloadChapter = { chapter -> viewModel.downloadChapter(chapter) },
                     onDownloadAll = {
                         scope.launch {
                             downloadManager.downloadAllChapters(
@@ -177,8 +179,10 @@ private fun NovelDetailContent(
     isInLibrary: Boolean,
     isLocalNovel: Boolean,
     downloadState: NovelDownloadState?,
+    downloadingChapters: Set<String>,
     onToggleLibrary: () -> Unit,
     onChapterClick: (chapterId: String, chapterUrl: String) -> Unit,
+    onDownloadChapter: (Chapter) -> Unit,
     onDownloadAll: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -190,16 +194,13 @@ private fun NovelDetailContent(
             novel.chapters
         } else {
             val query = searchQuery.trim()
-            // Check if query is a number (for jumping to chapter)
             val chapterNumber = query.toIntOrNull()
 
             novel.chapters.filter { chapter ->
                 if (chapterNumber != null) {
-                    // Match exact chapter number or chapters containing the number
                     chapter.number == chapterNumber ||
                             chapter.number.toString().contains(query)
                 } else {
-                    // Match chapter title (case insensitive)
                     chapter.title.contains(query, ignoreCase = true) ||
                             chapter.number.toString().contains(query)
                 }
@@ -242,6 +243,22 @@ private fun NovelDetailContent(
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f)
                 )
+
+                // Show downloaded count
+                val downloadedCount = novel.chapters.count { it.isDownloaded }
+                if (downloadedCount > 0 && !isLocalNovel) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            text = "$downloadedCount downloaded",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
             }
         }
 
@@ -278,7 +295,10 @@ private fun NovelDetailContent(
             ) { chapter ->
                 ChapterListItem(
                     chapter = chapter,
-                    onClick = { onChapterClick(chapter.id, chapter.url) }
+                    isDownloading = chapter.id in downloadingChapters,
+                    isLocalNovel = isLocalNovel,
+                    onClick = { onChapterClick(chapter.id, chapter.url) },
+                    onDownload = { onDownloadChapter(chapter) }
                 )
             }
         }
@@ -337,8 +357,8 @@ private fun NovelHeader(
     val imageModel = remember(novel.coverUrl) {
         when {
             novel.coverUrl == null -> null
-            novel.coverUrl.startsWith("/") -> File(novel.coverUrl)  // Local file
-            else -> novel.coverUrl  // URL
+            novel.coverUrl.startsWith("/") -> File(novel.coverUrl)
+            else -> novel.coverUrl
         }
     }
 
@@ -390,12 +410,11 @@ private fun NovelHeader(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Status badge row - includes "Local" badge for imported EPUBs
+            // Status badge row
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Local badge for imported EPUBs
                 if (isLocalNovel) {
                     Surface(
                         color = MaterialTheme.colorScheme.secondaryContainer,
@@ -410,7 +429,6 @@ private fun NovelHeader(
                     }
                 }
 
-                // Status badge
                 Surface(
                     color = if (novel.status.equals("Completed", ignoreCase = true))
                         MaterialTheme.colorScheme.primaryContainer
@@ -433,7 +451,6 @@ private fun NovelHeader(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Only show library button for online novels
                 if (!isLocalNovel) {
                     OutlinedButton(
                         onClick = onToggleLibrary,
@@ -522,7 +539,10 @@ private fun NovelDescription(description: String) {
 @Composable
 private fun ChapterListItem(
     chapter: Chapter,
-    onClick: () -> Unit
+    isDownloading: Boolean,
+    isLocalNovel: Boolean,
+    onClick: () -> Unit,
+    onDownload: () -> Unit
 ) {
     Card(
         onClick = onClick,
@@ -536,6 +556,7 @@ private fun ChapterListItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Chapter number badge
             Surface(
                 color = MaterialTheme.colorScheme.primaryContainer,
                 shape = MaterialTheme.shapes.small
@@ -549,6 +570,7 @@ private fun ChapterListItem(
 
             Spacer(modifier = Modifier.width(12.dp))
 
+            // Chapter title
             Text(
                 text = chapter.title,
                 style = MaterialTheme.typography.bodyMedium,
@@ -557,15 +579,42 @@ private fun ChapterListItem(
                 modifier = Modifier.weight(1f)
             )
 
-            // Download indicator
-            if (chapter.isDownloaded) {
-                Spacer(modifier = Modifier.width(8.dp))
-                Icon(
-                    imageVector = Icons.Default.DownloadDone,
-                    contentDescription = "Downloaded",
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Download status / button
+            if (!isLocalNovel) {
+                when {
+                    isDownloading -> {
+                        // Downloading spinner
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                    chapter.isDownloaded -> {
+                        // Downloaded indicator
+                        Icon(
+                            imageVector = Icons.Default.DownloadDone,
+                            contentDescription = "Downloaded",
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    else -> {
+                        // Download button
+                        IconButton(
+                            onClick = onDownload,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = "Download chapter",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
+                }
             }
         }
     }
