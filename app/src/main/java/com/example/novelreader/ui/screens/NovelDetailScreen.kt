@@ -17,12 +17,20 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LibraryAdd
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,6 +43,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -42,10 +52,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -53,12 +65,16 @@ import coil.compose.AsyncImage
 import com.example.novelreader.data.DownloadManager
 import com.example.novelreader.data.NovelDownloadState
 import com.example.novelreader.data.NovelRepository
+import com.example.novelreader.data.database.BookmarkEntity
 import com.example.novelreader.data.model.Chapter
 import com.example.novelreader.data.model.Novel
 import com.example.novelreader.ui.viewmodel.NovelDetailUiState
 import com.example.novelreader.ui.viewmodel.NovelDetailViewModel
 import kotlinx.coroutines.launch
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,6 +92,8 @@ fun NovelDetailScreen(
     val uiState by viewModel.uiState.collectAsState()
     val downloadState by downloadManager.novelDownloadState.collectAsState()
     val downloadingChapters by viewModel.downloadingChapters.collectAsState()
+    val bookmarks by viewModel.bookmarks.collectAsState()
+    val bookmarkCount by viewModel.bookmarkCount.collectAsState()
     val scope = rememberCoroutineScope()
 
     Scaffold(
@@ -155,6 +173,8 @@ fun NovelDetailScreen(
                     isLocalNovel = state.isLocalNovel,
                     downloadState = downloadState,
                     downloadingChapters = downloadingChapters,
+                    bookmarks = bookmarks,
+                    bookmarkCount = bookmarkCount,
                     onToggleLibrary = { viewModel.toggleLibrary() },
                     onChapterClick = onChapterClick,
                     onDownloadChapter = { chapter -> viewModel.downloadChapter(chapter) },
@@ -165,6 +185,12 @@ fun NovelDetailScreen(
                                 chapters = state.novel.chapters
                             )
                         }
+                    },
+                    onDeleteBookmark = { bookmarkId -> viewModel.deleteBookmark(bookmarkId) },
+                    onUpdateBookmarkNote = { id, note -> viewModel.updateBookmarkNote(id, note) },
+                    onBookmarkClick = { bookmark ->
+                        // Navigate to the bookmarked chapter using the stored URL
+                        onChapterClick(bookmark.chapterId, bookmark.chapterUrl)
                     },
                     modifier = Modifier.padding(paddingValues)
                 )
@@ -180,13 +206,19 @@ private fun NovelDetailContent(
     isLocalNovel: Boolean,
     downloadState: NovelDownloadState?,
     downloadingChapters: Set<String>,
+    bookmarks: List<BookmarkEntity>,
+    bookmarkCount: Int,
     onToggleLibrary: () -> Unit,
     onChapterClick: (chapterId: String, chapterUrl: String) -> Unit,
     onDownloadChapter: (Chapter) -> Unit,
     onDownloadAll: () -> Unit,
+    onDeleteBookmark: (Long) -> Unit,
+    onUpdateBookmarkNote: (Long, String?) -> Unit,
+    onBookmarkClick: (BookmarkEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var selectedTab by rememberSaveable { mutableStateOf(0) }
 
     // Filter chapters based on search query
     val filteredChapters = remember(novel.chapters, searchQuery) {
@@ -211,6 +243,7 @@ private fun NovelDetailContent(
     LazyColumn(
         modifier = modifier.fillMaxSize()
     ) {
+        // Novel header (cover, title, buttons) — unchanged
         item {
             NovelHeader(
                 novel = novel,
@@ -231,75 +264,177 @@ private fun NovelDetailContent(
             NovelDescription(description = novel.description)
         }
 
+        // ===== TAB ROW: Chapters / Bookmarks =====
         item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+            TabRow(
+                selectedTabIndex = selectedTab,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = "Chapters (${novel.chapters.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f)
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = { Text("Chapters (${novel.chapters.size})") },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.List,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 )
 
-                // Show downloaded count
-                val downloadedCount = novel.chapters.count { it.isDownloaded }
-                if (downloadedCount > 0 && !isLocalNovel) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = MaterialTheme.shapes.small
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = { Text("Bookmarks") },
+                    icon = {
+                        // Show a badge with count when there are bookmarks
+                        if (bookmarkCount > 0) {
+                            BadgedBox(
+                                badge = {
+                                    Badge { Text("$bookmarkCount") }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Bookmark,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.BookmarkBorder,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                )
+            }
+        }
+
+        // ===== TAB CONTENT =====
+        when (selectedTab) {
+            0 -> {
+                // ===== CHAPTERS TAB =====
+
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "$downloadedCount downloaded",
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        // Show downloaded count badge
+                        val downloadedCount = novel.chapters.count { it.isDownloaded }
+                        if (downloadedCount > 0 && !isLocalNovel) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = MaterialTheme.shapes.small
+                            ) {
+                                Text(
+                                    text = "$downloadedCount downloaded",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Chapter search bar
+                item {
+                    ChapterSearchBar(
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
+                        resultCount = filteredChapters.size,
+                        totalCount = novel.chapters.size
+                    )
+                    HorizontalDivider()
+                }
+
+                if (filteredChapters.isEmpty() && searchQuery.isNotBlank()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No chapters found for \"$searchQuery\"",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
+                } else {
+                    items(
+                        items = filteredChapters,
+                        key = { it.id }
+                    ) { chapter ->
+                        ChapterListItem(
+                            chapter = chapter,
+                            isDownloading = chapter.id in downloadingChapters,
+                            isLocalNovel = isLocalNovel,
+                            onClick = { onChapterClick(chapter.id, chapter.url) },
+                            onDownload = { onDownloadChapter(chapter) }
                         )
                     }
                 }
             }
-        }
 
-        // Chapter search bar
-        item {
-            ChapterSearchBar(
-                query = searchQuery,
-                onQueryChange = { searchQuery = it },
-                resultCount = filteredChapters.size,
-                totalCount = novel.chapters.size
-            )
-            HorizontalDivider()
-        }
+            1 -> {
+                // ===== BOOKMARKS TAB =====
 
-        if (filteredChapters.isEmpty() && searchQuery.isNotBlank()) {
-            item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "No chapters found for \"$searchQuery\"",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.outline
-                    )
+                if (bookmarks.isEmpty()) {
+                    // Empty state with helpful instructions
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    imageVector = Icons.Default.BookmarkBorder,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.outline
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "No bookmarks yet",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Long-press any paragraph while reading to bookmark it",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    items(
+                        items = bookmarks,
+                        key = { it.id }
+                    ) { bookmark ->
+                        BookmarkListItem(
+                            bookmark = bookmark,
+                            onClick = { onBookmarkClick(bookmark) },
+                            onDelete = { onDeleteBookmark(bookmark.id) },
+                            onEditNote = { note -> onUpdateBookmarkNote(bookmark.id, note) }
+                        )
+                    }
                 }
-            }
-        } else {
-            items(
-                items = filteredChapters,
-                key = { it.id }
-            ) { chapter ->
-                ChapterListItem(
-                    chapter = chapter,
-                    isDownloading = chapter.id in downloadingChapters,
-                    isLocalNovel = isLocalNovel,
-                    onClick = { onChapterClick(chapter.id, chapter.url) },
-                    onDownload = { onDownloadChapter(chapter) }
-                )
             }
         }
     }
@@ -618,4 +753,196 @@ private fun ChapterListItem(
             }
         }
     }
+}
+
+@Composable
+private fun BookmarkListItem(
+    bookmark: BookmarkEntity,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    onEditNote: (String?) -> Unit
+) {
+    var showEditDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            // Top row: chapter info + action buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Chapter badge
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        text = "Ch. ${bookmark.chapterNumber}",
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Chapter title
+                Text(
+                    text = bookmark.chapterTitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+
+                // Edit note button
+                IconButton(
+                    onClick = { showEditDialog = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit note",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.outline
+                    )
+                }
+
+                // Delete button
+                IconButton(
+                    onClick = { showDeleteConfirm = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete bookmark",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Text snippet preview — helps users recognize which passage they bookmarked
+            Text(
+                text = "\"${bookmark.textSnippet}\"",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            // Show the user's note if present
+            if (!bookmark.note.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "\uD83D\uDCDD ${bookmark.note}",  // 📝 emoji
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Timestamp showing when the bookmark was created
+            Text(
+                text = formatBookmarkDate(bookmark.createdAt),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
+    }
+
+    // Edit note dialog
+    if (showEditDialog) {
+        EditBookmarkNoteDialog(
+            currentNote = bookmark.note,
+            onDismiss = { showEditDialog = false },
+            onSave = { note ->
+                onEditNote(note)
+                showEditDialog = false
+            }
+        )
+    }
+
+    // Delete confirmation dialog
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete Bookmark") },
+            text = { Text("Remove this bookmark from Ch. ${bookmark.chapterNumber}?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDelete()
+                        showDeleteConfirm = false
+                    }
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun EditBookmarkNoteDialog(
+    currentNote: String?,
+    onDismiss: () -> Unit,
+    onSave: (String?) -> Unit
+) {
+    var noteText by remember { mutableStateOf(currentNote ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Bookmark Note") },
+        text = {
+            OutlinedTextField(
+                value = noteText,
+                onValueChange = { noteText = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Add a note about this passage...") },
+                maxLines = 4
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(noteText.ifBlank { null })
+                }
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+/**
+ * Format timestamp into a readable date string.
+ */
+private fun formatBookmarkDate(timestamp: Long): String {
+    val sdf = SimpleDateFormat("MMM d, yyyy 'at' h:mm a", Locale.getDefault())
+    return sdf.format(Date(timestamp))
 }

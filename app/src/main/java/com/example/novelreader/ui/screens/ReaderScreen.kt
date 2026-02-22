@@ -4,8 +4,11 @@ import android.annotation.SuppressLint
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,30 +17,39 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -46,6 +58,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -62,6 +76,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -72,6 +87,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.novelreader.R
 import com.example.novelreader.data.NovelRepository
 import com.example.novelreader.data.TTSManager
 import com.example.novelreader.data.TTSState
@@ -82,19 +98,9 @@ import com.example.novelreader.ui.viewmodel.ReaderChapterData
 import com.example.novelreader.ui.viewmodel.ReaderUiState
 import com.example.novelreader.ui.viewmodel.ReaderViewModel
 import android.speech.tts.Voice
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.RecordVoiceOver
-import androidx.compose.material3.AlertDialog
-import androidx.compose.ui.text.font.Font
-import com.example.novelreader.R
-import kotlinx.coroutines.delay
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -119,6 +125,10 @@ fun ReaderScreen(
     val ttsSettings by ttsManager.settings.collectAsState()
     val shouldAutoContinue by ttsManager.shouldAutoContinue.collectAsState()
     var showTTSControls by remember { mutableStateOf(false) }
+
+    // Bookmark state
+    val isInLibrary by viewModel.isInLibrary.collectAsState()
+    val bookmarkSaved by viewModel.bookmarkSavedEvent.collectAsState()
 
     // Stop TTS when leaving screen
     DisposableEffect(Unit) {
@@ -180,7 +190,14 @@ fun ReaderScreen(
                 canGoNext = viewModel.canGoNext(),
                 onSaveParagraphIndex = { index ->
                     viewModel.saveParagraphIndex(index)
-                }
+                },
+                // Bookmark parameters
+                isInLibrary = isInLibrary,
+                bookmarkSaved = bookmarkSaved,
+                onAddBookmark = { index, text ->
+                    viewModel.addBookmarkAtParagraph(index, text)
+                },
+                onBookmarkSavedShown = { viewModel.clearBookmarkSavedEvent() }
             )
         }
     }
@@ -276,13 +293,29 @@ private fun ReaderContent(
     onCycleFont: () -> Unit,
     canGoPrevious: Boolean,
     canGoNext: Boolean,
-    onSaveParagraphIndex: (Int) -> Unit
+    onSaveParagraphIndex: (Int) -> Unit,
+    // Bookmark parameters
+    isInLibrary: Boolean,
+    bookmarkSaved: Boolean,
+    onAddBookmark: (paragraphIndex: Int, paragraphText: String) -> Unit,
+    onBookmarkSavedShown: () -> Unit
 ) {
     val colors = getThemeColors(settings.theme)
 
     val listState = rememberLazyListState()
 
     var swipeOffset by remember { mutableFloatStateOf(0f) }
+
+    // Snackbar for bookmark confirmation
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Show snackbar when a bookmark is saved
+    LaunchedEffect(bookmarkSaved) {
+        if (bookmarkSaved) {
+            snackbarHostState.showSnackbar("Bookmark saved!")
+            onBookmarkSavedShown()
+        }
+    }
 
     LaunchedEffect(chapter.chapterId) {
         if (chapter.savedParagraphIndex > 0) {
@@ -316,6 +349,7 @@ private fun ReaderContent(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             ReaderTopBar(
                 chapterTitle = chapter.chapterTitle,
@@ -376,35 +410,24 @@ private fun ReaderContent(
                     }
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
+                // Each paragraph is wrapped in BookmarkableParagraph which adds
+                // long-press detection for library novels
                 itemsIndexed(
                     items = chapter.paragraphs,
                     key = { index, _ -> "${chapter.chapterId}_$index" }
                 ) { index, paragraph ->
-                    // Check if this paragraph contains the current TTS sentence
                     val isCurrentParagraph = ttsState == TTSState.PLAYING && index == currentTTSParagraph
 
-                    if (isCurrentParagraph) {
-                        // Highlight the current sentence within this paragraph
-                        HighlightedParagraph(
-                            paragraph = paragraph,
-                            currentSentenceIndex = ttsManager.currentSentenceInParagraph.collectAsState().value,
-                            textColor = colors.text,
-                            highlightColor = colors.text.copy(alpha = 0.15f),
-                            fontSize = settings.fontSize,
-                            fontFamily = settings.font.toFontFamily(),
-                            modifier = Modifier.padding(bottom = 16.dp)
-                        )
-                    } else {
-                        Text(
-                            text = paragraph,
-                            color = colors.text,
-                            fontSize = settings.fontSize.sp,
-                            fontFamily = settings.font.toFontFamily(),
-                            lineHeight = (settings.fontSize * 1.6).sp,
-                            textAlign = TextAlign.Justify,
-                            modifier = Modifier.padding(bottom = 16.dp)
-                        )
-                    }
+                    BookmarkableParagraph(
+                        paragraph = paragraph,
+                        index = index,
+                        isInLibrary = isInLibrary,
+                        isCurrentTTSParagraph = isCurrentParagraph,
+                        ttsManager = ttsManager,
+                        colors = colors,
+                        settings = settings,
+                        onAddBookmark = onAddBookmark
+                    )
                 }
 
                 item {
@@ -448,6 +471,89 @@ private fun ReaderContent(
                     }
                 )
             }
+        }
+    }
+}
+
+/**
+ * A paragraph of text that supports long-press to bookmark.
+ * Only shows the bookmark popup when the novel is in the user's library.
+ * This wraps both normal paragraphs and TTS-highlighted paragraphs.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun BookmarkableParagraph(
+    paragraph: String,
+    index: Int,
+    isInLibrary: Boolean,
+    isCurrentTTSParagraph: Boolean,
+    ttsManager: TTSManager,
+    colors: ThemeColors,
+    settings: ReaderSettings,
+    onAddBookmark: (Int, String) -> Unit
+) {
+    // Controls whether the bookmark dropdown menu is visible
+    var showBookmarkPopup by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                // No visual ripple on normal tap — we don't want the paragraph
+                // to flash every time the user taps to scroll
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = { /* Normal tap does nothing — scrolling handles itself */ },
+                onLongClick = {
+                    // Only allow bookmarking for novels saved in the library
+                    if (isInLibrary) {
+                        showBookmarkPopup = true
+                    }
+                }
+            )
+    ) {
+        // Render the paragraph text — either with TTS highlighting or plain
+        if (isCurrentTTSParagraph) {
+            HighlightedParagraph(
+                paragraph = paragraph,
+                currentSentenceIndex = ttsManager.currentSentenceInParagraph.collectAsState().value,
+                textColor = colors.text,
+                highlightColor = colors.text.copy(alpha = 0.15f),
+                fontSize = settings.fontSize,
+                fontFamily = settings.font.toFontFamily(),
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+        } else {
+            Text(
+                text = paragraph,
+                color = colors.text,
+                fontSize = settings.fontSize.sp,
+                fontFamily = settings.font.toFontFamily(),
+                lineHeight = (settings.fontSize * 1.6).sp,
+                textAlign = TextAlign.Justify,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+        }
+
+        // The bookmark popup that appears on long-press
+        DropdownMenu(
+            expanded = showBookmarkPopup,
+            onDismissRequest = { showBookmarkPopup = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("Bookmark this passage") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Bookmark,
+                        contentDescription = null,
+                        tint = Color(0xFFFFB300)  // Amber/gold to stand out
+                    )
+                },
+                onClick = {
+                    showBookmarkPopup = false
+                    onAddBookmark(index, paragraph)
+                }
+            )
         }
     }
 }
@@ -528,7 +634,7 @@ private fun TTSControlsPanel(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Settings panel (collapsible) - EXPANDED
+            // Settings panel (collapsible)
             AnimatedVisibility(visible = showSettings) {
                 Column(
                     modifier = Modifier

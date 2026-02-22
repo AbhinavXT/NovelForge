@@ -186,3 +186,44 @@ interface ReaderSettingsDao {
     @Query("UPDATE reader_settings SET theme = :theme WHERE id = 1")
     suspend fun updateTheme(theme: String)
 }
+
+@Dao
+interface BookmarkDao {
+
+    // Get all bookmarks for a novel, newest first — used for the bookmark tab on NovelDetailScreen
+    @Query("SELECT * FROM bookmarks WHERE novelId = :novelId ORDER BY createdAt DESC")
+    fun getBookmarksForNovel(novelId: String): Flow<List<BookmarkEntity>>
+
+    // Get bookmarks for a specific chapter — useful in the reader to show if current chapter has bookmarks
+    @Query("SELECT * FROM bookmarks WHERE chapterId = :chapterId ORDER BY paragraphIndex ASC")
+    fun getBookmarksForChapter(chapterId: String): Flow<List<BookmarkEntity>>
+
+    // Count bookmarks for a novel — handy for showing a badge count on the bookmark tab
+    @Query("SELECT COUNT(*) FROM bookmarks WHERE novelId = :novelId")
+    fun getBookmarkCount(novelId: String): Flow<Int>
+
+    // Check if a specific position is already bookmarked — prevents duplicate bookmarks
+    @Query("SELECT EXISTS(SELECT 1 FROM bookmarks WHERE chapterId = :chapterId AND paragraphIndex = :paragraphIndex)")
+    suspend fun isPositionBookmarked(chapterId: String, paragraphIndex: Int): Boolean
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBookmark(bookmark: BookmarkEntity): Long
+
+    // Update just the note field — for when users edit their annotation
+    @Query("UPDATE bookmarks SET note = :note WHERE id = :bookmarkId")
+    suspend fun updateNote(bookmarkId: Long, note: String?)
+
+    @Query("DELETE FROM bookmarks WHERE id = :bookmarkId")
+    suspend fun deleteBookmark(bookmarkId: Long)
+
+    // Clean up all bookmarks when a novel is removed from library
+    @Query("DELETE FROM bookmarks WHERE novelId = :novelId")
+    suspend fun deleteBookmarksForNovel(novelId: String)
+
+    // For backup/restore support (matches your existing pattern)
+    @Query("SELECT * FROM bookmarks")
+    suspend fun getAllBookmarksOnce(): List<BookmarkEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBookmarkReplace(bookmark: BookmarkEntity)
+}

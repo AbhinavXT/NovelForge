@@ -10,9 +10,10 @@ import androidx.room.RoomDatabase
         NovelEntity::class,
         ChapterEntity::class,
         ReadingProgressEntity::class,
-        ReaderSettingsEntity::class
+        ReaderSettingsEntity::class,
+        BookmarkEntity::class
     ],
-    version = 5,  // Bumped for paragraphIndex change
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -21,6 +22,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun chapterDao(): ChapterDao
     abstract fun readingProgressDao(): ReadingProgressDao
     abstract fun readerSettingsDao(): ReaderSettingsDao
+
+    abstract fun bookmarkDao(): BookmarkDao
 
     companion object {
         @Volatile

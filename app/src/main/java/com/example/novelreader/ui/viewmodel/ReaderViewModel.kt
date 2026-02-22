@@ -8,6 +8,7 @@ import com.example.novelreader.data.model.Chapter
 import com.example.novelreader.data.model.ReaderSettings
 import com.example.novelreader.data.model.ReaderTheme
 import com.example.novelreader.data.model.ReaderFont
+import com.example.novelreader.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -74,6 +75,17 @@ class ReaderViewModel(
     // Track if we should restore paragraph position
     private var shouldRestorePosition = true
 
+    // ============ BOOKMARK STATE ============
+
+    // Whether this novel is in the user's library (bookmarks only allowed for library novels)
+    private val _isInLibrary = MutableStateFlow(false)
+    val isInLibrary: StateFlow<Boolean> = _isInLibrary.asStateFlow()
+
+    // Feedback signal: emits true briefly when a bookmark is saved,
+    // so the UI can show a snackbar confirmation
+    private val _bookmarkSavedEvent = MutableStateFlow(false)
+    val bookmarkSavedEvent: StateFlow<Boolean> = _bookmarkSavedEvent.asStateFlow()
+
     init {
         loadChapterList()
     }
@@ -90,6 +102,9 @@ class ReaderViewModel(
                 } else {
                     fetchChapterListFromNetwork()
                 }
+
+                // Check if novel is in library (bookmarks only allowed for library novels)
+                _isInLibrary.value = repository.isInLibrary(novelId)
 
                 loadChapter()
             } catch (e: Exception) {
@@ -399,6 +414,56 @@ class ReaderViewModel(
         if (currentState is ReaderUiState.Success) {
             updateSettings(currentState.settings.copy(font = font))
         }
+    }
+
+    // ============ BOOKMARK METHODS ============
+
+    /**
+     * Called when the user long-presses a paragraph and taps "Bookmark".
+     * Creates a bookmark storing the paragraph position, a text snippet,
+     * and the chapter URL so we can navigate back to it later.
+     */
+    fun addBookmarkAtParagraph(paragraphIndex: Int, paragraphText: String) {
+        val currentState = _uiState.value
+        if (currentState !is ReaderUiState.Success) return
+
+        val chapter = currentState.chapter
+
+        viewModelScope.launch {
+            try {
+                // Truncate the paragraph text to create a readable preview snippet
+                val snippet = if (paragraphText.length > 150) {
+                    paragraphText.take(150).trim() + "…"
+                } else {
+                    paragraphText.trim()
+                }
+
+                repository.addBookmark(
+                    novelId = novelId,
+                    chapterId = currentChapterId,
+                    chapterUrl = currentChapterUrl,
+                    chapterNumber = chapter.chapterNumber,
+                    chapterTitle = chapter.chapterTitle,
+                    paragraphIndex = paragraphIndex,
+                    textSnippet = snippet
+                )
+
+                Logger.d("Bookmark added at Ch.${chapter.chapterNumber}, paragraph $paragraphIndex")
+
+                // Signal the UI to show a confirmation snackbar
+                _bookmarkSavedEvent.value = true
+            } catch (e: Exception) {
+                Logger.e("Failed to add bookmark", e)
+            }
+        }
+    }
+
+    /**
+     * Called by the UI after it has shown the snackbar,
+     * to reset the one-shot event so it doesn't fire again.
+     */
+    fun clearBookmarkSavedEvent() {
+        _bookmarkSavedEvent.value = false
     }
 
     private fun Chapter.toChapterNav(): ChapterNav {

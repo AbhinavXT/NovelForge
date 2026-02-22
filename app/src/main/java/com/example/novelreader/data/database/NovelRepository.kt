@@ -1,6 +1,7 @@
 package com.example.novelreader.data
 
 import com.example.novelreader.data.database.AppDatabase
+import com.example.novelreader.data.database.BookmarkEntity
 import com.example.novelreader.data.database.ChapterEntity
 import com.example.novelreader.data.database.NovelEntity
 import com.example.novelreader.data.database.ReadingProgressEntity
@@ -27,6 +28,7 @@ class NovelRepository(private val database: AppDatabase) {
     private val chapterDao = database.chapterDao()
     private val progressDao = database.readingProgressDao()
     private val settingsDao = database.readerSettingsDao()
+    private val bookmarkDao = database.bookmarkDao()
 
     // ============ NETWORK OPERATIONS ============
 
@@ -80,10 +82,12 @@ class NovelRepository(private val database: AppDatabase) {
         chapterDao.insertChapters(chapterEntities)
     }
 
+    // Updated to also clean up bookmarks when removing from library
     suspend fun removeFromLibrary(novelId: String) {
         novelDao.deleteNovelById(novelId)
         chapterDao.deleteChaptersForNovel(novelId)
         progressDao.deleteProgress(novelId)
+        bookmarkDao.deleteBookmarksForNovel(novelId)  // Clean up bookmarks too
     }
 
     suspend fun getNovelById(novelId: String): Novel? {
@@ -124,7 +128,6 @@ class NovelRepository(private val database: AppDatabase) {
         return progressDao.getProgressFlow(novelId)
     }
 
-    // Updated to use paragraphIndex instead of scrollPosition
     suspend fun saveReadingProgress(
         novelId: String,
         chapterId: String,
@@ -220,6 +223,95 @@ class NovelRepository(private val database: AppDatabase) {
 
     fun getNovelsWithProgress(): Flow<List<ReadingProgressEntity>> {
         return progressDao.getAllProgress()
+    }
+
+    // ============ BOOKMARK OPERATIONS ============
+
+    /**
+     * Get all bookmarks for a novel as a Flow.
+     * Used by NovelDetailViewModel to power the bookmarks tab.
+     */
+    fun getBookmarksForNovel(novelId: String): Flow<List<BookmarkEntity>> {
+        return bookmarkDao.getBookmarksForNovel(novelId)
+    }
+
+    /**
+     * Get bookmarks for a specific chapter.
+     * Used by ReaderViewModel to show bookmark indicators in the reader.
+     */
+    fun getBookmarksForChapter(chapterId: String): Flow<List<BookmarkEntity>> {
+        return bookmarkDao.getBookmarksForChapter(chapterId)
+    }
+
+    /**
+     * Get bookmark count for a novel (for badge display on the tab).
+     */
+    fun getBookmarkCount(novelId: String): Flow<Int> {
+        return bookmarkDao.getBookmarkCount(novelId)
+    }
+
+    /**
+     * Check if the current reading position already has a bookmark.
+     */
+    suspend fun isPositionBookmarked(chapterId: String, paragraphIndex: Int): Boolean {
+        return bookmarkDao.isPositionBookmarked(chapterId, paragraphIndex)
+    }
+
+    /**
+     * Create a new bookmark at the current reading position.
+     * Returns the auto-generated bookmark ID.
+     */
+    suspend fun addBookmark(
+        novelId: String,
+        chapterId: String,
+        chapterUrl: String,
+        chapterNumber: Int,
+        chapterTitle: String,
+        paragraphIndex: Int,
+        textSnippet: String,
+        note: String? = null
+    ): Long {
+        val bookmark = BookmarkEntity(
+            novelId = novelId,
+            chapterId = chapterId,
+            chapterUrl = chapterUrl,
+            chapterNumber = chapterNumber,
+            chapterTitle = chapterTitle,
+            paragraphIndex = paragraphIndex,
+            textSnippet = textSnippet,
+            note = note
+        )
+        return bookmarkDao.insertBookmark(bookmark)
+    }
+
+    /**
+     * Update just the note on an existing bookmark.
+     */
+    suspend fun updateBookmarkNote(bookmarkId: Long, note: String?) {
+        bookmarkDao.updateNote(bookmarkId, note)
+    }
+
+    /**
+     * Delete a single bookmark by its ID.
+     */
+    suspend fun deleteBookmark(bookmarkId: Long) {
+        bookmarkDao.deleteBookmark(bookmarkId)
+    }
+
+    /**
+     * Delete all bookmarks for a novel (called when removing from library).
+     */
+    suspend fun deleteBookmarksForNovel(novelId: String) {
+        bookmarkDao.deleteBookmarksForNovel(novelId)
+    }
+
+    // Backup/restore support for bookmarks
+    suspend fun getAllBookmarksForBackup(): List<BookmarkEntity> {
+        return bookmarkDao.getAllBookmarksOnce()
+    }
+
+    suspend fun insertBookmarkForRestore(bookmark: BookmarkEntity) {
+        bookmarkDao.insertBookmarkReplace(bookmark)
     }
 
     // ============ READER SETTINGS OPERATIONS ============
@@ -349,53 +441,32 @@ class NovelRepository(private val database: AppDatabase) {
         return result
     }
 
-// ============ Backup/Restore Methods ============
+    // ============ Backup/Restore Methods ============
 
-    /**
-     * Get all novels for backup (not as Flow)
-     */
     suspend fun getAllNovelsForBackup(): List<NovelEntity> {
         return novelDao.getAllNovelsOnce()
     }
 
-    /**
-     * Get all chapters for backup
-     */
     suspend fun getAllChaptersForBackup(): List<ChapterEntity> {
         return novelDao.getAllChaptersOnce()
     }
 
-    /**
-     * Get all reading progress for backup
-     */
     suspend fun getAllProgressForBackup(): List<ReadingProgressEntity> {
         return novelDao.getAllProgressOnce()
     }
 
-    /**
-     * Insert novel during restore (replace if exists)
-     */
     suspend fun insertNovelForRestore(novel: NovelEntity) {
         novelDao.insertNovelReplace(novel)
     }
 
-    /**
-     * Insert chapter during restore (replace if exists)
-     */
     suspend fun insertChapterForRestore(chapter: ChapterEntity) {
         novelDao.insertChapterReplace(chapter)
     }
 
-    /**
-     * Insert progress during restore (replace if exists)
-     */
     suspend fun insertProgressForRestore(progress: ReadingProgressEntity) {
         novelDao.insertProgressReplace(progress)
     }
 
-    /**
-     * Restore reader settings
-     */
     suspend fun restoreReaderSettings(fontSize: Int, theme: String, font: String) {
         val entity = ReaderSettingsEntity(
             id = 1,
@@ -406,5 +477,3 @@ class NovelRepository(private val database: AppDatabase) {
         novelDao.insertSettingsReplace(entity)
     }
 }
-
-

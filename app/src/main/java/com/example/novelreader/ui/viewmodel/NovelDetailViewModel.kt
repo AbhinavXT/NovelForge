@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.novelreader.data.NovelRepository
+import com.example.novelreader.data.database.BookmarkEntity
 import com.example.novelreader.data.model.Chapter
 import com.example.novelreader.data.model.Novel
+import com.example.novelreader.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,8 +40,19 @@ class NovelDetailViewModel(
     // Check if this is a local novel (imported EPUB)
     private val isLocalNovel: Boolean = novelId.startsWith("local_")
 
+    // ============ BOOKMARK STATE ============
+
+    // All bookmarks for this novel — observed as a Flow so the UI auto-updates
+    private val _bookmarks = MutableStateFlow<List<BookmarkEntity>>(emptyList())
+    val bookmarks: StateFlow<List<BookmarkEntity>> = _bookmarks.asStateFlow()
+
+    // Bookmark count for the tab badge
+    private val _bookmarkCount = MutableStateFlow(0)
+    val bookmarkCount: StateFlow<Int> = _bookmarkCount.asStateFlow()
+
     init {
         loadNovel()
+        loadBookmarks()  // Start observing bookmarks immediately
     }
 
     private fun loadNovel() {
@@ -196,6 +209,51 @@ class NovelDetailViewModel(
             return currentState.novel.chapters.firstOrNull()
         }
         return null
+    }
+
+    // ============ BOOKMARK METHODS ============
+
+    /**
+     * Observe bookmarks for this novel as a Flow.
+     * This means the bookmark tab updates automatically when bookmarks
+     * are added or removed (even from the reader screen).
+     */
+    private fun loadBookmarks() {
+        viewModelScope.launch {
+            repository.getBookmarksForNovel(novelId).collect { bookmarkList ->
+                _bookmarks.value = bookmarkList
+                _bookmarkCount.value = bookmarkList.size
+            }
+        }
+    }
+
+    /**
+     * Delete a single bookmark. The Flow collection in loadBookmarks()
+     * will automatically update the UI.
+     */
+    fun deleteBookmark(bookmarkId: Long) {
+        viewModelScope.launch {
+            try {
+                repository.deleteBookmark(bookmarkId)
+                Logger.d("Bookmark $bookmarkId deleted")
+            } catch (e: Exception) {
+                Logger.e("Failed to delete bookmark", e)
+            }
+        }
+    }
+
+    /**
+     * Update the note on a bookmark.
+     */
+    fun updateBookmarkNote(bookmarkId: Long, note: String?) {
+        viewModelScope.launch {
+            try {
+                repository.updateBookmarkNote(bookmarkId, note)
+                Logger.d("Bookmark $bookmarkId note updated")
+            } catch (e: Exception) {
+                Logger.e("Failed to update bookmark note", e)
+            }
+        }
     }
 
     companion object {

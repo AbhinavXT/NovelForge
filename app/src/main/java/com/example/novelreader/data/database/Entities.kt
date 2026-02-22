@@ -54,3 +54,24 @@ data class ReaderSettingsEntity(
     val lineSpacing: Float = 1.6f,
     val font: String = "SANS_SERIF"
 )
+
+// Stores bookmarks within chapters.
+// Each bookmark captures a position in a chapter along with
+// a text snippet (for preview) and an optional user note.
+@Entity(tableName = "bookmarks")
+data class BookmarkEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+
+    val novelId: String,
+    val chapterId: String,
+    val chapterUrl: String,           // NEW — stores the URL so we can navigate back
+    val chapterNumber: Int,
+    val chapterTitle: String,
+
+    val paragraphIndex: Int,
+    val textSnippet: String,
+    val note: String? = null,
+
+    val createdAt: Long = System.currentTimeMillis()
+)
