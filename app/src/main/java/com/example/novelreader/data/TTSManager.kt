@@ -3,14 +3,17 @@ package com.example.novelreader.data
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
+import com.example.novelreader.data.tts.GoogleTTSEngine
+import com.example.novelreader.data.tts.SherpaOnnxEngine
+import com.example.novelreader.data.tts.TTSEngine
+import com.example.novelreader.data.tts.TTSModelManager
+import com.example.novelreader.data.tts.VoiceInfo
 import com.example.novelreader.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.util.Locale
+import java.io.File
 
 enum class TTSState {
     IDLE,
@@ -26,7 +29,8 @@ data class TTSSettings(
     val voiceName: String? = null,
     val sentencePauseMs: Long = 0L,
     val paragraphPauseMs: Long = 0L,
-    val volume: Float = 1.0f
+    val volume: Float = 1.0f,
+    val engineId: String = GoogleTTSEngine.ENGINE_ID  // NEW: persisted engine choice
 )
 
 private data class TextSegment(
@@ -36,15 +40,35 @@ private data class TextSegment(
     val isParagraphEnd: Boolean = false
 )
 
-class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
-
-    private var tts: TextToSpeech? = null
-    private var isInitialized = false
-    private var requestedEngine: String? = null
+/**
+ * Orchestrates TTS playback: sentence splitting, sequencing, pauses,
+ * paragraph tracking, auto-continue, and foreground service.
+ *
+ * Delegates actual speech synthesis to the active [TTSEngine].
+ *
+ * ## Engine switching:
+ * Call [switchEngine] to change between Google TTS and Sherpa-ONNX.
+ * The engine choice is persisted in SharedPreferences.
+ */
+class TTSManager(private val context: Context) {
 
     private val prefs = context.getSharedPreferences("tts_prefs", Context.MODE_PRIVATE)
     private val handler = Handler(Looper.getMainLooper())
     private var pauseRunnable: Runnable? = null
+
+    // ── Engines ──────────────────────────────────────────────────
+
+    private val googleEngine = GoogleTTSEngine(context)
+    private val sherpaEngine: SherpaOnnxEngine by lazy {
+        val modelsDir = File(context.filesDir, "tts_models")
+        modelsDir.mkdirs()
+        SherpaOnnxEngine(modelsDir)
+    }
+    val modelManager: TTSModelManager by lazy { TTSModelManager(context) }
+
+    private var activeEngine: TTSEngine = googleEngine
+
+    // ── Observable state ─────────────────────────────────────────
 
     private val _state = MutableStateFlow(TTSState.IDLE)
     val state: StateFlow<TTSState> = _state.asStateFlow()
@@ -58,11 +82,11 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     private val _currentSentenceInParagraph = MutableStateFlow(0)
     val currentSentenceInParagraph: StateFlow<Int> = _currentSentenceInParagraph.asStateFlow()
 
-    private val _availableVoices = MutableStateFlow<List<Voice>>(emptyList())
-    val availableVoices: StateFlow<List<Voice>> = _availableVoices.asStateFlow()
+    private val _availableVoices = MutableStateFlow<List<VoiceInfo>>(emptyList())
+    val availableVoices: StateFlow<List<VoiceInfo>> = _availableVoices.asStateFlow()
 
-    private val _currentVoice = MutableStateFlow<Voice?>(null)
-    val currentVoice: StateFlow<Voice?> = _currentVoice.asStateFlow()
+    private val _currentVoice = MutableStateFlow<VoiceInfo?>(null)
+    val currentVoice: StateFlow<VoiceInfo?> = _currentVoice.asStateFlow()
 
     private val _settings = MutableStateFlow(TTSSettings())
     val settings: StateFlow<TTSSettings> = _settings.asStateFlow()
@@ -70,45 +94,171 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     private val _shouldAutoContinue = MutableStateFlow(false)
     val shouldAutoContinue: StateFlow<Boolean> = _shouldAutoContinue.asStateFlow()
 
+    private val _activeEngineId = MutableStateFlow(GoogleTTSEngine.ENGINE_ID)
+    val activeEngineId: StateFlow<String> = _activeEngineId.asStateFlow()
+
+    private val _engineReady = MutableStateFlow(false)
+    val engineReady: StateFlow<Boolean> = _engineReady.asStateFlow()
+
+    // ── Sentence tracking ────────────────────────────────────────
+
     private var segments: List<TextSegment> = emptyList()
     private var currentIndex = 0
     private var onChapterComplete: (() -> Unit)? = null
 
+    // ── Backward compatibility ───────────────────────────────────
+    // These expose the Android Voice objects for the existing voice picker UI.
+    // They only work when Google TTS is the active engine.
+
+    private val _androidVoices = MutableStateFlow<List<Voice>>(emptyList())
+
+    /** Android Voice list — only populated when Google TTS is active. */
+    @Deprecated("Use availableVoices instead for engine-agnostic voice list")
+    val androidVoicesLegacy: StateFlow<List<Voice>> = _androidVoices.asStateFlow()
+
+    // ── Init ─────────────────────────────────────────────────────
+
     init {
-        requestedEngine = getDefaultTtsEngine()
-        Logger.d("TTSManager", "Default TTS engine from settings: $requestedEngine")
-
-        tts = if (requestedEngine != null) {
-            TextToSpeech(context, this, requestedEngine)
-        } else {
-            TextToSpeech(context, this)
-        }
-
         loadSavedSettings()
-    }
 
-    private fun getDefaultTtsEngine(): String? {
-        return try {
-            val resolver = context.contentResolver
-            android.provider.Settings.Secure.getString(
-                resolver,
-                "tts_default_synth"
+        val savedEngineId = _settings.value.engineId
+
+        // Always initialize Google as default/fallback
+        googleEngine.initialize(
+            onReady = {
+                Logger.d("TTSManager", "Google TTS ready")
+                if (savedEngineId == GoogleTTSEngine.ENGINE_ID) {
+                    activateEngine(googleEngine)
+                }
+            },
+            onError = { error ->
+                Logger.e("TTSManager", "Google TTS init failed: $error")
+                if (savedEngineId == GoogleTTSEngine.ENGINE_ID) {
+                    _state.value = TTSState.ERROR
+                }
+            }
+        )
+
+        // If user had Sherpa selected, try to initialize it too
+        if (savedEngineId == SherpaOnnxEngine.ENGINE_ID) {
+            sherpaEngine.initialize(
+                onReady = {
+                    Logger.d("TTSManager", "Sherpa-ONNX ready")
+                    activateEngine(sherpaEngine)
+                },
+                onError = { error ->
+                    Logger.w("TTSManager", "Sherpa-ONNX init failed: $error, falling back to Google")
+                    // Fall back to Google
+                    activateEngine(googleEngine)
+                }
             )
-        } catch (e: Exception) {
-            Logger.e("TTSManager", "Error getting default TTS engine", e)
-            null
         }
     }
 
-    private fun isNonStandardEngine(): Boolean {
-        val engine = tts?.defaultEngine ?: return false
-        return engine.contains("sherpa", ignoreCase = true) ||
-                engine.contains("piper", ignoreCase = true) ||
-                engine.contains("k2fsa", ignoreCase = true) ||
-                engine.contains("onnx", ignoreCase = true) ||
-                engine.contains("espeak", ignoreCase = true) ||
-                engine.contains("rhasspy", ignoreCase = true)
+    // ── Engine switching ─────────────────────────────────────────
+
+    /**
+     * Switch to a different TTS engine.
+     * Stops any current playback first.
+     */
+    fun switchEngine(engineId: String, onReady: () -> Unit = {}, onError: (String) -> Unit = {}) {
+        if (engineId == _activeEngineId.value && activeEngine.isReady) {
+            onReady()
+            return
+        }
+
+        stop()
+
+        val engine = when (engineId) {
+            GoogleTTSEngine.ENGINE_ID -> googleEngine
+            SherpaOnnxEngine.ENGINE_ID -> sherpaEngine
+            else -> {
+                onError("Unknown engine: $engineId")
+                return
+            }
+        }
+
+        if (engine.isReady) {
+            activateEngine(engine)
+            _settings.value = _settings.value.copy(engineId = engineId)
+            saveSettings()
+            onReady()
+        } else {
+            _state.value = TTSState.LOADING
+            engine.initialize(
+                onReady = {
+                    activateEngine(engine)
+                    _settings.value = _settings.value.copy(engineId = engineId)
+                    saveSettings()
+                    onReady()
+                },
+                onError = { error ->
+                    Logger.e("TTSManager", "Engine $engineId init failed: $error")
+                    _state.value = TTSState.ERROR
+                    onError(error)
+                }
+            )
+        }
     }
+
+    private fun activateEngine(engine: TTSEngine) {
+        activeEngine = engine
+        _activeEngineId.value = engine.engineId
+        _engineReady.value = true
+
+        // Refresh voice list
+        refreshVoiceList()
+        Logger.d("TTSManager", "Active engine: ${engine.displayName}")
+    }
+
+    fun refreshVoiceList() {
+        // Aggregate voices from ALL engines so the picker shows everything
+        val allVoices = mutableListOf<VoiceInfo>()
+
+        // Google voices (always available once initialized)
+        if (googleEngine.isReady) {
+            allVoices.addAll(googleEngine.getAvailableVoices())
+        }
+
+        // Sherpa voices — scan downloaded models even if engine isn't active
+        // Accessing sherpaEngine (lazy) just creates the object; it doesn't
+        // need initialize() to list files on disk.
+        allVoices.addAll(sherpaEngine.getAvailableVoices())
+
+        _availableVoices.value = allVoices
+
+        // Update current voice
+        val currentId = activeEngine.getCurrentVoiceId()
+        _currentVoice.value = allVoices.find { it.id == currentId }
+
+        // Legacy Android Voice support
+        if (activeEngine is GoogleTTSEngine) {
+            _androidVoices.value = (activeEngine as GoogleTTSEngine).getAndroidVoices()
+        } else {
+            _androidVoices.value = emptyList()
+        }
+    }
+
+    fun getAvailableEngines(): List<EngineOption> {
+        val hasSherpaModels = modelManager.getDownloadedModelIds().isNotEmpty()
+        return listOf(
+            EngineOption(
+                id = GoogleTTSEngine.ENGINE_ID,
+                name = "System TTS (Google)",
+                description = "Built-in Android voices",
+                isAvailable = true
+            ),
+            EngineOption(
+                id = SherpaOnnxEngine.ENGINE_ID,
+                name = "On-Device Neural TTS",
+                description = if (hasSherpaModels) "Piper, KittenTTS, Kokoro models"
+                else "Download a model to enable",
+                isAvailable = hasSherpaModels
+            )
+        )
+    }
+
+    // ── Settings persistence ─────────────────────────────────────
 
     private fun loadSavedSettings() {
         val speed = prefs.getFloat("tts_speed", 1.0f)
@@ -117,6 +267,8 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         val sentencePause = prefs.getLong("tts_sentence_pause", 0L)
         val paragraphPause = prefs.getLong("tts_paragraph_pause", 0L)
         val volume = prefs.getFloat("tts_volume", 1.0f)
+        val engineId = prefs.getString("tts_engine", GoogleTTSEngine.ENGINE_ID)
+            ?: GoogleTTSEngine.ENGINE_ID
 
         _settings.value = TTSSettings(
             speed = speed,
@@ -124,7 +276,8 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
             voiceName = voiceName,
             sentencePauseMs = sentencePause,
             paragraphPauseMs = paragraphPause,
-            volume = volume
+            volume = volume,
+            engineId = engineId
         )
     }
 
@@ -136,151 +289,11 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
             .putLong("tts_sentence_pause", _settings.value.sentencePauseMs)
             .putLong("tts_paragraph_pause", _settings.value.paragraphPauseMs)
             .putFloat("tts_volume", _settings.value.volume)
+            .putString("tts_engine", _settings.value.engineId)
             .apply()
     }
 
-    override fun onInit(status: Int) {
-        Logger.d("TTSManager", "onInit called with status: $status")
-        Logger.d("TTSManager", "Requested engine: $requestedEngine")
-        Logger.d("TTSManager", "Actual engine: ${tts?.defaultEngine}")
-
-        if (status == TextToSpeech.SUCCESS) {
-            val actualEngine = tts?.defaultEngine
-
-            if (requestedEngine != null && actualEngine != requestedEngine) {
-                Logger.w("TTSManager", "Engine mismatch! Requested: $requestedEngine, Got: $actualEngine")
-            }
-
-            if (isNonStandardEngine()) {
-                Logger.d("TTSManager", "Non-standard TTS engine detected, skipping setLanguage")
-                isInitialized = true
-                loadAvailableVoices()
-                setupUtteranceListener()
-                restoreSavedVoice()
-                Logger.d("TTSManager", "TTS initialized successfully with ${tts?.defaultEngine}")
-            } else {
-                val result = tts?.setLanguage(Locale.US)
-
-                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    Logger.e("TTSManager", "Language not supported")
-                    _state.value = TTSState.ERROR
-                } else {
-                    isInitialized = true
-                    loadAvailableVoices()
-                    setupUtteranceListener()
-                    restoreSavedVoice()
-                    Logger.d("TTSManager", "TTS initialized successfully with ${tts?.defaultEngine}")
-                }
-            }
-
-            Logger.d("TTSManager", "TTS Engine: ${tts?.defaultEngine}")
-            Logger.d("TTSManager", "Current Voice: ${tts?.voice?.name}")
-            Logger.d("TTSManager", "Available voices count: ${tts?.voices?.size ?: 0}")
-
-        } else {
-            Logger.e("TTSManager", "TTS initialization failed with status: $status")
-            _state.value = TTSState.ERROR
-        }
-    }
-
-    private fun loadAvailableVoices() {
-        tts?.voices?.let { voices ->
-            val filteredVoices = if (isNonStandardEngine()) {
-                voices.sortedBy { it.name }
-            } else {
-                voices.filter {
-                    it.locale.language == "en"
-                }.sortedWith(
-                    compareBy(
-                        { it.isNetworkConnectionRequired },
-                        { it.name }
-                    )
-                )
-            }
-
-            _availableVoices.value = filteredVoices.toList()
-            Logger.d("TTSManager", "Loaded ${filteredVoices.size} voices")
-
-            filteredVoices.take(10).forEach { voice ->
-                Logger.d("TTSManager", "Voice: ${voice.name}, Locale: ${voice.locale}, Network: ${voice.isNetworkConnectionRequired}")
-            }
-        } ?: run {
-            Logger.w("TTSManager", "No voices available from TTS engine")
-        }
-    }
-
-    private fun restoreSavedVoice() {
-        val savedVoiceName = _settings.value.voiceName
-        if (savedVoiceName != null) {
-            val voice = _availableVoices.value.find { it.name == savedVoiceName }
-            if (voice != null) {
-                tts?.voice = voice
-                _currentVoice.value = voice
-                Logger.d("TTSManager", "Restored voice: ${voice.name}")
-            }
-        } else {
-            _currentVoice.value = tts?.voice
-        }
-    }
-
-    private fun setupUtteranceListener() {
-        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {
-                Logger.d("TTSManager", "Utterance started: $utteranceId")
-                _state.value = TTSState.PLAYING
-            }
-
-            override fun onDone(utteranceId: String?) {
-                Logger.d("TTSManager", "Utterance done: $utteranceId")
-
-                val currentSegment = segments.getOrNull(currentIndex)
-                currentIndex++
-                _currentSentenceIndex.value = currentIndex
-
-                if (currentIndex < segments.size) {
-                    // Update paragraph tracking
-                    val nextSegment = segments[currentIndex]
-                    _currentParagraphIndex.value = nextSegment.paragraphIndex
-                    _currentSentenceInParagraph.value = nextSegment.sentenceIndexInParagraph
-
-                    val pauseMs = if (currentSegment?.isParagraphEnd == true) {
-                        _settings.value.paragraphPauseMs
-                    } else {
-                        _settings.value.sentencePauseMs
-                    }
-
-                    if (pauseMs > 0) {
-                        pauseRunnable = Runnable {
-                            if (_state.value == TTSState.PLAYING) {
-                                speakCurrentSentence()
-                            }
-                        }
-                        handler.postDelayed(pauseRunnable!!, pauseMs)
-                    } else {
-                        speakCurrentSentence()
-                    }
-                } else {
-                    _state.value = TTSState.IDLE
-                    _shouldAutoContinue.value = true
-
-                    // Don't stop service here - will restart when next chapter loads
-                    // Service stops when user manually stops or leaves reader
-
-                    onChapterComplete?.invoke()
-                }
-            }
-
-            override fun onError(utteranceId: String?) {
-                Logger.e("TTSManager", "TTS error on utterance: $utteranceId")
-                _state.value = TTSState.ERROR
-            }
-
-            override fun onError(utteranceId: String?, errorCode: Int) {
-                Logger.e("TTSManager", "TTS error on utterance: $utteranceId, errorCode: $errorCode")
-                _state.value = TTSState.ERROR
-            }
-        })
-    }
+    // ── Text parsing (unchanged from original) ───────────────────
 
     private fun parseTextIntoSegments(text: String): List<TextSegment> {
         val result = mutableListOf<TextSegment>()
@@ -299,21 +312,25 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
                 val isLastSentenceInParagraph = sIndex == sentences.size - 1
                 val isLastParagraph = pIndex == paragraphs.size - 1
 
-                result.add(TextSegment(
-                    text = sentence,
-                    paragraphIndex = pIndex,
-                    sentenceIndexInParagraph = sIndex,
-                    isParagraphEnd = isLastSentenceInParagraph && !isLastParagraph
-                ))
+                result.add(
+                    TextSegment(
+                        text = sentence,
+                        paragraphIndex = pIndex,
+                        sentenceIndexInParagraph = sIndex,
+                        isParagraphEnd = isLastSentenceInParagraph && !isLastParagraph
+                    )
+                )
             }
         }
 
         return result
     }
 
+    // ── Playback control ─────────────────────────────────────────
+
     fun speakText(text: String, startFromParagraph: Int = 0, onComplete: (() -> Unit)? = null) {
-        if (!isInitialized) {
-            Logger.e("TTSManager", "TTS not initialized")
+        if (!activeEngine.isReady) {
+            Logger.e("TTSManager", "Active engine not ready")
             return
         }
 
@@ -327,19 +344,17 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
             return
         }
 
-        // Find the starting segment index for the given paragraph
         val startIndex = if (startFromParagraph > 0) {
             segments.indexOfFirst { it.paragraphIndex >= startFromParagraph }.takeIf { it >= 0 } ?: 0
         } else {
             0
         }
 
-        Logger.d("TTSManager", "Speaking ${segments.size} segments, starting from paragraph $startFromParagraph (segment $startIndex)")
+        Logger.d("TTSManager", "Speaking ${segments.size} segments from paragraph $startFromParagraph (index $startIndex)")
 
         currentIndex = startIndex
         _currentSentenceIndex.value = currentIndex
 
-        // Update paragraph tracking
         val startSegment = segments.getOrNull(currentIndex)
         _currentParagraphIndex.value = startSegment?.paragraphIndex ?: 0
         _currentSentenceInParagraph.value = startSegment?.sentenceIndexInParagraph ?: 0
@@ -347,7 +362,6 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         onChapterComplete = onComplete
         _state.value = TTSState.LOADING
 
-        // Start foreground service to keep callbacks working in background
         TTSForegroundService.start(context, "Novel Reader")
 
         speakCurrentSentence()
@@ -370,20 +384,82 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         val segment = segments[currentIndex]
         Logger.d("TTSManager", "Speaking sentence $currentIndex: ${segment.text.take(50)}...")
 
-        tts?.setSpeechRate(_settings.value.speed)
-        tts?.setPitch(_settings.value.pitch)
+        val s = _settings.value
 
-        val params = android.os.Bundle()
-        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, _settings.value.volume)
-
-        val result = tts?.speak(
-            segment.text,
-            TextToSpeech.QUEUE_FLUSH,
-            params,
-            "sentence_$currentIndex"
+        activeEngine.speak(
+            text = segment.text,
+            utteranceId = "sentence_$currentIndex",
+            speed = s.speed,
+            pitch = s.pitch,
+            volume = s.volume,
+            onStart = {
+                _state.value = TTSState.PLAYING
+                // Pre-generate the next sentence while this one plays
+                pregenerateNextSentence()
+            },
+            onDone = {
+                onUtteranceDone()
+            },
+            onError = { error ->
+                Logger.e("TTSManager", "Utterance error: $error")
+                _state.value = TTSState.ERROR
+            }
         )
+    }
 
-        Logger.d("TTSManager", "speak() returned: $result (SUCCESS=0, ERROR=-1)")
+    /**
+     * Pre-generate the next sentence's audio while current one plays.
+     * Only works with SherpaOnnxEngine (on-device TTS). Google TTS handles
+     * its own buffering internally.
+     */
+    private fun pregenerateNextSentence() {
+        val nextIndex = currentIndex + 1
+        if (nextIndex >= segments.size) return
+
+        val sherpaEngine = activeEngine as? SherpaOnnxEngine ?: return
+        val nextText = segments[nextIndex].text
+        val s = _settings.value
+
+        sherpaEngine.pregenerateAsync(
+            text = nextText,
+            speed = s.speed
+        )
+    }
+
+    private fun onUtteranceDone() {
+        val currentSegment = segments.getOrNull(currentIndex)
+        currentIndex++
+        _currentSentenceIndex.value = currentIndex
+
+        if (currentIndex < segments.size) {
+            // Update paragraph tracking
+            val nextSegment = segments[currentIndex]
+            _currentParagraphIndex.value = nextSegment.paragraphIndex
+            _currentSentenceInParagraph.value = nextSegment.sentenceIndexInParagraph
+
+            // Apply pause between sentences/paragraphs
+            val pauseMs = if (currentSegment?.isParagraphEnd == true) {
+                _settings.value.paragraphPauseMs
+            } else {
+                _settings.value.sentencePauseMs
+            }
+
+            if (pauseMs > 0) {
+                pauseRunnable = Runnable {
+                    if (_state.value == TTSState.PLAYING) {
+                        speakCurrentSentence()
+                    }
+                }
+                handler.postDelayed(pauseRunnable!!, pauseMs)
+            } else {
+                speakCurrentSentence()
+            }
+        } else {
+            // Chapter complete
+            _state.value = TTSState.IDLE
+            _shouldAutoContinue.value = true
+            onChapterComplete?.invoke()
+        }
     }
 
     private fun cancelPendingPause() {
@@ -394,7 +470,7 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     fun pause() {
         if (_state.value == TTSState.PLAYING) {
             cancelPendingPause()
-            tts?.stop()
+            activeEngine.stop()
             _state.value = TTSState.PAUSED
         }
     }
@@ -407,7 +483,7 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
 
     fun stop() {
         cancelPendingPause()
-        tts?.stop()
+        activeEngine.stop()
         currentIndex = 0
         _currentSentenceIndex.value = 0
         _currentParagraphIndex.value = 0
@@ -416,14 +492,13 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         _state.value = TTSState.IDLE
         _shouldAutoContinue.value = false
 
-        // Stop foreground service
         TTSForegroundService.stop(context)
     }
 
     fun skipToNext() {
         if (currentIndex < segments.size - 1) {
             cancelPendingPause()
-            tts?.stop()
+            activeEngine.stop()
             currentIndex++
             _currentSentenceIndex.value = currentIndex
 
@@ -438,7 +513,7 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
     fun skipToPrevious() {
         if (currentIndex > 0) {
             cancelPendingPause()
-            tts?.stop()
+            activeEngine.stop()
             currentIndex--
             _currentSentenceIndex.value = currentIndex
 
@@ -450,12 +525,14 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         }
     }
 
+    // ── Settings setters ─────────────────────────────────────────
+
     fun setSpeed(speed: Float) {
         _settings.value = _settings.value.copy(speed = speed.coerceIn(0.5f, 2.0f))
         saveSettings()
 
         if (_state.value == TTSState.PLAYING) {
-            tts?.stop()
+            activeEngine.stop()
             speakCurrentSentence()
         }
     }
@@ -465,7 +542,7 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         saveSettings()
 
         if (_state.value == TTSState.PLAYING) {
-            tts?.stop()
+            activeEngine.stop()
             speakCurrentSentence()
         }
     }
@@ -485,67 +562,106 @@ class TTSManager(private val context: Context) : TextToSpeech.OnInitListener {
         saveSettings()
 
         if (_state.value == TTSState.PLAYING) {
-            tts?.stop()
+            activeEngine.stop()
             speakCurrentSentence()
         }
     }
 
-    fun setVoice(voice: Voice) {
-        tts?.voice = voice
-        _currentVoice.value = voice
-        _settings.value = _settings.value.copy(voiceName = voice.name)
+    // ── Voice selection ──────────────────────────────────────────
+
+    fun setVoice(voiceInfo: VoiceInfo) {
+        // If the voice belongs to a different engine, switch first
+        if (voiceInfo.engineId.isNotBlank() && voiceInfo.engineId != _activeEngineId.value) {
+            Logger.d("TTSManager", "Voice belongs to ${voiceInfo.engineId}, switching engine…")
+            switchEngine(
+                engineId = voiceInfo.engineId,
+                onReady = {
+                    applyVoice(voiceInfo)
+                },
+                onError = { error ->
+                    Logger.e("TTSManager", "Engine switch failed: $error")
+                }
+            )
+        } else {
+            applyVoice(voiceInfo)
+        }
+    }
+
+    private fun applyVoice(voiceInfo: VoiceInfo) {
+        activeEngine.setVoice(voiceInfo.id)
+        _currentVoice.value = voiceInfo
+        _settings.value = _settings.value.copy(voiceName = voiceInfo.id)
         saveSettings()
-        Logger.d("TTSManager", "Voice set to: ${voice.name}")
+        Logger.d("TTSManager", "Voice set to: ${voiceInfo.displayName}")
 
         if (_state.value == TTSState.PLAYING) {
-            tts?.stop()
+            activeEngine.stop()
             speakCurrentSentence()
         }
     }
 
-    fun getVoiceDisplayName(voice: Voice): String {
-        val locale = voice.locale
-        val country = locale.displayCountry.ifBlank { locale.country }
-        val quality = when {
-            voice.name.contains("wavenet", ignoreCase = true) -> "WaveNet"
-            voice.name.contains("neural", ignoreCase = true) -> "Neural"
-            voice.name.contains("enhanced", ignoreCase = true) -> "Enhanced"
-            voice.name.contains("local", ignoreCase = true) -> "Local"
-            voice.name.contains("piper", ignoreCase = true) -> "Piper"
-            voice.name.contains("lessac", ignoreCase = true) -> "Lessac"
-            voice.name.contains("amy", ignoreCase = true) -> "Amy"
-            else -> if (voice.isNetworkConnectionRequired) "Online" else "Offline"
-        }
+    /**
+     * Legacy voice setter for backward compatibility with existing UI
+     * that passes Android [Voice] objects directly.
+     */
+    fun setVoice(voice: Voice) {
+        if (activeEngine is GoogleTTSEngine) {
+            (activeEngine as GoogleTTSEngine).setAndroidVoice(voice)
+            _settings.value = _settings.value.copy(voiceName = voice.name)
+            saveSettings()
 
-        val gender = when {
-            voice.name.contains("female", ignoreCase = true) -> "♀"
-            voice.name.contains("male", ignoreCase = true) -> "♂"
-            voice.name.contains("-f-", ignoreCase = true) -> "♀"
-            voice.name.contains("-m-", ignoreCase = true) -> "♂"
-            else -> ""
-        }
+            val displayName = (activeEngine as GoogleTTSEngine).getVoiceDisplayName(voice)
+            _currentVoice.value = VoiceInfo(
+                id = voice.name,
+                displayName = displayName,
+                isDownloaded = true,
+                engineId = GoogleTTSEngine.ENGINE_ID
+            )
 
-        return if (country.isNotBlank()) {
-            "$country $gender ($quality)"
-        } else {
-            "${voice.name.take(20)} ($quality)"
+            if (_state.value == TTSState.PLAYING) {
+                activeEngine.stop()
+                speakCurrentSentence()
+            }
         }
     }
+
+    /**
+     * Legacy helper for existing voice picker that uses [Voice] display names.
+     */
+    fun getVoiceDisplayName(voice: Voice): String {
+        return if (activeEngine is GoogleTTSEngine) {
+            (activeEngine as GoogleTTSEngine).getVoiceDisplayName(voice)
+        } else {
+            voice.name
+        }
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────
 
     fun shutdown() {
         cancelPendingPause()
-        tts?.stop()
-        tts?.shutdown()
-        tts = null
-        isInitialized = false
-
-        // Stop foreground service
+        googleEngine.shutdown()
+        if (sherpaEngine.isReady) {
+            sherpaEngine.shutdown()
+        }
         TTSForegroundService.stop(context)
     }
+
+    // ── Query helpers ────────────────────────────────────────────
 
     fun isPlaying(): Boolean = _state.value == TTSState.PLAYING
 
     fun getSentenceCount(): Int = segments.size
 
-    fun getCurrentEngineName(): String? = tts?.defaultEngine
+    fun getCurrentEngineName(): String = activeEngine.displayName
 }
+
+/**
+ * Engine option shown in the engine picker UI.
+ */
+data class EngineOption(
+    val id: String,
+    val name: String,
+    val description: String,
+    val isAvailable: Boolean
+)

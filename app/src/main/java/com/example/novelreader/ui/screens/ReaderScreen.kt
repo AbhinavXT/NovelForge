@@ -97,7 +97,9 @@ import com.example.novelreader.data.model.ReaderFont
 import com.example.novelreader.ui.viewmodel.ReaderChapterData
 import com.example.novelreader.ui.viewmodel.ReaderUiState
 import com.example.novelreader.ui.viewmodel.ReaderViewModel
-import android.speech.tts.Voice
+import com.example.novelreader.data.tts.VoiceInfo
+import com.example.novelreader.ui.components.ModelDownloadDialog
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import kotlinx.coroutines.delay
@@ -125,6 +127,7 @@ fun ReaderScreen(
     val ttsSettings by ttsManager.settings.collectAsState()
     val shouldAutoContinue by ttsManager.shouldAutoContinue.collectAsState()
     var showTTSControls by remember { mutableStateOf(false) }
+    var showModelDownloadDialog by remember { mutableStateOf(false) }
 
     // Bookmark state
     val isInLibrary by viewModel.isInLibrary.collectAsState()
@@ -197,9 +200,21 @@ fun ReaderScreen(
                 onAddBookmark = { index, text ->
                     viewModel.addBookmarkAtParagraph(index, text)
                 },
-                onBookmarkSavedShown = { viewModel.clearBookmarkSavedEvent() }
+                onBookmarkSavedShown = { viewModel.clearBookmarkSavedEvent() },
+                onShowModelDownload = { showModelDownloadDialog = true }
             )
         }
+    }
+
+    // Model download dialog — shown at top level so it overlays everything
+    if (showModelDownloadDialog) {
+        ModelDownloadDialog(
+            modelManager = ttsManager.modelManager,
+            onDismiss = { showModelDownloadDialog = false },
+            onModelDownloaded = {
+                ttsManager.refreshVoiceList()
+            }
+        )
     }
 }
 
@@ -298,7 +313,8 @@ private fun ReaderContent(
     isInLibrary: Boolean,
     bookmarkSaved: Boolean,
     onAddBookmark: (paragraphIndex: Int, paragraphText: String) -> Unit,
-    onBookmarkSavedShown: () -> Unit
+    onBookmarkSavedShown: () -> Unit,
+    onShowModelDownload: () -> Unit
 ) {
     val colors = getThemeColors(settings.theme)
 
@@ -465,6 +481,7 @@ private fun ReaderContent(
                     startFromParagraph = listState.firstVisibleItemIndex,
                     onNextChapter = onNextChapter,
                     onNextChapterWithRetry = onNextChapterWithRetry,
+                    onShowModelDownload = onShowModelDownload,
                     onClose = {
                         ttsManager.stop()
                         onToggleTTSControls()
@@ -570,6 +587,7 @@ private fun TTSControlsPanel(
     startFromParagraph: Int,
     onNextChapter: () -> Unit,
     onNextChapterWithRetry: () -> Unit,
+    onShowModelDownload: () -> Unit,
     onClose: () -> Unit
 ) {
     var showSettings by remember { mutableStateOf(false) }
@@ -712,11 +730,26 @@ private fun TTSControlsPanel(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = currentVoice?.let { ttsManager.getVoiceDisplayName(it) }
-                                ?: "Select Voice",
+                            text = currentVoice?.displayName ?: "Select Voice",
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Download neural voices button
+                    TextButton(
+                        onClick = onShowModelDownload,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Get Neural Voices (Piper, Kokoro…)")
                     }
                 }
             }
@@ -852,7 +885,7 @@ private fun TTSControlsPanel(
         VoiceSelectorDialog(
             voices = availableVoices,
             currentVoice = currentVoice,
-            ttsManager = ttsManager,
+            onVoiceSelected = { ttsManager.setVoice(it) },
             onDismiss = { showVoiceSelector = false }
         )
     }
@@ -894,9 +927,9 @@ private fun SettingSlider(
 
 @Composable
 private fun VoiceSelectorDialog(
-    voices: List<Voice>,
-    currentVoice: Voice?,
-    ttsManager: TTSManager,
+    voices: List<VoiceInfo>,
+    currentVoice: VoiceInfo?,
+    onVoiceSelected: (VoiceInfo) -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -911,13 +944,14 @@ private fun VoiceSelectorDialog(
                         .fillMaxWidth()
                         .heightIn(max = 400.dp)
                 ) {
-                    // Group voices by locale
-                    val groupedVoices = voices.groupBy { it.locale.displayCountry.ifBlank { it.locale.country } }
+                    // Group voices by engine
+                    val groupedVoices: Map<String, List<VoiceInfo>> =
+                        voices.groupBy { it.engineId }
 
-                    groupedVoices.forEach { (country, countryVoices) ->
+                    groupedVoices.forEach { (engine: String, engineVoices: List<VoiceInfo>) ->
                         item {
                             Text(
-                                text = country,
+                                text = engine.ifBlank { "Voices" },
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(vertical = 8.dp)
@@ -925,15 +959,15 @@ private fun VoiceSelectorDialog(
                         }
 
                         items(
-                            items = countryVoices,
-                            key = { it.name }
-                        ) { voice ->
+                            items = engineVoices,
+                            key = { it.id }
+                        ) { voice: VoiceInfo ->
                             VoiceItem(
                                 voice = voice,
-                                isSelected = voice.name == currentVoice?.name,
-                                displayName = ttsManager.getVoiceDisplayName(voice),
+                                isSelected = voice.id == currentVoice?.id,
+                                displayName = voice.displayName,
                                 onClick = {
-                                    ttsManager.setVoice(voice)
+                                    onVoiceSelected(voice)
                                     onDismiss()
                                 }
                             )
@@ -952,7 +986,7 @@ private fun VoiceSelectorDialog(
 
 @Composable
 private fun VoiceItem(
-    voice: Voice,
+    voice: VoiceInfo,
     isSelected: Boolean,
     displayName: String,
     onClick: () -> Unit
@@ -978,10 +1012,10 @@ private fun VoiceItem(
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
-                    text = if (voice.isNetworkConnectionRequired)
-                        "Requires internet"
+                    text = if (voice.isDownloaded)
+                        "Available offline"
                     else
-                        "Available offline",
+                        "Not downloaded",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.outline
                 )

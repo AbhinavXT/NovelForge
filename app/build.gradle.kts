@@ -17,6 +17,19 @@ android {
         versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Sherpa-ONNX native libs are arm64-v8a (most modern phones)
+        // Add x86_64 if you test on emulator
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
+    }
+
+    // Tell Gradle where jniLibs live (usually auto-detected)
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDirs("src/main/jniLibs")
+        }
     }
 
     buildTypes {
@@ -67,4 +80,7 @@ dependencies {
     implementation(libs.jsoup)
     implementation(libs.coil.compose)
     implementation("com.google.code.gson:gson:2.13.2")
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
