@@ -18,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -31,6 +32,7 @@ import com.example.novelreader.data.TTSManager
 import com.example.novelreader.ui.NavigationHost
 import com.example.novelreader.ui.Screen
 import com.example.novelreader.ui.theme.NovelReaderTheme
+import com.example.novelreader.ui.viewmodel.AudioPlayerViewModel
 import com.example.novelreader.util.Logger
 
 class MainActivity : ComponentActivity() {
@@ -65,14 +67,34 @@ class MainActivity : ComponentActivity() {
 
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val permissions = mutableListOf<String>()
             if (ContextCompat.checkSelfPermission(
                     this,
                     Manifest.permission.POST_NOTIFICATIONS
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
+                permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            // Needed to scan Music/NovelReader/ for exported audio files
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.READ_MEDIA_AUDIO
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
+            }
+            if (permissions.isNotEmpty()) {
+                ActivityCompat.requestPermissions(this, permissions.toTypedArray(), 100)
+            }
+        } else if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
                 ActivityCompat.requestPermissions(
                     this,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE),
                     100
                 )
             }
@@ -93,6 +115,7 @@ fun NovelReaderApp(
         Screen.Home,
         Screen.Search,
         Screen.Library,
+        Screen.AudioLibrary,
         Screen.Settings
     )
 
@@ -103,6 +126,11 @@ fun NovelReaderApp(
     val showBottomNav = bottomNavScreens.any { screen ->
         currentRoute == screen.route
     }
+
+    val context = LocalContext.current
+    val audioPlayerViewModel: AudioPlayerViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
+        factory = AudioPlayerViewModel.provideFactory(context)
+    )
 
     Scaffold(
         bottomBar = {
@@ -140,6 +168,7 @@ fun NovelReaderApp(
                 downloadManager = downloadManager,
                 ttsManager = ttsManager,
                 backupManager = backupManager,
+                audioPlayerViewModel = audioPlayerViewModel,
                 modifier = Modifier.padding(innerPadding)
             )
         }

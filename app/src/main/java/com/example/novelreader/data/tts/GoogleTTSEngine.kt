@@ -6,6 +6,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import com.example.novelreader.util.Logger
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.Locale
 
 /**
@@ -139,6 +140,60 @@ class GoogleTTSEngine(private val context: Context) : TTSEngine, TextToSpeech.On
         utteranceOnStart = null
         utteranceOnDone = null
         utteranceOnError = null
+    }
+
+    // ── Audio export support ──────────────────────────────────────
+
+    /**
+     * Synthesize text to a WAV file using Android's built-in TTS.
+     * Returns true on success. The file will be a valid WAV.
+     */
+    suspend fun synthesizeToFile(
+        text: String,
+        outputFile: java.io.File,
+        speed: Float = 1.0f,
+        pitch: Float = 1.0f
+    ): Boolean = suspendCancellableCoroutine { cont ->
+        if (!isReady || tts == null) {
+            cont.resume(false) {}
+            return@suspendCancellableCoroutine
+        }
+
+        tts?.setSpeechRate(speed)
+        tts?.setPitch(pitch)
+
+        val utteranceId = "export_${System.currentTimeMillis()}"
+
+        val listener = object : UtteranceProgressListener() {
+            override fun onStart(id: String?) {}
+            override fun onDone(id: String?) {
+                if (id == utteranceId && cont.isActive) {
+                    cont.resume(true) {}
+                }
+            }
+            @Deprecated("Deprecated in Java")
+            override fun onError(id: String?) {
+                if (id == utteranceId && cont.isActive) {
+                    cont.resume(false) {}
+                }
+            }
+            override fun onError(id: String?, errorCode: Int) {
+                if (id == utteranceId && cont.isActive) {
+                    cont.resume(false) {}
+                }
+            }
+        }
+
+        tts?.setOnUtteranceProgressListener(listener)
+
+        val result = tts?.synthesizeToFile(text, null, outputFile, utteranceId)
+        if (result == TextToSpeech.ERROR) {
+            if (cont.isActive) cont.resume(false) {}
+        }
+
+        cont.invokeOnCancellation {
+            tts?.stop()
+        }
     }
 
     override fun shutdown() {

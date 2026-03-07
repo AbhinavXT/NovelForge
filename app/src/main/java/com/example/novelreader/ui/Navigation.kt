@@ -20,8 +20,10 @@ import com.example.novelreader.ui.screens.*
 import java.net.URLDecoder
 import java.net.URLEncoder
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.LibraryMusic
 import com.example.novelreader.data.BackupManager
 import com.example.novelreader.data.TTSManager
+import com.example.novelreader.ui.viewmodel.AudioPlayerViewModel
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     object Home : Screen("home", "Home", Icons.Default.Home)
@@ -57,6 +59,35 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
         title = "Downloads",
         icon = Icons.Default.Download
     )
+
+    object AudioLibrary : Screen(
+        route = "audio_library",
+        title = "Audio",
+        icon = Icons.Default.LibraryMusic
+    )
+
+    object AudioChapters : Screen(
+        route = "audio_chapters/{folderName}",
+        title = "Audio Chapters",
+        icon = Icons.Default.LibraryMusic
+    ) {
+        fun createRoute(folderName: String): String {
+            val encoded = URLEncoder.encode(folderName, "UTF-8")
+            return "audio_chapters/$encoded"
+        }
+    }
+
+    object AudioPlayer : Screen(
+        route = "audio_player/{folderName}/{filePath}",
+        title = "Audio Player",
+        icon = Icons.Default.LibraryMusic
+    ) {
+        fun createRoute(folderName: String, filePath: String): String {
+            val encodedFolder = URLEncoder.encode(folderName, "UTF-8")
+            val encodedPath = URLEncoder.encode(filePath, "UTF-8")
+            return "audio_player/$encodedFolder/$encodedPath"
+        }
+    }
 }
 
 private fun constructNovelUrl(novelId: String): String {
@@ -82,6 +113,7 @@ fun NavigationHost(
     downloadManager: DownloadManager,
     ttsManager: TTSManager,
     backupManager: BackupManager,
+    audioPlayerViewModel: AudioPlayerViewModel,
     modifier: Modifier = Modifier
 ) {
     NavHost(
@@ -162,6 +194,7 @@ fun NavigationHost(
                 novelUrl = novelUrl,
                 repository = repository,
                 downloadManager = downloadManager,
+                ttsManager = ttsManager,
                 onBackClick = { navController.popBackStack() },
                 onChapterClick = { chapterId, chapterUrl ->
                     navController.navigate(
@@ -216,6 +249,63 @@ fun NavigationHost(
                     val url = constructNovelUrl(novelId)
                     navController.navigate(Screen.Detail.createRoute(novelId, url))
                 }
+            )
+        }
+
+        // ── Audio screens ────────────────────────────────────────
+
+        composable(Screen.AudioLibrary.route) {
+            AudioLibraryScreen(
+                viewModel = audioPlayerViewModel,
+                onNovelClick = { folderName ->
+                    navController.navigate(Screen.AudioChapters.createRoute(folderName))
+                },
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.AudioChapters.route,
+            arguments = listOf(
+                navArgument("folderName") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val folderName = URLDecoder.decode(
+                backStackEntry.arguments?.getString("folderName")!!,
+                "UTF-8"
+            )
+
+            AudioChapterListScreen(
+                viewModel = audioPlayerViewModel,
+                novelFolderName = folderName,
+                onChapterClick = { folder, filePath ->
+                    navController.navigate(Screen.AudioPlayer.createRoute(folder, filePath))
+                },
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.AudioPlayer.route,
+            arguments = listOf(
+                navArgument("folderName") { type = NavType.StringType },
+                navArgument("filePath") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val folderName = URLDecoder.decode(
+                backStackEntry.arguments?.getString("folderName")!!,
+                "UTF-8"
+            )
+            val filePath = URLDecoder.decode(
+                backStackEntry.arguments?.getString("filePath")!!,
+                "UTF-8"
+            )
+
+            AudioPlayerScreen(
+                viewModel = audioPlayerViewModel,
+                novelFolderName = folderName,
+                chapterFilePath = filePath,
+                onBackClick = { navController.popBackStack() }
             )
         }
     }

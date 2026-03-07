@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -21,11 +23,15 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LibraryAdd
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -42,14 +48,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -83,10 +94,14 @@ fun NovelDetailScreen(
     novelUrl: String,
     repository: NovelRepository,
     downloadManager: DownloadManager,
+    ttsManager: com.example.novelreader.data.TTSManager,
     onBackClick: () -> Unit,
     onChapterClick: (chapterId: String, chapterUrl: String) -> Unit,
     viewModel: NovelDetailViewModel = viewModel(
-        factory = NovelDetailViewModel.provideFactory(novelId, novelUrl, repository)
+        factory = NovelDetailViewModel.provideFactory(
+            novelId, novelUrl, repository, ttsManager,
+            androidx.compose.ui.platform.LocalContext.current.applicationContext
+        )
     )
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -94,9 +109,31 @@ fun NovelDetailScreen(
     val downloadingChapters by viewModel.downloadingChapters.collectAsState()
     val bookmarks by viewModel.bookmarks.collectAsState()
     val bookmarkCount by viewModel.bookmarkCount.collectAsState()
+    val exportState by viewModel.exportState.collectAsState()
+    val exportingChapters by viewModel.exportingChapters.collectAsState()
+    val audioExportedChapters by viewModel.audioExportedChapters.collectAsState()
+    val availableVoices by ttsManager.availableVoices.collectAsState()
+    val currentVoice by ttsManager.currentVoice.collectAsState()
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Show snackbar for export completion/error
+    LaunchedEffect(exportState) {
+        when (val state = exportState) {
+            is com.example.novelreader.data.tts.AudioExporter.ExportState.Completed -> {
+                snackbarHostState.showSnackbar("Audio saved: ${state.filePath}")
+                viewModel.audioExporter.resetState()
+            }
+            is com.example.novelreader.data.tts.AudioExporter.ExportState.Error -> {
+                snackbarHostState.showSnackbar(state.message)
+                viewModel.audioExporter.resetState()
+            }
+            else -> {}
+        }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             Row(
                 modifier = Modifier
@@ -173,11 +210,20 @@ fun NovelDetailScreen(
                     isLocalNovel = state.isLocalNovel,
                     downloadState = downloadState,
                     downloadingChapters = downloadingChapters,
+                    exportingChapters = exportingChapters,
+                    audioExportedChapters = audioExportedChapters,
+                    exportState = exportState,
                     bookmarks = bookmarks,
                     bookmarkCount = bookmarkCount,
                     onToggleLibrary = { viewModel.toggleLibrary() },
                     onChapterClick = onChapterClick,
                     onDownloadChapter = { chapter -> viewModel.downloadChapter(chapter) },
+                    onExportChapterAudio = { chapter -> viewModel.exportChapterAudio(chapter) },
+                    onExportAllAudio = { viewModel.exportAllChaptersAudio() },
+                    onCancelExport = { viewModel.cancelAudioExport() },
+                    availableVoices = availableVoices,
+                    currentVoice = currentVoice,
+                    onVoiceSelected = { voice -> ttsManager.setVoice(voice) },
                     onDownloadAll = {
                         scope.launch {
                             downloadManager.downloadAllChapters(
@@ -206,11 +252,20 @@ private fun NovelDetailContent(
     isLocalNovel: Boolean,
     downloadState: NovelDownloadState?,
     downloadingChapters: Set<String>,
+    exportingChapters: Set<String>,
+    audioExportedChapters: Set<String>,
+    exportState: com.example.novelreader.data.tts.AudioExporter.ExportState,
     bookmarks: List<BookmarkEntity>,
     bookmarkCount: Int,
     onToggleLibrary: () -> Unit,
     onChapterClick: (chapterId: String, chapterUrl: String) -> Unit,
     onDownloadChapter: (Chapter) -> Unit,
+    onExportChapterAudio: (Chapter) -> Unit,
+    onExportAllAudio: () -> Unit,
+    onCancelExport: () -> Unit,
+    availableVoices: List<com.example.novelreader.data.tts.VoiceInfo>,
+    currentVoice: com.example.novelreader.data.tts.VoiceInfo?,
+    onVoiceSelected: (com.example.novelreader.data.tts.VoiceInfo) -> Unit,
     onDownloadAll: () -> Unit,
     onDeleteBookmark: (Long) -> Unit,
     onUpdateBookmarkNote: (Long, String?) -> Unit,
@@ -345,6 +400,77 @@ private fun NovelDetailContent(
                     }
                 }
 
+                // Audio voice picker
+                item {
+                    AudioVoicePicker(
+                        availableVoices = availableVoices,
+                        currentVoice = currentVoice,
+                        onVoiceSelected = onVoiceSelected
+                    )
+                }
+
+                // Export All as Audio button
+                item {
+                    val exportedCount = audioExportedChapters.size
+                    val totalCount = novel.chapters.size
+                    val isAnyExporting = exportingChapters.isNotEmpty()
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (exportedCount > 0) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                shape = MaterialTheme.shapes.small
+                            ) {
+                                Text(
+                                    text = "$exportedCount/$totalCount audio exported",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        if (isAnyExporting) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Exporting...",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                TextButton(onClick = onCancelExport) {
+                                    Text("Cancel")
+                                }
+                            }
+                        } else if (exportedCount < totalCount) {
+                            TextButton(onClick = onExportAllAudio) {
+                                Icon(
+                                    imageVector = Icons.Default.GraphicEq,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (exportedCount == 0) "Export All as Audio"
+                                    else "Export Remaining (${ totalCount - exportedCount })"
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Chapter search bar
                 item {
                     ChapterSearchBar(
@@ -379,9 +505,14 @@ private fun NovelDetailContent(
                         ChapterListItem(
                             chapter = chapter,
                             isDownloading = chapter.id in downloadingChapters,
+                            isExporting = chapter.id in exportingChapters,
+                            isAudioExported = chapter.id in audioExportedChapters,
+                            exportState = exportState,
                             isLocalNovel = isLocalNovel,
                             onClick = { onChapterClick(chapter.id, chapter.url) },
-                            onDownload = { onDownloadChapter(chapter) }
+                            onDownload = { onDownloadChapter(chapter) },
+                            onExportAudio = { onExportChapterAudio(chapter) },
+                            onCancelExport = onCancelExport
                         )
                     }
                 }
@@ -672,13 +803,174 @@ private fun NovelDescription(description: String) {
 }
 
 @Composable
+private fun AudioVoicePicker(
+    availableVoices: List<com.example.novelreader.data.tts.VoiceInfo>,
+    currentVoice: com.example.novelreader.data.tts.VoiceInfo?,
+    onVoiceSelected: (com.example.novelreader.data.tts.VoiceInfo) -> Unit
+) {
+    var showVoiceDialog by remember { mutableStateOf(false) }
+
+    // Show current voice name in chip
+    val displayVoiceName = remember(currentVoice) {
+        currentVoice?.displayName ?: "Select voice"
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.GraphicEq,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.outline
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "Audio voice:",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.outline
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Surface(
+            onClick = { showVoiceDialog = true },
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            shape = MaterialTheme.shapes.small
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = displayVoiceName,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 180.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Change voice",
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+
+    if (showVoiceDialog) {
+        VoiceSelectorDialog(
+            voices = availableVoices,
+            currentVoice = currentVoice,
+            onVoiceSelected = onVoiceSelected,
+            onDismiss = { showVoiceDialog = false }
+        )
+    }
+}
+
+@Composable
+private fun VoiceSelectorDialog(
+    voices: List<com.example.novelreader.data.tts.VoiceInfo>,
+    currentVoice: com.example.novelreader.data.tts.VoiceInfo?,
+    onVoiceSelected: (com.example.novelreader.data.tts.VoiceInfo) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select Audio Voice") },
+        text = {
+            if (voices.isEmpty()) {
+                Text("No voices available. Check device TTS settings or download neural voices from the reader screen.")
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                ) {
+                    val groupedVoices = voices.groupBy { it.engineId }
+
+                    groupedVoices.forEach { (engine, engineVoices) ->
+                        item {
+                            Text(
+                                text = engine.ifBlank { "Voices" },
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+
+                        items(
+                            items = engineVoices,
+                            key = { it.id }
+                        ) { voice ->
+                            Surface(
+                                onClick = {
+                                    onVoiceSelected(voice)
+                                    onDismiss()
+                                },
+                                color = if (voice.id == currentVoice?.id)
+                                    MaterialTheme.colorScheme.primaryContainer
+                                else
+                                    Color.Transparent,
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = voice.displayName,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (voice.id == currentVoice?.id) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = "Selected",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+@Composable
 private fun ChapterListItem(
     chapter: Chapter,
     isDownloading: Boolean,
+    isExporting: Boolean,
+    isAudioExported: Boolean,
+    exportState: com.example.novelreader.data.tts.AudioExporter.ExportState,
     isLocalNovel: Boolean,
     onClick: () -> Unit,
-    onDownload: () -> Unit
+    onDownload: () -> Unit,
+    onExportAudio: () -> Unit,
+    onCancelExport: () -> Unit
 ) {
+    // Get export progress for this specific chapter
+    val exportProgress = if (isExporting && exportState is com.example.novelreader.data.tts.AudioExporter.ExportState.Exporting
+        && exportState.chapterId == chapter.id) {
+        exportState.progress
+    } else null
+
     Card(
         onClick = onClick,
         modifier = Modifier
@@ -715,6 +1007,54 @@ private fun ChapterListItem(
             )
 
             Spacer(modifier = Modifier.width(8.dp))
+
+            // Audio export button
+            if (isExporting) {
+                // Show progress or cancel
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    CircularProgressIndicator(
+                        progress = { exportProgress ?: 0f },
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                    // Tap to cancel
+                    IconButton(
+                        onClick = onCancelExport,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Cancel export",
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                }
+            } else if (isAudioExported) {
+                // Already exported — show completed icon
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = "Audio exported",
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.tertiary
+                )
+            } else {
+                IconButton(
+                    onClick = onExportAudio,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GraphicEq,
+                        contentDescription = "Export as audio",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
 
             // Download status / button
             if (!isLocalNovel) {

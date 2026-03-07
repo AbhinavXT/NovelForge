@@ -8,11 +8,13 @@ import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -70,43 +72,74 @@ class SherpaOnnxEngine(
 
     private val audioCache = java.util.concurrent.ConcurrentHashMap<String, GeneratedAudioData>()
     private var pregenerateJob: Job? = null
-    private val maxCacheSize = 3
+    private val lookAheadCount = 3  // pre-generate this many sentences ahead
+    private val maxCacheSize = 5
     private val generateMutex = Mutex()  // native tts.generate() is NOT thread-safe
 
     /**
-     * Pre-generate audio for upcoming text. Called by TTSManager when
-     * the current sentence starts playing so the next one is ready.
+     * Pre-generate audio for multiple upcoming sentences. Called by TTSManager
+     * when the current sentence starts playing. Generates sequentially
+     * (JNI not thread-safe) but runs on a background coroutine.
      */
-    fun pregenerateAsync(text: String, speakerId: Int = currentSpeakerId, speed: Float = 1.0f) {
-        val cacheKey = buildCacheKey(text, speakerId, speed)
-        if (audioCache.containsKey(cacheKey)) return  // already cached
+    fun pregenerateBatchAsync(
+        sentences: List<String>,
+        speakerId: Int = currentSpeakerId,
+        speed: Float = 1.0f
+    ) {
+        if (sentences.isEmpty() || ttsWrapper == null) return
 
         pregenerateJob?.cancel()
         pregenerateJob = scope.launch {
-            // tryLock: don't block if speak() is currently generating
-            if (!generateMutex.tryLock()) {
-                Logger.d(TAG, "Skipping pre-gen (mutex held): ${text.take(40)}...")
-                return@launch
-            }
-            try {
-                Logger.d(TAG, "Pre-generating: ${text.take(40)}...")
-                val audio = ttsWrapper?.generate(text, speakerId, speed)
-                if (audio != null && audio.samples.isNotEmpty()) {
-                    audioCache[cacheKey] = audio
-                    Logger.d(TAG, "Cached audio for: ${text.take(40)}... (${audio.samples.size} samples)")
-                    // Evict oldest if cache too large
-                    while (audioCache.size > maxCacheSize) {
-                        val oldest = audioCache.keys.firstOrNull() ?: break
-                        audioCache.remove(oldest)
+            for (text in sentences) {
+                if (!isActive || isStopped) break
+
+                val cacheKey = buildCacheKey(text, speakerId, speed)
+                if (audioCache.containsKey(cacheKey)) continue  // already cached
+
+                // tryLock: yield to speak() if it needs the mutex
+                if (!generateMutex.tryLock()) {
+                    Logger.d(TAG, "Pre-gen waiting for mutex: ${text.take(40)}...")
+                    // Wait briefly then retry — speak() hold is short
+                    generateMutex.withLock {
+                        // Got the lock now, generate
+                        generateOne(text, cacheKey, speakerId, speed)
+                    }
+                } else {
+                    try {
+                        generateOne(text, cacheKey, speakerId, speed)
+                    } finally {
+                        generateMutex.unlock()
                     }
                 }
-            } catch (e: Exception) {
-                Logger.w(TAG, "Pre-generation failed (non-fatal): ${e.message}")
-            } finally {
-                generateMutex.unlock()
             }
         }
     }
+
+    private suspend fun generateOne(
+        text: String,
+        cacheKey: String,
+        speakerId: Int,
+        speed: Float
+    ) {
+        try {
+            Logger.d(TAG, "Pre-generating: ${text.take(40)}...")
+            val audio = ttsWrapper?.generate(text, speakerId, speed)
+            if (audio != null && audio.samples.isNotEmpty()) {
+                audioCache[cacheKey] = audio
+                Logger.d(TAG, "Cached audio (${audioCache.size}/$maxCacheSize): ${text.take(40)}...")
+                // Evict oldest if cache too large
+                while (audioCache.size > maxCacheSize) {
+                    val oldest = audioCache.keys.firstOrNull() ?: break
+                    audioCache.remove(oldest)
+                }
+            }
+        } catch (e: Exception) {
+            Logger.w(TAG, "Pre-generation failed (non-fatal): ${e.message}")
+        }
+    }
+
+    /** How many sentences to look ahead — exposed for TTSManager */
+    fun getLookAheadCount(): Int = lookAheadCount
 
     /**
      * Clear the pre-generation cache (called on stop/model change).
@@ -231,6 +264,9 @@ class SherpaOnnxEngine(
                     withContext(Dispatchers.Main) { onDone() }
                 }
 
+            } catch (e: CancellationException) {
+                // Normal cancellation (e.g. new sentence starting) — rethrow, not an error
+                throw e
             } catch (e: Exception) {
                 Logger.e(TAG, "Synthesis/playback error", e)
                 if (!isStopped) {
@@ -301,6 +337,13 @@ class SherpaOnnxEngine(
         currentSpeakerId = id
     }
 
+    fun getCurrentSpeakerIdValue(): Int = currentSpeakerId
+
+    /**
+     * Expose the wrapper for direct generation (used by AudioExporter).
+     */
+    fun getTtsWrapper(): SherpaOnnxWrapper? = ttsWrapper
+
     // ── Downloaded models discovery ──────────────────────────────
 
     private fun getDownloadedModels(): List<VoiceInfo> {
@@ -322,9 +365,18 @@ class SherpaOnnxEngine(
 
     private fun hasModelFiles(dir: File): Boolean {
         val files = dir.listFiles() ?: return false
-        val hasOnnx = files.any { it.extension == "onnx" }
-        val hasTokens = files.any { it.name == "tokens.txt" }
-        return hasOnnx && hasTokens
+        val hasOnnx = files.any { it.isFile && it.extension == "onnx" }
+        val hasTokens = files.any { it.isFile && it.name == "tokens.txt" }
+        if (hasOnnx && hasTokens) return true
+
+        // Some archives extract with a nested subdirectory — check one level deeper
+        for (sub in files.filter { it.isDirectory }) {
+            val subFiles = sub.listFiles() ?: continue
+            val subOnnx = subFiles.any { it.isFile && it.extension == "onnx" }
+            val subTokens = subFiles.any { it.isFile && it.name == "tokens.txt" }
+            if (subOnnx && subTokens) return true
+        }
+        return false
     }
 
     private fun formatModelName(dirName: String): String {
@@ -348,13 +400,41 @@ class SherpaOnnxEngine(
 
     // ── Model config detection ───────────────────────────────────
 
+    /**
+     * Find the directory that actually contains model files.
+     * Handles cases where archive extraction created a nested subdirectory.
+     */
+    private fun resolveModelRoot(modelDir: File): File {
+        val files = modelDir.listFiles() ?: return modelDir
+        val hasOnnx = files.any { it.isFile && it.extension == "onnx" }
+        val hasTokens = files.any { it.isFile && it.name == "tokens.txt" }
+        if (hasOnnx && hasTokens) return modelDir
+
+        // Check one level deeper for single-subdirectory nesting
+        for (sub in files.filter { it.isDirectory }) {
+            val subFiles = sub.listFiles() ?: continue
+            if (subFiles.any { it.isFile && it.extension == "onnx" } &&
+                subFiles.any { it.isFile && it.name == "tokens.txt" }) {
+                Logger.d(TAG, "Model files found in nested dir: ${sub.name}")
+                return sub
+            }
+        }
+        return modelDir
+    }
+
     private fun detectModelConfig(modelDir: File): SherpaModelConfig? {
-        val files = modelDir.listFiles() ?: return null
+        val resolvedDir = resolveModelRoot(modelDir)
+        val files = resolvedDir.listFiles() ?: return null
         val onnxFiles = files.filter { it.extension == "onnx" }
         val tokensFile = files.find { it.name == "tokens.txt" }
         val dataDir = files.find { it.isDirectory && it.name.contains("espeak") }
         val lexiconFile = files.find { it.name == "lexicon.txt" }
         val vocoderFile = files.find { it.name.contains("vocoder") || it.name.contains("vocos") }
+        val voicesFile = files.find { it.name == "voices.bin" }
+
+        Logger.d(TAG, "Model ${modelDir.name}: onnx=${onnxFiles.map{it.name}}, " +
+                "tokens=${tokensFile?.name}, voices=${voicesFile?.name}, " +
+                "dataDir=${dataDir?.name}, resolved=${resolvedDir.absolutePath}")
 
         if (onnxFiles.isEmpty() || tokensFile == null) {
             Logger.e(TAG, "Missing required files in ${modelDir.name}")
@@ -373,7 +453,8 @@ class SherpaOnnxEngine(
                     lexiconPath = lexiconFile?.absolutePath,
                     dataDir = dataDir?.absolutePath,
                     vocoderPath = vocoderFile?.absolutePath,
-                    modelDir = modelDir.absolutePath
+                    voicesPath = voicesFile?.absolutePath,
+                    modelDir = resolvedDir.absolutePath
                 )
             }
             dirName.contains("kitten") -> {
@@ -384,7 +465,8 @@ class SherpaOnnxEngine(
                     tokensPath = tokensFile.absolutePath,
                     lexiconPath = lexiconFile?.absolutePath,
                     dataDir = dataDir?.absolutePath,
-                    modelDir = modelDir.absolutePath
+                    voicesPath = voicesFile?.absolutePath,
+                    modelDir = resolvedDir.absolutePath
                 )
             }
             dirName.contains("matcha") -> {
@@ -396,7 +478,7 @@ class SherpaOnnxEngine(
                     lexiconPath = lexiconFile?.absolutePath,
                     dataDir = dataDir?.absolutePath,
                     vocoderPath = vocoderFile?.absolutePath,
-                    modelDir = modelDir.absolutePath
+                    modelDir = resolvedDir.absolutePath
                 )
             }
             else -> {
@@ -409,7 +491,7 @@ class SherpaOnnxEngine(
                     tokensPath = tokensFile.absolutePath,
                     lexiconPath = lexiconFile?.absolutePath,
                     dataDir = dataDir?.absolutePath,
-                    modelDir = modelDir.absolutePath
+                    modelDir = resolvedDir.absolutePath
                 )
             }
         }
@@ -423,17 +505,34 @@ class SherpaOnnxEngine(
         // Release any lingering previous track
         releaseAudioTrack()
 
+        // Validate sample rate
+        if (rate <= 0) {
+            Logger.e(TAG, "Invalid sample rate: $rate, using engine default: $sampleRate")
+        }
+        val playbackRate = if (rate > 0) rate else sampleRate
+        if (playbackRate <= 0) {
+            Logger.e(TAG, "No valid sample rate available, cannot play audio")
+            return
+        }
+
         val pcm = ShortArray(samples.size)
         for (i in samples.indices) {
             val clamped = samples[i].coerceIn(-1.0f, 1.0f)
             pcm[i] = (clamped * 32767).toInt().toShort()
         }
 
+        Logger.d(TAG, "Playing audio: ${samples.size} samples, rate=$playbackRate, vol=$volume")
+
         val bufferSize = AudioTrack.getMinBufferSize(
-            rate,
+            playbackRate,
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT
         )
+
+        if (bufferSize <= 0) {
+            Logger.e(TAG, "Invalid buffer size: $bufferSize for rate=$playbackRate")
+            return
+        }
 
         audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
@@ -444,27 +543,43 @@ class SherpaOnnxEngine(
             )
             .setAudioFormat(
                 AudioFormat.Builder()
-                    .setSampleRate(rate)
+                    .setSampleRate(playbackRate)
                     .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build()
             )
             .setBufferSizeInBytes(maxOf(bufferSize, pcm.size * 2))
-            .setTransferMode(AudioTrack.MODE_STATIC)
+            .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
 
         audioTrack?.let { track ->
             track.setVolume(volume)
-            track.write(pcm, 0, pcm.size)
             track.play()
 
-            val durationMs = (samples.size.toLong() * 1000) / rate
-            val startTime = System.currentTimeMillis()
+            // Write in chunks for MODE_STREAM
+            val chunkSize = bufferSize / 2  // write in half-buffer chunks
+            var offset = 0
+            while (offset < pcm.size && !isStopped) {
+                val remaining = pcm.size - offset
+                val toWrite = minOf(chunkSize, remaining)
+                val written = track.write(pcm, offset, toWrite)
+                if (written < 0) {
+                    Logger.e(TAG, "AudioTrack write error: $written")
+                    break
+                }
+                offset += written
+            }
 
-            while (!isStopped &&
-                (System.currentTimeMillis() - startTime) < durationMs + 200
-            ) {
-                Thread.sleep(50)
+            // Wait for playback to finish draining
+            if (!isStopped) {
+                val durationMs = (samples.size.toLong() * 1000) / playbackRate
+                val startTime = System.currentTimeMillis()
+
+                while (!isStopped &&
+                    (System.currentTimeMillis() - startTime) < durationMs + 200
+                ) {
+                    Thread.sleep(50)
+                }
             }
 
             try {
@@ -494,6 +609,7 @@ data class SherpaModelConfig(
     val lexiconPath: String? = null,
     val dataDir: String? = null,
     val vocoderPath: String? = null,
+    val voicesPath: String? = null,
     val modelDir: String = ""
 )
 
@@ -602,7 +718,7 @@ class SherpaOnnxWrapper private constructor(
                     try {
                         val kokoro = com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig(
                             model = config.modelPath,
-                            voices = config.vocoderPath ?: "",
+                            voices = config.voicesPath ?: "",
                             tokens = config.tokensPath,
                             dataDir = config.dataDir ?: "",
                             lengthScale = 1.0f
@@ -623,6 +739,7 @@ class SherpaOnnxWrapper private constructor(
                     try {
                         val kitten = com.k2fsa.sherpa.onnx.OfflineTtsKittenModelConfig(
                             model = config.modelPath,
+                            voices = config.voicesPath ?: "",
                             tokens = config.tokensPath,
                             dataDir = config.dataDir ?: ""
                         )

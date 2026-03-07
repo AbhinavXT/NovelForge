@@ -865,8 +865,17 @@ class TTSModelManager(context: Context) {
 
     private fun hasValidModel(dir: File): Boolean {
         val files = dir.listFiles() ?: return false
-        return files.any { it.extension == "onnx" } &&
-                files.any { it.name == "tokens.txt" }
+        val hasOnnx = files.any { it.isFile && it.extension == "onnx" }
+        val hasTokens = files.any { it.isFile && it.name == "tokens.txt" }
+        if (hasOnnx && hasTokens) return true
+
+        // Check one level deeper for nested archive extraction
+        for (sub in files.filter { it.isDirectory }) {
+            val subFiles = sub.listFiles() ?: continue
+            if (subFiles.any { it.isFile && it.extension == "onnx" } &&
+                subFiles.any { it.isFile && it.name == "tokens.txt" }) return true
+        }
+        return false
     }
 
     private fun updateDownloadState(modelId: String, state: DownloadState) {

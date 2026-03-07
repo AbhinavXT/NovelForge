@@ -1,12 +1,15 @@
 package com.example.novelreader.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.novelreader.data.NovelRepository
+import com.example.novelreader.data.TTSManager
 import com.example.novelreader.data.database.BookmarkEntity
 import com.example.novelreader.data.model.Chapter
 import com.example.novelreader.data.model.Novel
+import com.example.novelreader.data.tts.AudioExporter
 import com.example.novelreader.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,7 +30,9 @@ sealed interface NovelDetailUiState {
 class NovelDetailViewModel(
     private val novelId: String,
     private val novelUrl: String,
-    private val repository: NovelRepository
+    private val repository: NovelRepository,
+    private val ttsManager: TTSManager,
+    context: Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<NovelDetailUiState>(NovelDetailUiState.Loading)
@@ -39,6 +44,16 @@ class NovelDetailViewModel(
 
     // Check if this is a local novel (imported EPUB)
     private val isLocalNovel: Boolean = novelId.startsWith("local_")
+
+    // ============ AUDIO EXPORT STATE ============
+
+    val audioExporter: AudioExporter = AudioExporter(context, ttsManager)
+    val exportState: StateFlow<AudioExporter.ExportState> = audioExporter.exportState
+    val exportingChapters: StateFlow<Set<String>> = audioExporter.exportingChapters
+
+    // Chapters that already have exported audio files
+    private val _audioExportedChapters = MutableStateFlow<Set<String>>(emptySet())
+    val audioExportedChapters: StateFlow<Set<String>> = _audioExportedChapters.asStateFlow()
 
     // ============ BOOKMARK STATE ============
 
@@ -87,6 +102,7 @@ class NovelDetailViewModel(
                 isInLibrary = true,
                 isLocalNovel = true
             )
+            refreshAudioExportStatus()
         } else {
             _uiState.value = NovelDetailUiState.Error("Local novel not found")
         }
@@ -109,6 +125,7 @@ class NovelDetailViewModel(
                 isInLibrary = isInLibrary,
                 isLocalNovel = false
             )
+            refreshAudioExportStatus()
         } else {
             _uiState.value = NovelDetailUiState.Error("Failed to load novel")
         }
@@ -256,16 +273,124 @@ class NovelDetailViewModel(
         }
     }
 
+    // ============ AUDIO EXPORT METHODS ============
+
+    /**
+     * Refresh which chapters have exported audio files on disk.
+     */
+    fun refreshAudioExportStatus() {
+        val currentState = _uiState.value
+        if (currentState !is NovelDetailUiState.Success) return
+
+        viewModelScope.launch {
+            val chapters = currentState.novel.chapters.map { it.id to it.title }
+            val exported = audioExporter.getExportedChapterIds(
+                novelTitle = currentState.novel.title,
+                chapters = chapters
+            )
+            _audioExportedChapters.value = exported
+            Logger.d("NovelDetailVM", "Audio exported: ${exported.size}/${chapters.size} chapters")
+        }
+    }
+
+    /**
+     * Export a chapter as a WAV audio file using the current TTS voice.
+     * Fetches chapter content if needed, then runs the export.
+     */
+    fun exportChapterAudio(chapter: Chapter) {
+        val currentState = _uiState.value
+        if (currentState !is NovelDetailUiState.Success) return
+
+        viewModelScope.launch {
+            try {
+                val content = repository.getChapterContent(novelId, chapter.id, chapter.url)
+                if (content.isNullOrBlank()) {
+                    Logger.e("NovelDetailVM", "No content for chapter: ${chapter.title}")
+                    return@launch
+                }
+
+                val success = audioExporter.exportChapter(
+                    chapterId = chapter.id,
+                    novelTitle = currentState.novel.title,
+                    chapterTitle = chapter.title,
+                    voiceName = ttsManager.currentVoice.value?.displayName ?: "default",
+                    text = content,
+                    speakerId = if (ttsManager.sherpaEngine.isReady)
+                        ttsManager.sherpaEngine.getCurrentSpeakerIdValue() else 0,
+                    speed = 1.0f
+                )
+                if (success) refreshAudioExportStatus()
+            } catch (e: Exception) {
+                Logger.e("NovelDetailVM", "Audio export failed", e)
+            }
+        }
+    }
+
+    /**
+     * Export ALL chapters as audio sequentially. Skips already-exported chapters.
+     */
+    fun exportAllChaptersAudio() {
+        val currentState = _uiState.value
+        if (currentState !is NovelDetailUiState.Success) return
+
+        viewModelScope.launch {
+            val novel = currentState.novel
+            val exported = _audioExportedChapters.value
+
+            for (chapter in novel.chapters) {
+                if (chapter.id in exported) {
+                    Logger.d("NovelDetailVM", "Skipping already exported: ${chapter.title}")
+                    continue
+                }
+
+                try {
+                    val content = repository.getChapterContent(novelId, chapter.id, chapter.url)
+                    if (content.isNullOrBlank()) {
+                        Logger.w("NovelDetailVM", "No content for: ${chapter.title}, skipping")
+                        continue
+                    }
+
+                    val success = audioExporter.exportChapter(
+                        chapterId = chapter.id,
+                        novelTitle = novel.title,
+                        chapterTitle = chapter.title,
+                        voiceName = ttsManager.currentVoice.value?.displayName ?: "default",
+                        text = content,
+                        speakerId = if (ttsManager.sherpaEngine.isReady)
+                            ttsManager.sherpaEngine.getCurrentSpeakerIdValue() else 0,
+                        speed = 1.0f
+                    )
+                    if (success) {
+                        _audioExportedChapters.value = _audioExportedChapters.value + chapter.id
+                    }
+                } catch (e: Exception) {
+                    Logger.e("NovelDetailVM", "Export failed for ${chapter.title}", e)
+                }
+            }
+
+            refreshAudioExportStatus()
+        }
+    }
+
+    /**
+     * Cancel the current audio export.
+     */
+    fun cancelAudioExport() {
+        audioExporter.cancel()
+    }
+
     companion object {
         fun provideFactory(
             novelId: String,
             novelUrl: String,
-            repository: NovelRepository
+            repository: NovelRepository,
+            ttsManager: TTSManager,
+            context: Context
         ): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return NovelDetailViewModel(novelId, novelUrl, repository) as T
+                    return NovelDetailViewModel(novelId, novelUrl, repository, ttsManager, context) as T
                 }
             }
         }

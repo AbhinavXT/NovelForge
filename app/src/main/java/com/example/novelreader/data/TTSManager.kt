@@ -58,8 +58,9 @@ class TTSManager(private val context: Context) {
 
     // ── Engines ──────────────────────────────────────────────────
 
-    private val googleEngine = GoogleTTSEngine(context)
-    private val sherpaEngine: SherpaOnnxEngine by lazy {
+    val googleEngine = GoogleTTSEngine(context)
+    /** Public access for AudioExporter and pre-generation */
+    val sherpaEngine: SherpaOnnxEngine by lazy {
         val modelsDir = File(context.filesDir, "tts_models")
         modelsDir.mkdirs()
         SherpaOnnxEngine(modelsDir)
@@ -129,6 +130,10 @@ class TTSManager(private val context: Context) {
                 Logger.d("TTSManager", "Google TTS ready")
                 if (savedEngineId == GoogleTTSEngine.ENGINE_ID) {
                     activateEngine(googleEngine)
+                } else {
+                    // Even if Google isn't the active engine, refresh so
+                    // its voices appear in the picker alongside Sherpa voices
+                    refreshVoiceList()
                 }
             },
             onError = { error ->
@@ -215,16 +220,18 @@ class TTSManager(private val context: Context) {
         // Aggregate voices from ALL engines so the picker shows everything
         val allVoices = mutableListOf<VoiceInfo>()
 
-        // Google voices (always available once initialized)
-        if (googleEngine.isReady) {
-            allVoices.addAll(googleEngine.getAvailableVoices())
-        }
+        // Google voices — always include. getAvailableVoices() returns from
+        // cachedVoices which stays valid even if the engine isn't "ready" for playback.
+        val googleVoices = googleEngine.getAvailableVoices()
+        allVoices.addAll(googleVoices)
+        Logger.d("TTSManager", "Google voices: ${googleVoices.size}")
 
         // Sherpa voices — scan downloaded models even if engine isn't active
-        // Accessing sherpaEngine (lazy) just creates the object; it doesn't
-        // need initialize() to list files on disk.
-        allVoices.addAll(sherpaEngine.getAvailableVoices())
+        val sherpaVoices = sherpaEngine.getAvailableVoices()
+        allVoices.addAll(sherpaVoices)
+        Logger.d("TTSManager", "Sherpa voices: ${sherpaVoices.size}")
 
+        Logger.d("TTSManager", "Total voices: ${allVoices.size}")
         _availableVoices.value = allVoices
 
         // Update current voice
@@ -395,7 +402,7 @@ class TTSManager(private val context: Context) {
             onStart = {
                 _state.value = TTSState.PLAYING
                 // Pre-generate the next sentence while this one plays
-                pregenerateNextSentence()
+                pregenerateNextSentences()
             },
             onDone = {
                 onUtteranceDone()
@@ -408,20 +415,23 @@ class TTSManager(private val context: Context) {
     }
 
     /**
-     * Pre-generate the next sentence's audio while current one plays.
+     * Pre-generate upcoming sentences' audio while current one plays.
      * Only works with SherpaOnnxEngine (on-device TTS). Google TTS handles
      * its own buffering internally.
      */
-    private fun pregenerateNextSentence() {
-        val nextIndex = currentIndex + 1
-        if (nextIndex >= segments.size) return
-
+    private fun pregenerateNextSentences() {
         val sherpaEngine = activeEngine as? SherpaOnnxEngine ?: return
-        val nextText = segments[nextIndex].text
+        val count = sherpaEngine.getLookAheadCount()
+        val startIdx = currentIndex + 1
+        val endIdx = minOf(startIdx + count, segments.size)
+
+        if (startIdx >= segments.size) return
+
+        val upcomingTexts = segments.subList(startIdx, endIdx).map { it.text }
         val s = _settings.value
 
-        sherpaEngine.pregenerateAsync(
-            text = nextText,
+        sherpaEngine.pregenerateBatchAsync(
+            sentences = upcomingTexts,
             speed = s.speed
         )
     }
