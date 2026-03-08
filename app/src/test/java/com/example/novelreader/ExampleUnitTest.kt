@@ -1,4 +1,4 @@
-package com.example.novelreader
+package com.abhinavxt.novelreader
 
 import org.junit.Test
 

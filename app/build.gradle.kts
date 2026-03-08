@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.novelreader"
+    namespace = "com.abhinavxt.novelreader"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.novelreader"
+        applicationId = "com.abhinavxt.novelreader"
         minSdk = 24
         targetSdk = 36
         versionCode = 2
