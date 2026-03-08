@@ -96,7 +96,7 @@ fun AudioPlayerScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // ── Album art / icon area ──
             Surface(
@@ -179,7 +179,7 @@ fun AudioPlayerScreen(
                 onSpeedChange = { viewModel.setSpeed(it) }
             )
 
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

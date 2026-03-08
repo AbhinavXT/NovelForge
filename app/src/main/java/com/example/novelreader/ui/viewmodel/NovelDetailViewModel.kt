@@ -68,6 +68,7 @@ class NovelDetailViewModel(
     init {
         loadNovel()
         loadBookmarks()  // Start observing bookmarks immediately
+        observeVoiceChanges()  // Refresh export status when voice changes
     }
 
     private fun loadNovel() {
@@ -245,6 +246,18 @@ class NovelDetailViewModel(
     }
 
     /**
+     * Re-check export status whenever the TTS voice changes,
+     * since exports are voice-specific.
+     */
+    private fun observeVoiceChanges() {
+        viewModelScope.launch {
+            ttsManager.currentVoice.collect {
+                refreshAudioExportStatus()
+            }
+        }
+    }
+
+    /**
      * Delete a single bookmark. The Flow collection in loadBookmarks()
      * will automatically update the UI.
      */
@@ -284,12 +297,14 @@ class NovelDetailViewModel(
 
         viewModelScope.launch {
             val chapters = currentState.novel.chapters.map { it.id to it.title }
+            val voiceName = ttsManager.currentVoice.value?.displayName
             val exported = audioExporter.getExportedChapterIds(
                 novelTitle = currentState.novel.title,
-                chapters = chapters
+                chapters = chapters,
+                voiceName = voiceName
             )
             _audioExportedChapters.value = exported
-            Logger.d("NovelDetailVM", "Audio exported: ${exported.size}/${chapters.size} chapters")
+            Logger.d("NovelDetailVM", "Audio exported (voice=$voiceName): ${exported.size}/${chapters.size} chapters")
         }
     }
 

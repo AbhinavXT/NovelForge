@@ -14,6 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -251,7 +253,7 @@ class SherpaOnnxEngine(
                     }
                 }
 
-                if (isStopped) return@launch
+                if (isStopped || !isActive) return@launch
                 if (audio == null || audio.samples.isEmpty()) {
                     withContext(Dispatchers.Main) { onError("Empty audio generated") }
                     return@launch
@@ -260,7 +262,11 @@ class SherpaOnnxEngine(
                 withContext(Dispatchers.Main) { onStart() }
                 playAudio(audio.samples, audio.sampleRate, volume)
 
-                if (!isStopped) {
+                // Check BOTH isStopped AND isActive to prevent race condition:
+                // When a new speak() call resets isStopped to false for the new job,
+                // the OLD cancelled job must not fire onDone. isActive stays false
+                // after cancel() even if isStopped was reset.
+                if (!isStopped && isActive) {
                     withContext(Dispatchers.Main) { onDone() }
                 }
 
@@ -269,7 +275,7 @@ class SherpaOnnxEngine(
                 throw e
             } catch (e: Exception) {
                 Logger.e(TAG, "Synthesis/playback error", e)
-                if (!isStopped) {
+                if (!isStopped && isActive) {
                     withContext(Dispatchers.Main) { onError("TTS error: ${e.message}") }
                 }
             }
@@ -499,8 +505,8 @@ class SherpaOnnxEngine(
 
     // ── Audio playback ───────────────────────────────────────────
 
-    private fun playAudio(samples: FloatArray, rate: Int, volume: Float) {
-        if (isStopped) return
+    private suspend fun playAudio(samples: FloatArray, rate: Int, volume: Float) {
+        if (isStopped || !currentCoroutineContext()[Job]!!.isActive) return
 
         // Release any lingering previous track
         releaseAudioTrack()
@@ -570,7 +576,7 @@ class SherpaOnnxEngine(
                 offset += written
             }
 
-            // Wait for playback to finish draining
+            // Wait for playback to finish draining using cancellable delay
             if (!isStopped) {
                 val durationMs = (samples.size.toLong() * 1000) / playbackRate
                 val startTime = System.currentTimeMillis()
@@ -578,7 +584,7 @@ class SherpaOnnxEngine(
                 while (!isStopped &&
                     (System.currentTimeMillis() - startTime) < durationMs + 200
                 ) {
-                    Thread.sleep(50)
+                    delay(50)  // cancellable — cooperates with job.cancel()
                 }
             }
 
@@ -670,7 +676,27 @@ class SherpaOnnxWrapper private constructor(
             }
         }
 
+        /**
+         * Determine optimal thread count based on device CPU cores.
+         * For heavy models (Kokoro, Kitten, Matcha): use up to half the cores (min 2, max 4).
+         * For light models (VITS/Piper): always 2.
+         * This avoids ANR on emulators/low-core devices while using more cores on flagships.
+         */
+        private fun getOptimalThreadCount(isHeavyModel: Boolean): Int {
+            val cores = Runtime.getRuntime().availableProcessors()
+            return if (isHeavyModel) {
+                (cores / 2).coerceIn(2, 4)
+            } else {
+                2
+            }
+        }
+
         private fun buildConfig(config: SherpaModelConfig): OfflineTtsConfig {
+            val lightThreads = getOptimalThreadCount(isHeavyModel = false)
+            val heavyThreads = getOptimalThreadCount(isHeavyModel = true)
+            val cores = Runtime.getRuntime().availableProcessors()
+            Logger.d(TAG, "CPU cores=$cores, threads: light=$lightThreads, heavy=$heavyThreads, model=${config.type}")
+
             val modelConfig = when (config.type) {
                 ModelType.VITS -> {
                     val vits = OfflineTtsVitsModelConfig(
@@ -684,7 +710,7 @@ class SherpaOnnxWrapper private constructor(
                     )
                     OfflineTtsModelConfig(
                         vits = vits,
-                        numThreads = 2,
+                        numThreads = lightThreads,
                         debug = false,
                         provider = "cpu"
                     )
@@ -704,7 +730,7 @@ class SherpaOnnxWrapper private constructor(
                         )
                         OfflineTtsModelConfig(
                             matcha = matcha,
-                            numThreads = 2,
+                            numThreads = heavyThreads,
                             debug = false,
                             provider = "cpu"
                         )
@@ -725,7 +751,7 @@ class SherpaOnnxWrapper private constructor(
                         )
                         OfflineTtsModelConfig(
                             kokoro = kokoro,
-                            numThreads = 2,
+                            numThreads = heavyThreads,
                             debug = false,
                             provider = "cpu"
                         )
@@ -745,7 +771,7 @@ class SherpaOnnxWrapper private constructor(
                         )
                         OfflineTtsModelConfig(
                             kitten = kitten,
-                            numThreads = 2,
+                            numThreads = heavyThreads,
                             debug = false,
                             provider = "cpu"
                         )
@@ -778,7 +804,7 @@ class SherpaOnnxWrapper private constructor(
             )
             return OfflineTtsModelConfig(
                 vits = vits,
-                numThreads = 2,
+                numThreads = getOptimalThreadCount(isHeavyModel = false),
                 debug = false,
                 provider = "cpu"
             )

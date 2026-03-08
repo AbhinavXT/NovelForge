@@ -69,29 +69,42 @@ class AudioExporter(
     // ── Public API ───────────────────────────────────────────────
 
     /**
-     * Check if a chapter's audio has already been exported (any voice).
+     * Check if a chapter's audio has already been exported for a specific voice.
+     * If voiceName is null, checks if ANY voice export exists.
      */
-    fun isChapterExported(novelTitle: String, chapterTitle: String): Boolean {
+    fun isChapterExported(novelTitle: String, chapterTitle: String, voiceName: String? = null): Boolean {
         val novelFolder = sanitizeFilename(novelTitle)
         val chapterPrefix = sanitizeFilename(chapterTitle)
         val musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
         val novelDir = File(musicDir, "$SUBFOLDER/$novelFolder")
         if (!novelDir.exists()) return false
-        // Match files like "Chapter_1_Amy_Low.wav", "Chapter_1_Kokoro_v0_19.wav"
-        return novelDir.listFiles()?.any {
-            it.isFile && it.extension == "wav" && it.nameWithoutExtension.startsWith(chapterPrefix)
-        } == true
+
+        return if (voiceName != null) {
+            // Check for exact voice match: "Chapter_1_Amy_Low.wav"
+            val voiceSuffix = sanitizeFilename(voiceName)
+            val expectedName = "${chapterPrefix}_${voiceSuffix}"
+            novelDir.listFiles()?.any {
+                it.isFile && it.extension == "wav" && it.nameWithoutExtension == expectedName
+            } == true
+        } else {
+            // Match any voice: files starting with chapterPrefix
+            novelDir.listFiles()?.any {
+                it.isFile && it.extension == "wav" && it.nameWithoutExtension.startsWith(chapterPrefix)
+            } == true
+        }
     }
 
     /**
-     * Get set of chapter IDs that have exported audio for a novel.
+     * Get set of chapter IDs that have exported audio for a novel with the specified voice.
+     * If voiceName is null, returns chapters exported with ANY voice.
      */
     fun getExportedChapterIds(
         novelTitle: String,
-        chapters: List<Pair<String, String>>  // List of (chapterId, chapterTitle)
+        chapters: List<Pair<String, String>>,  // List of (chapterId, chapterTitle)
+        voiceName: String? = null
     ): Set<String> {
         return chapters.filter { (_, title) ->
-            isChapterExported(novelTitle, title)
+            isChapterExported(novelTitle, title, voiceName)
         }.map { (id, _) -> id }.toSet()
     }
 

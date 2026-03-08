@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.novelreader.data.DownloadManager
+import com.example.novelreader.ui.components.ModelDownloadDialog
 import com.example.novelreader.data.NovelDownloadState
 import com.example.novelreader.data.NovelRepository
 import com.example.novelreader.data.database.BookmarkEntity
@@ -116,6 +117,7 @@ fun NovelDetailScreen(
     val currentVoice by ttsManager.currentVoice.collectAsState()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    var showModelDownloadDialog by remember { mutableStateOf(false) }
 
     // Show snackbar for export completion/error
     LaunchedEffect(exportState) {
@@ -238,10 +240,22 @@ fun NovelDetailScreen(
                         // Navigate to the bookmarked chapter using the stored URL
                         onChapterClick(bookmark.chapterId, bookmark.chapterUrl)
                     },
+                    onShowModelDownload = { showModelDownloadDialog = true },
                     modifier = Modifier.padding(paddingValues)
                 )
             }
         }
+    }
+
+    // Model download dialog — shown at top level so it overlays everything
+    if (showModelDownloadDialog) {
+        ModelDownloadDialog(
+            modelManager = ttsManager.modelManager,
+            onDismiss = { showModelDownloadDialog = false },
+            onModelDownloaded = {
+                ttsManager.refreshVoiceList()
+            }
+        )
     }
 }
 
@@ -270,6 +284,7 @@ private fun NovelDetailContent(
     onDeleteBookmark: (Long) -> Unit,
     onUpdateBookmarkNote: (Long, String?) -> Unit,
     onBookmarkClick: (BookmarkEntity) -> Unit,
+    onShowModelDownload: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -405,7 +420,8 @@ private fun NovelDetailContent(
                     AudioVoicePicker(
                         availableVoices = availableVoices,
                         currentVoice = currentVoice,
-                        onVoiceSelected = onVoiceSelected
+                        onVoiceSelected = onVoiceSelected,
+                        onShowModelDownload = onShowModelDownload
                     )
                 }
 
@@ -806,7 +822,8 @@ private fun NovelDescription(description: String) {
 private fun AudioVoicePicker(
     availableVoices: List<com.example.novelreader.data.tts.VoiceInfo>,
     currentVoice: com.example.novelreader.data.tts.VoiceInfo?,
-    onVoiceSelected: (com.example.novelreader.data.tts.VoiceInfo) -> Unit
+    onVoiceSelected: (com.example.novelreader.data.tts.VoiceInfo) -> Unit,
+    onShowModelDownload: () -> Unit
 ) {
     var showVoiceDialog by remember { mutableStateOf(false) }
 
@@ -866,7 +883,8 @@ private fun AudioVoicePicker(
             voices = availableVoices,
             currentVoice = currentVoice,
             onVoiceSelected = onVoiceSelected,
-            onDismiss = { showVoiceDialog = false }
+            onDismiss = { showVoiceDialog = false },
+            onShowModelDownload = onShowModelDownload
         )
     }
 }
@@ -876,7 +894,8 @@ private fun VoiceSelectorDialog(
     voices: List<com.example.novelreader.data.tts.VoiceInfo>,
     currentVoice: com.example.novelreader.data.tts.VoiceInfo?,
     onVoiceSelected: (com.example.novelreader.data.tts.VoiceInfo) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onShowModelDownload: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -939,6 +958,26 @@ private fun VoiceSelectorDialog(
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    // Download neural voices button
+                    item {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        TextButton(
+                            onClick = {
+                                onDismiss()
+                                onShowModelDownload()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Get Neural Voices (Piper, Kokoro\u2026)")
                         }
                     }
                 }

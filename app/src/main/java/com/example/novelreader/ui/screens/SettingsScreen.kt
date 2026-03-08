@@ -237,6 +237,7 @@ fun SettingsScreen(
                             text = "• Library (all added novels)\n" +
                                     "• Reading progress & position\n" +
                                     "• Downloaded chapters (optional)\n" +
+                                    "• Bookmarks & notes\n" +
                                     "• Reader settings (font, theme)\n" +
                                     "• TTS settings",
                             style = MaterialTheme.typography.bodySmall,
@@ -260,11 +261,62 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Novel Reader v1.4.0",
-                style = MaterialTheme.typography.bodyMedium
+                text = "Novel Reader v1.5.0",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium
             )
             Text(
-                text = "Read web novels offline with TTS support",
+                text = "Read web novels offline with multi-engine neural TTS, audio export, and bookmarks.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "What's New in v1.5.0",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "• Download neural voices directly from novel detail screen\n" +
+                                "• Export chapters as audio in multiple voices per chapter\n" +
+                                "• Adaptive CPU thread tuning for faster Kokoro/Kitten TTS\n" +
+                                "• Fixed TTS skipping sentences during real-time playback\n" +
+                                "• Improved audio player layout",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "Features",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "• Multi-source novel browsing (RoyalRoad, ReadNovelFull)\n" +
+                        "• On-device neural TTS (Piper, Kokoro, KittenTTS)\n" +
+                        "• Google TTS integration with 67+ voices\n" +
+                        "• Per-chapter audio export to WAV\n" +
+                        "• Built-in audio player with speed control\n" +
+                        "• Bookmarks with notes and passage snippets\n" +
+                        "• Chapter search and jump navigation\n" +
+                        "• Library filters, chapter downloads, EPUB import\n" +
+                        "• Backup and restore",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
