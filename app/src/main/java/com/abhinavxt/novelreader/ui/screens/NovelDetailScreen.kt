@@ -73,6 +73,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.abhinavxt.novelreader.AppConfig
 import com.abhinavxt.novelreader.data.DownloadManager
 import com.abhinavxt.novelreader.ui.components.ModelDownloadDialog
 import com.abhinavxt.novelreader.data.NovelDownloadState
@@ -399,7 +400,7 @@ private fun NovelDetailContent(
 
                         // Show downloaded count badge
                         val downloadedCount = novel.chapters.count { it.isDownloaded }
-                        if (downloadedCount > 0 && !isLocalNovel) {
+                        if (downloadedCount > 0 && !isLocalNovel && AppConfig.ONLINE_SOURCES_ENABLED) {
                             Surface(
                                 color = MaterialTheme.colorScheme.primaryContainer,
                                 shape = MaterialTheme.shapes.small
@@ -733,7 +734,7 @@ private fun NovelHeader(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                if (!isLocalNovel) {
+                if (!isLocalNovel && AppConfig.ONLINE_SOURCES_ENABLED) {
                     OutlinedButton(
                         onClick = onToggleLibrary,
                         modifier = Modifier.weight(1f)
@@ -754,14 +755,14 @@ private fun NovelHeader(
                 Button(
                     onClick = onStartReading,
                     enabled = novel.chapters.isNotEmpty(),
-                    modifier = if (isLocalNovel) Modifier.fillMaxWidth() else Modifier.weight(1f)
+                    modifier = if (isLocalNovel || !AppConfig.ONLINE_SOURCES_ENABLED) Modifier.fillMaxWidth() else Modifier.weight(1f)
                 ) {
                     Text("Read")
                 }
             }
 
-            // Download button - only for online novels
-            if (!isLocalNovel) {
+            // Download button - only for online novels when sources enabled
+            if (!isLocalNovel && AppConfig.ONLINE_SOURCES_ENABLED) {
                 Spacer(modifier = Modifier.height(8.dp))
 
                 val isDownloading = downloadState?.novelId == novel.id && downloadState.isDownloading
@@ -1095,8 +1096,8 @@ private fun ChapterListItem(
                 }
             }
 
-            // Download status / button
-            if (!isLocalNovel) {
+            // Download status / button — only when online sources enabled
+            if (!isLocalNovel && AppConfig.ONLINE_SOURCES_ENABLED) {
                 when {
                     isDownloading -> {
                         // Downloading spinner

@@ -19,11 +19,6 @@ import java.util.Locale
  */
 class GoogleTTSEngine(private val context: Context) : TTSEngine, TextToSpeech.OnInitListener {
 
-    companion object {
-        const val ENGINE_ID = "google_tts"
-        private const val TAG = "GoogleTTSEngine"
-    }
-
     override val displayName: String = "System TTS (Google)"
     override val engineId: String = ENGINE_ID
     override var isReady: Boolean = false
@@ -268,7 +263,11 @@ class GoogleTTSEngine(private val context: Context) : TTSEngine, TextToSpeech.On
                 voices.sortedBy { it.name }
             } else {
                 voices.filter { it.locale.language == "en" }
-                    .sortedWith(compareBy({ it.isNetworkConnectionRequired }, { it.name }))
+                    .sortedWith(
+                        compareBy<Voice> { it.locale.displayCountry }
+                            .thenBy { it.isNetworkConnectionRequired }  // local first
+                            .thenBy { extractVariantCode(it.name) }
+                    )
             }
             Logger.d(TAG, "Loaded ${cachedVoices.size} voices")
         } ?: run {
@@ -304,28 +303,113 @@ class GoogleTTSEngine(private val context: Context) : TTSEngine, TextToSpeech.On
         })
     }
 
-    /** Human-readable voice label (reused from the original TTSManager). */
+    /** Human-readable voice label with variant name for differentiation. */
     fun getVoiceDisplayName(voice: Voice): String {
         val locale = voice.locale
+        val lang = locale.displayLanguage.ifBlank { locale.language }
         val country = locale.displayCountry.ifBlank { locale.country }
+
+        // Extract variant code from voice name (e.g. "en-us-x-sfg-local" → "sfg")
+        val variantCode = extractVariantCode(voice.name)
+
+        // Try to get a human-readable voice name from known mappings
+        val voiceName = KNOWN_VOICE_NAMES[variantCode]
+
+        // Detect quality tier from the voice name
         val quality = when {
             voice.name.contains("wavenet", true) -> "WaveNet"
             voice.name.contains("neural", true) -> "Neural"
             voice.name.contains("enhanced", true) -> "Enhanced"
+            voice.name.contains("studio", true) -> "Studio"
             voice.name.contains("local", true) -> "Local"
-            voice.name.contains("piper", true) -> "Piper"
-            voice.name.contains("lessac", true) -> "Lessac"
-            voice.name.contains("amy", true) -> "Amy"
-            else -> if (voice.isNetworkConnectionRequired) "Online" else "Offline"
+            voice.name.contains("network", true) -> "Online"
+            !voice.isNetworkConnectionRequired -> "Local"
+            else -> "Online"
         }
+
+        // Detect gender
         val gender = when {
-            voice.name.contains("female", true) -> "♀"
-            voice.name.contains("male", true) -> "♂"
-            voice.name.contains("-f-", true) -> "♀"
-            voice.name.contains("-m-", true) -> "♂"
+            voice.name.contains("female", true) || voice.name.contains("-f-", true) -> "♀"
+            voice.name.contains("male", true) || voice.name.contains("-m-", true) -> "♂"
+            variantCode in FEMALE_VARIANTS -> "♀"
+            variantCode in MALE_VARIANTS -> "♂"
             else -> ""
         }
-        return if (country.isNotBlank()) "$country $gender ($quality)"
-        else "${voice.name.take(20)} ($quality)"
+
+        // Build the display name
+        val region = country.ifBlank { lang }
+        return if (voiceName != null) {
+            "$region · $voiceName $gender ($quality)"
+        } else if (variantCode.isNotBlank()) {
+            "$region · Voice ${variantCode.uppercase()} $gender ($quality)"
+        } else {
+            "$region $gender ($quality)"
+        }
+    }
+
+    /**
+     * Extract the voice variant code from the Android TTS voice name.
+     * Handles formats like:
+     *   "en-us-x-sfg-local"         → "sfg"
+     *   "en-GB-x-gba-network"       → "gba"
+     *   "en-us-x-tpd#male_1-local"  → "tpd"
+     */
+    private fun extractVariantCode(voiceName: String): String {
+        val xIndex = voiceName.indexOf("-x-")
+        if (xIndex < 0) return ""
+
+        val afterX = voiceName.substring(xIndex + 3)
+        val endIdx = afterX.indexOfFirst { it == '-' || it == '#' }
+        return if (endIdx > 0) afterX.substring(0, endIdx) else afterX
+    }
+
+    companion object {
+        const val ENGINE_ID = "google_tts"
+        private const val TAG = "GoogleTTSEngine"
+
+        // Known Google TTS English voice variant mappings
+        private val KNOWN_VOICE_NAMES = mapOf(
+            // US English
+            "sfg" to "Aria",
+            "tpc" to "River",
+            "tpd" to "Asher",
+            "tpf" to "Luna",
+            "iob" to "Ivy",
+            "iol" to "Drew",
+            "iom" to "Blake",
+            "ion" to "Nova",
+            "iog" to "Pearl",
+            "tpg" to "Reed",
+            "efl" to "Sage",
+            "efg" to "Dawn",
+            // UK English
+            "gba" to "Rosie",
+            "gbb" to "James",
+            "gbc" to "Lily",
+            "gbd" to "Oliver",
+            "rjs" to "Robin",
+            // Australian English
+            "auc" to "Freya",
+            "aud" to "Max",
+            "aub" to "Ruby",
+            // Indian English
+            "ina" to "Priya",
+            "inb" to "Raj",
+            "inc" to "Ananya",
+            "ind" to "Arjun",
+        )
+
+        private val FEMALE_VARIANTS = setOf(
+            "sfg", "tpf", "iob", "ion", "iog", "efg",
+            "gba", "gbc",
+            "auc", "aub",
+            "ina", "inc"
+        )
+        private val MALE_VARIANTS = setOf(
+            "tpc", "tpd", "iol", "iom", "tpg", "efl",
+            "gbb", "gbd", "rjs",
+            "aud",
+            "inb", "ind"
+        )
     }
 }

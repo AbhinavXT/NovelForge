@@ -14,6 +14,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.abhinavxt.novelreader.AppConfig
 import com.abhinavxt.novelreader.data.DownloadManager
 import com.abhinavxt.novelreader.data.NovelRepository
 import com.abhinavxt.novelreader.ui.screens.*
@@ -116,48 +117,67 @@ fun NavigationHost(
     audioPlayerViewModel: AudioPlayerViewModel,
     modifier: Modifier = Modifier
 ) {
+    val startRoute = if (AppConfig.ONLINE_SOURCES_ENABLED) Screen.Home.route else Screen.Library.route
+
     NavHost(
         navController = navController,
-        startDestination = Screen.Home.route,
+        startDestination = startRoute,
         modifier = modifier
     ) {
-        composable(Screen.Home.route) {
-            HomeScreen(
-                repository = repository,
-                onBrowseClick = {
-                    navController.navigate(Screen.Search.route) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
-                        }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                },
-                onNovelClick = { novelId ->
-                    val url = constructNovelUrl(novelId)
-                    navController.navigate(Screen.Detail.createRoute(novelId, url))
-                },
-                onContinueReading = { novelId, chapterId, chapterUrl, novelUrl ->
-                    navController.navigate(
-                        Screen.Reader.createRoute(
-                            novelId = novelId,
-                            chapterId = chapterId,
-                            chapterUrl = chapterUrl,
-                            novelUrl = novelUrl
-                        )
-                    )
-                }
-            )
-        }
+        // ── Online source screens (Browse/Search/Home) ────────────
+        // Only registered when online sources are enabled
 
-        composable(Screen.Search.route) {
-            SearchScreen(
-                repository = repository,
-                onNovelClick = { novelPreview ->
-                    val url = constructNovelUrl(novelPreview.id)
-                    navController.navigate(Screen.Detail.createRoute(novelPreview.id, url))
-                }
-            )
+        if (AppConfig.ONLINE_SOURCES_ENABLED) {
+            composable(Screen.Home.route) {
+                HomeScreen(
+                    repository = repository,
+                    onBrowseClick = {
+                        navController.navigate(Screen.Search.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onNovelClick = { novelId ->
+                        val url = constructNovelUrl(novelId)
+                        navController.navigate(Screen.Detail.createRoute(novelId, url))
+                    },
+                    onContinueReading = { novelId, chapterId, chapterUrl, novelUrl ->
+                        navController.navigate(
+                            Screen.Reader.createRoute(
+                                novelId = novelId,
+                                chapterId = chapterId,
+                                chapterUrl = chapterUrl,
+                                novelUrl = novelUrl
+                            )
+                        )
+                    }
+                )
+            }
+
+            composable(Screen.Search.route) {
+                SearchScreen(
+                    repository = repository,
+                    onNovelClick = { novelPreview ->
+                        val url = constructNovelUrl(novelPreview.id)
+                        navController.navigate(Screen.Detail.createRoute(novelPreview.id, url))
+                    }
+                )
+            }
+
+            composable(Screen.Downloads.route) {
+                DownloadsScreen(
+                    repository = repository,
+                    downloadManager = downloadManager,
+                    onBackClick = { navController.popBackStack() },
+                    onNovelClick = { novelId ->
+                        val url = constructNovelUrl(novelId)
+                        navController.navigate(Screen.Detail.createRoute(novelId, url))
+                    }
+                )
+            }
         }
 
         composable(Screen.Library.route) {
@@ -237,18 +257,6 @@ fun NavigationHost(
                 repository = repository,
                 ttsManager = ttsManager,
                 onBackClick = { navController.popBackStack() }
-            )
-        }
-
-        composable(Screen.Downloads.route) {
-            DownloadsScreen(
-                repository = repository,
-                downloadManager = downloadManager,
-                onBackClick = { navController.popBackStack() },
-                onNovelClick = { novelId ->
-                    val url = constructNovelUrl(novelId)
-                    navController.navigate(Screen.Detail.createRoute(novelId, url))
-                }
             )
         }
 

@@ -25,6 +25,7 @@ import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.abhinavxt.novelreader.AppConfig
 import com.abhinavxt.novelreader.data.BackupManager
 import com.abhinavxt.novelreader.data.DownloadManager
 import com.abhinavxt.novelreader.data.NovelRepository
@@ -111,13 +112,21 @@ fun NovelReaderApp(
 ) {
     val navController = rememberNavController()
 
-    val bottomNavScreens = listOf(
-        Screen.Home,
-        Screen.Search,
-        Screen.Library,
-        Screen.AudioLibrary,
-        Screen.Settings
-    )
+    val bottomNavScreens = if (AppConfig.ONLINE_SOURCES_ENABLED) {
+        listOf(
+            Screen.Home,
+            Screen.Search,
+            Screen.Library,
+            Screen.AudioLibrary,
+            Screen.Settings
+        )
+    } else {
+        listOf(
+            Screen.Library,
+            Screen.AudioLibrary,
+            Screen.Settings
+        )
+    }
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination

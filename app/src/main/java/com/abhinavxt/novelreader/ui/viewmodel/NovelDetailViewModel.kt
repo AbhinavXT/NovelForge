@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.abhinavxt.novelreader.AppConfig
 import com.abhinavxt.novelreader.data.NovelRepository
 import com.abhinavxt.novelreader.data.TTSManager
 import com.abhinavxt.novelreader.data.database.BookmarkEntity
@@ -139,6 +140,7 @@ class NovelDetailViewModel(
      * Download a single chapter
      */
     fun downloadChapter(chapter: Chapter) {
+        if (!AppConfig.ONLINE_SOURCES_ENABLED) return
         val currentState = _uiState.value
         if (currentState !is NovelDetailUiState.Success) return
         if (currentState.isLocalNovel) return
