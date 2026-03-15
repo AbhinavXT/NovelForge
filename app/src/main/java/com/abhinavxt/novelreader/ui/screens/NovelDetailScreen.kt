@@ -305,8 +305,8 @@ private fun NovelDetailContent(
         if (!hasScrolledToReading && currentReadingChapterId != null && searchQuery.isBlank()) {
             val chapterIndex = novel.chapters.indexOfFirst { it.id == currentReadingChapterId }
             if (chapterIndex >= 0) {
-                // Offset: header, description, tabRow, downloadBadge, voicePicker, exportRow, searchBar = 7
-                val scrollTarget = 7 + chapterIndex
+                // Offset: header, description, tabRow, downloadBadge, exportRow, stickyHeader(voice+search) = 6
+                val scrollTarget = 6 + chapterIndex
                 listState.scrollToItem(scrollTarget)
                 hasScrolledToReading = true
             }
@@ -439,16 +439,6 @@ private fun NovelDetailContent(
                     }
                 }
 
-                // Audio voice picker
-                item {
-                    AudioVoicePicker(
-                        availableVoices = availableVoices,
-                        currentVoice = currentVoice,
-                        onVoiceSelected = onVoiceSelected,
-                        onShowModelDownload = onShowModelDownload
-                    )
-                }
-
                 // Export All as Audio button
                 item {
                     val exportedCount = audioExportedChapters.size
@@ -511,13 +501,22 @@ private fun NovelDetailContent(
                     }
                 }
 
-                // Chapter search bar — sticky so it stays visible while scrolling
+                // Voice picker + search bar — sticky so they stay visible while scrolling
                 stickyHeader {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(MaterialTheme.colorScheme.surface)
                     ) {
+                        // Voice picker row — compact, sits above search
+                        AudioVoicePicker(
+                            availableVoices = availableVoices,
+                            currentVoice = currentVoice,
+                            onVoiceSelected = onVoiceSelected,
+                            onShowModelDownload = onShowModelDownload
+                        )
+
+                        // Search bar
                         ChapterSearchBar(
                             query = searchQuery,
                             onQueryChange = { searchQuery = it },

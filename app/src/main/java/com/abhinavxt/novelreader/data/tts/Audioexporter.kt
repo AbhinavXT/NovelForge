@@ -1,11 +1,18 @@
 package com.abhinavxt.novelreader.data.tts
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.core.app.NotificationCompat
+import com.abhinavxt.novelreader.MainActivity
+import com.abhinavxt.novelreader.R
 import com.abhinavxt.novelreader.util.Logger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -47,11 +54,88 @@ class AudioExporter(
         private const val SUBFOLDER = "NovelReader"
         private const val SILENCE_BETWEEN_SENTENCES_MS = 300
         private const val SILENCE_BETWEEN_PARAGRAPHS_MS = 600
+
+        // Export progress notification
+        private const val EXPORT_CHANNEL_ID = "audio_export_channel"
+        private const val EXPORT_NOTIFICATION_ID = 2001
     }
 
     // Own scope — survives ViewModel destruction so exports continue in background
     private val exportScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var currentExportJob: Job? = null
+    private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+    init {
+        createExportNotificationChannel()
+    }
+
+    private fun createExportNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                EXPORT_CHANNEL_ID,
+                "Audio Export",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Shows audio export progress"
+                setShowBadge(false)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    /**
+     * Show or update the export progress notification.
+     */
+    private fun showExportNotification(chapterTitle: String, sentence: Int, total: Int, progress: Float) {
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val openPending = PendingIntent.getActivity(
+            context, 0, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, EXPORT_CHANNEL_ID)
+            .setContentTitle("Exporting: $chapterTitle")
+            .setContentText("Sentence $sentence / $total")
+            .setSubText("Novel Reader")
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setOngoing(true)
+            .setContentIntent(openPending)
+            .setProgress(100, (progress * 100).toInt(), false)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setSilent(true)
+            .build()
+
+        notificationManager.notify(EXPORT_NOTIFICATION_ID, notification)
+    }
+
+    /**
+     * Show a completion notification and dismiss the progress one.
+     */
+    private fun showExportCompleteNotification(chapterTitle: String) {
+        // Dismiss progress notification
+        notificationManager.cancel(EXPORT_NOTIFICATION_ID)
+
+        val notification = NotificationCompat.Builder(context, EXPORT_CHANNEL_ID)
+            .setContentTitle("Export Complete")
+            .setContentText(chapterTitle)
+            .setSubText("Novel Reader")
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        notificationManager.notify(EXPORT_NOTIFICATION_ID + 1, notification)
+    }
+
+    /**
+     * Dismiss export notifications (e.g. on cancel).
+     */
+    private fun dismissExportNotification() {
+        notificationManager.cancel(EXPORT_NOTIFICATION_ID)
+    }
 
     // ── State ────────────────────────────────────────────────────
 
@@ -208,12 +292,15 @@ class AudioExporter(
                     for ((index, entry) in sentences.withIndex()) {
                         ensureActive()
 
+                        val progress = index.toFloat() / sentences.size
                         _exportState.value = ExportState.Exporting(
                             chapterId = chapterId,
-                            progress = index.toFloat() / sentences.size,
+                            progress = progress,
                             currentSentence = index + 1,
                             totalSentences = sentences.size
                         )
+                        // Update notification so progress is visible even when user leaves the screen
+                        showExportNotification(chapterTitle, index + 1, sentences.size, progress)
 
                         if (useSherpa) {
                             // ── Sherpa path: generate raw samples ──
@@ -301,9 +388,11 @@ class AudioExporter(
                 if (filePath != null) {
                     Logger.d(TAG, "Export complete: $filePath (${totalPcmBytes / 1024}KB PCM)")
                     _exportState.value = ExportState.Completed(chapterId, filePath)
+                    showExportCompleteNotification(chapterTitle)
                     return@withContext true
                 } else {
                     _exportState.value = ExportState.Error(chapterId, "Failed to save audio file")
+                    dismissExportNotification()
                     return@withContext false
                 }
 
@@ -314,10 +403,12 @@ class AudioExporter(
         } catch (e: CancellationException) {
             Logger.d(TAG, "Export cancelled for: $chapterTitle")
             _exportState.value = ExportState.Idle
+            dismissExportNotification()
             throw e
         } catch (e: Exception) {
             Logger.e(TAG, "Export failed for: $chapterTitle", e)
             _exportState.value = ExportState.Error(chapterId, "Export failed: ${e.message}")
+            dismissExportNotification()
             return@withContext false
         } finally {
             _exportingChapters.value = _exportingChapters.value - chapterId
@@ -401,6 +492,7 @@ class AudioExporter(
         currentExportJob = null
         _exportState.value = ExportState.Idle
         _exportingChapters.value = emptySet()
+        dismissExportNotification()
     }
 
     /**
