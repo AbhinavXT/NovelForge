@@ -69,10 +69,17 @@ class NovelDetailViewModel(
     private val _bookmarkCount = MutableStateFlow(0)
     val bookmarkCount: StateFlow<Int> = _bookmarkCount.asStateFlow()
 
+    // ============ READING PROGRESS ============
+
+    // Current chapter the user is reading (for auto-scroll)
+    private val _currentReadingChapterId = MutableStateFlow<String?>(null)
+    val currentReadingChapterId: StateFlow<String?> = _currentReadingChapterId.asStateFlow()
+
     init {
         loadNovel()
-        loadBookmarks()  // Start observing bookmarks immediately
-        observeVoiceChanges()  // Refresh export status when voice changes
+        loadBookmarks()
+        loadReadingProgress()
+        observeVoiceChanges()
     }
 
     private fun loadNovel() {
@@ -232,6 +239,25 @@ class NovelDetailViewModel(
             return currentState.novel.chapters.firstOrNull()
         }
         return null
+    }
+
+    // ============ READING PROGRESS ============
+
+    /**
+     * Load reading progress so the chapter list can auto-scroll to where the user left off.
+     */
+    private fun loadReadingProgress() {
+        viewModelScope.launch {
+            try {
+                val progress = repository.getReadingProgress(novelId)
+                if (progress != null) {
+                    _currentReadingChapterId.value = progress.currentChapterId
+                    Logger.d("NovelDetailVM", "Reading progress: chapter=${progress.currentChapterId}")
+                }
+            } catch (e: Exception) {
+                Logger.w("NovelDetailVM", "Failed to load reading progress: ${e.message}")
+            }
+        }
     }
 
     // ============ BOOKMARK METHODS ============

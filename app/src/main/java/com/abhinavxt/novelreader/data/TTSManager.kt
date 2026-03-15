@@ -211,7 +211,18 @@ class TTSManager(private val context: Context) {
         _activeEngineId.value = engine.engineId
         _engineReady.value = true
 
-        // Refresh voice list
+        // Restore saved voice to the engine before refreshing voice list
+        val savedVoiceId = _settings.value.voiceName
+        if (savedVoiceId != null) {
+            try {
+                engine.setVoice(savedVoiceId)
+                Logger.d("TTSManager", "Restored saved voice: $savedVoiceId")
+            } catch (e: Exception) {
+                Logger.w("TTSManager", "Failed to restore saved voice: $savedVoiceId")
+            }
+        }
+
+        // Refresh voice list (will now pick up the restored voice from getCurrentVoiceId())
         refreshVoiceList()
         Logger.d("TTSManager", "Active engine: ${engine.displayName}")
     }
@@ -234,8 +245,8 @@ class TTSManager(private val context: Context) {
         Logger.d("TTSManager", "Total voices: ${allVoices.size}")
         _availableVoices.value = allVoices
 
-        // Update current voice
-        val currentId = activeEngine.getCurrentVoiceId()
+        // Update current voice — try engine's current, fall back to saved setting
+        val currentId = activeEngine.getCurrentVoiceId() ?: _settings.value.voiceName
         _currentVoice.value = allVoices.find { it.id == currentId }
 
         // Legacy Android Voice support

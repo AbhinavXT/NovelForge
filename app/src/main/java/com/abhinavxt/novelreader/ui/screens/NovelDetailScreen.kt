@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Book
@@ -116,6 +117,7 @@ fun NovelDetailScreen(
     val audioExportedChapters by viewModel.audioExportedChapters.collectAsState()
     val availableVoices by ttsManager.availableVoices.collectAsState()
     val currentVoice by ttsManager.currentVoice.collectAsState()
+    val currentReadingChapterId by viewModel.currentReadingChapterId.collectAsState()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var showModelDownloadDialog by remember { mutableStateOf(false) }
@@ -242,6 +244,7 @@ fun NovelDetailScreen(
                         onChapterClick(bookmark.chapterId, bookmark.chapterUrl)
                     },
                     onShowModelDownload = { showModelDownloadDialog = true },
+                    currentReadingChapterId = currentReadingChapterId,
                     modifier = Modifier.padding(paddingValues)
                 )
             }
@@ -286,10 +289,27 @@ private fun NovelDetailContent(
     onUpdateBookmarkNote: (Long, String?) -> Unit,
     onBookmarkClick: (BookmarkEntity) -> Unit,
     onShowModelDownload: () -> Unit,
+    currentReadingChapterId: String? = null,
     modifier: Modifier = Modifier
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedTab by rememberSaveable { mutableStateOf(0) }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+
+    // Auto-scroll to current reading chapter on first load
+    var hasScrolledToReading by remember { mutableStateOf(false) }
+    LaunchedEffect(novel.chapters, currentReadingChapterId) {
+        if (!hasScrolledToReading && currentReadingChapterId != null && searchQuery.isBlank()) {
+            val chapterIndex = novel.chapters.indexOfFirst { it.id == currentReadingChapterId }
+            if (chapterIndex >= 0) {
+                // Offset: header, description, tabRow, downloadBadge, voicePicker, exportRow, searchBar = 7
+                val scrollTarget = 7 + chapterIndex
+                listState.scrollToItem(scrollTarget)
+                hasScrolledToReading = true
+            }
+        }
+    }
 
     // Filter chapters based on search query
     val filteredChapters = remember(novel.chapters, searchQuery) {
@@ -312,6 +332,7 @@ private fun NovelDetailContent(
     }
 
     LazyColumn(
+        state = listState,
         modifier = modifier.fillMaxSize()
     ) {
         // Novel header (cover, title, buttons) — unchanged

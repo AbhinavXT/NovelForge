@@ -163,17 +163,21 @@ class GoogleTTSEngine(private val context: Context) : TTSEngine, TextToSpeech.On
             override fun onStart(id: String?) {}
             override fun onDone(id: String?) {
                 if (id == utteranceId && cont.isActive) {
+                    // Restore the playback listener before resuming
+                    setupUtteranceListener()
                     cont.resume(true) {}
                 }
             }
             @Deprecated("Deprecated in Java")
             override fun onError(id: String?) {
                 if (id == utteranceId && cont.isActive) {
+                    setupUtteranceListener()
                     cont.resume(false) {}
                 }
             }
             override fun onError(id: String?, errorCode: Int) {
                 if (id == utteranceId && cont.isActive) {
+                    setupUtteranceListener()
                     cont.resume(false) {}
                 }
             }
@@ -183,11 +187,13 @@ class GoogleTTSEngine(private val context: Context) : TTSEngine, TextToSpeech.On
 
         val result = tts?.synthesizeToFile(text, null, outputFile, utteranceId)
         if (result == TextToSpeech.ERROR) {
+            setupUtteranceListener()
             if (cont.isActive) cont.resume(false) {}
         }
 
         cont.invokeOnCancellation {
             tts?.stop()
+            setupUtteranceListener()
         }
     }
 
