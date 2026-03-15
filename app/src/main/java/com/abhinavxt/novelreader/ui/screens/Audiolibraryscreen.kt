@@ -18,15 +18,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -35,6 +39,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -117,7 +124,8 @@ fun AudioLibraryScreen(
                     AudioNovelCard(
                         novel = novel,
                         playbackState = playbackState,
-                        onClick = { onNovelClick(novel.folderName) }
+                        onClick = { onNovelClick(novel.folderName) },
+                        onDelete = { viewModel.deleteNovel(novel) }
                     )
                 }
             }
@@ -129,9 +137,11 @@ fun AudioLibraryScreen(
 private fun AudioNovelCard(
     novel: AudioNovel,
     playbackState: PlaybackState,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDelete: () -> Unit
 ) {
     val isCurrentlyPlaying = playbackState.currentNovel?.folderName == novel.folderName
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
@@ -193,12 +203,48 @@ private fun AudioNovelCard(
                 }
             }
 
+            // Delete button
+            IconButton(
+                onClick = { showDeleteConfirm = true },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Delete novel audio",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
             Icon(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = "Open",
                 tint = MaterialTheme.colorScheme.outline
             )
         }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete Audio") },
+            text = {
+                Text("Delete all ${novel.chapters.size} audio file${if (novel.chapters.size != 1) "s" else ""} for \"${novel.displayName}\"? This cannot be undone.")
+            },
+            confirmButton = {
+                Button(onClick = {
+                    onDelete()
+                    showDeleteConfirm = false
+                }) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -264,7 +310,8 @@ fun AudioChapterListScreen(
                         isPlaying = playbackState.currentChapter?.filePath == chapter.filePath
                                 && playbackState.isPlaying,
                         onClick = { onChapterClick(novelFolderName, chapter.filePath) },
-                        onPlayClick = { viewModel.play(chapter, novel) }
+                        onPlayClick = { viewModel.play(chapter, novel) },
+                        onDelete = { viewModel.deleteChapter(chapter) }
                     )
                 }
             }
@@ -277,8 +324,11 @@ private fun AudioChapterItem(
     chapter: AudioChapter,
     isPlaying: Boolean,
     onClick: () -> Unit,
-    onPlayClick: () -> Unit
+    onPlayClick: () -> Unit,
+    onDelete: () -> Unit
 ) {
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -320,6 +370,19 @@ private fun AudioChapterItem(
                 )
             }
 
+            // Delete button
+            IconButton(
+                onClick = { showDeleteConfirm = true },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Delete",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
             // Quick play button
             IconButton(onClick = onPlayClick) {
                 Icon(
@@ -329,5 +392,26 @@ private fun AudioChapterItem(
                 )
             }
         }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete Audio") },
+            text = { Text("Delete \"${chapter.displayName}\"?") },
+            confirmButton = {
+                Button(onClick = {
+                    onDelete()
+                    showDeleteConfirm = false
+                }) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

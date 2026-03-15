@@ -8,8 +8,12 @@ import android.os.Environment
 import android.provider.MediaStore
 import com.abhinavxt.novelreader.util.Logger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,6 +48,10 @@ class AudioExporter(
         private const val SILENCE_BETWEEN_SENTENCES_MS = 300
         private const val SILENCE_BETWEEN_PARAGRAPHS_MS = 600
     }
+
+    // Own scope — survives ViewModel destruction so exports continue in background
+    private val exportScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var currentExportJob: Job? = null
 
     // ── State ────────────────────────────────────────────────────
 
@@ -317,9 +325,80 @@ class AudioExporter(
     }
 
     /**
+     * Launch a single chapter export in the exporter's own scope.
+     * Survives ViewModel destruction — export continues even if user navigates away.
+     */
+    fun launchExport(
+        chapterId: String,
+        novelTitle: String,
+        chapterTitle: String,
+        voiceName: String,
+        text: String,
+        speakerId: Int = 0,
+        speed: Float = 1.0f,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) {
+        currentExportJob = exportScope.launch {
+            val success = exportChapter(chapterId, novelTitle, chapterTitle, voiceName, text, speakerId, speed)
+            onComplete?.invoke(success)
+        }
+    }
+
+    /**
+     * Launch export of multiple chapters in the exporter's own scope.
+     * Skips chapter IDs in [alreadyExported].
+     */
+    fun launchExportAll(
+        chapters: List<ExportChapterInfo>,
+        novelTitle: String,
+        voiceName: String,
+        speakerId: Int = 0,
+        speed: Float = 1.0f,
+        alreadyExported: Set<String> = emptySet(),
+        onEachComplete: ((String) -> Unit)? = null,
+        onAllDone: (() -> Unit)? = null
+    ) {
+        currentExportJob = exportScope.launch {
+            for (info in chapters) {
+                if (info.chapterId in alreadyExported) continue
+                if (info.content.isBlank()) continue
+
+                try {
+                    val success = exportChapter(
+                        chapterId = info.chapterId,
+                        novelTitle = novelTitle,
+                        chapterTitle = info.chapterTitle,
+                        voiceName = voiceName,
+                        text = info.content,
+                        speakerId = speakerId,
+                        speed = speed
+                    )
+                    if (success) {
+                        onEachComplete?.invoke(info.chapterId)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Logger.e(TAG, "Export failed for ${info.chapterTitle}", e)
+                }
+            }
+            onAllDone?.invoke()
+        }
+    }
+
+    /** Data class for batch export */
+    data class ExportChapterInfo(
+        val chapterId: String,
+        val chapterTitle: String,
+        val content: String
+    )
+
+    /**
      * Cancel any in-progress export.
      */
     fun cancel() {
+        currentExportJob?.cancel()
+        currentExportJob = null
         _exportState.value = ExportState.Idle
         _exportingChapters.value = emptySet()
     }

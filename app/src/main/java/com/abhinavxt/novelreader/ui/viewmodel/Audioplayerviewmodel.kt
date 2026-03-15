@@ -314,4 +314,55 @@ class AudioPlayerViewModel(
         stop()
         super.onCleared()
     }
+
+    // ── Delete ───────────────────────────────────────────────────
+
+    /**
+     * Delete a single audio chapter file and refresh the library.
+     * Stops playback first if this chapter is currently playing.
+     */
+    fun deleteChapter(chapter: AudioChapter) {
+        // Stop if currently playing this chapter
+        if (_playbackState.value.currentChapter?.filePath == chapter.filePath) {
+            stop()
+        }
+
+        viewModelScope.launch {
+            try {
+                val file = File(chapter.filePath)
+                if (file.exists()) {
+                    file.delete()
+                    Logger.d(TAG, "Deleted audio: ${chapter.filePath}")
+                }
+                scanAudioFiles()
+            } catch (e: Exception) {
+                Logger.e(TAG, "Failed to delete chapter: ${chapter.filePath}", e)
+            }
+        }
+    }
+
+    /**
+     * Delete all audio files for a novel (entire folder) and refresh.
+     * Stops playback first if playing from this novel.
+     */
+    fun deleteNovel(novel: AudioNovel) {
+        // Stop if currently playing from this novel
+        if (_playbackState.value.currentNovel?.folderName == novel.folderName) {
+            stop()
+        }
+
+        viewModelScope.launch {
+            try {
+                val musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+                val novelDir = File(musicDir, "$AUDIO_DIR/${novel.folderName}")
+                if (novelDir.exists()) {
+                    novelDir.deleteRecursively()
+                    Logger.d(TAG, "Deleted novel audio folder: ${novel.folderName}")
+                }
+                scanAudioFiles()
+            } catch (e: Exception) {
+                Logger.e(TAG, "Failed to delete novel: ${novel.folderName}", e)
+            }
+        }
+    }
 }

@@ -38,6 +38,12 @@ class TTSForegroundService : Service() {
         private const val ACTION_PREV = "PREV_TTS"
         private const val ACTION_NEXT = "NEXT_TTS"
 
+        // Track latest notification state for rebuilds
+        @Volatile var lastTitle: String = "Novel Reader"
+            private set
+        @Volatile var lastSubtitle: String = "Playing..."
+            private set
+
         fun start(context: Context, title: String = "Reading...") {
             val intent = Intent(context, TTSForegroundService::class.java).apply {
                 putExtra("title", title)
@@ -53,16 +59,18 @@ class TTSForegroundService : Service() {
             context.stopService(Intent(context, TTSForegroundService::class.java))
         }
 
-        fun updateNotification(context: Context, title: String, progress: String) {
+        fun updateNotification(context: Context, title: String, progress: String, isPlaying: Boolean = true) {
+            lastTitle = title
+            lastSubtitle = progress
             try {
                 val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.notify(NOTIFICATION_ID, buildNotification(context, title, progress))
+                notificationManager.notify(NOTIFICATION_ID, buildNotification(context, title, progress, isPlaying))
             } catch (e: Exception) {
                 Logger.w(TAG, "Failed to update notification: ${e.message}")
             }
         }
 
-        private fun buildNotification(context: Context, title: String, subtitle: String): Notification {
+        private fun buildNotification(context: Context, title: String, subtitle: String, isPlaying: Boolean = true): Notification {
             val openIntent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
             }
@@ -84,7 +92,11 @@ class TTSForegroundService : Service() {
                 .setOngoing(true)
                 .setContentIntent(openPending)
                 .addAction(android.R.drawable.ic_media_previous, "Prev", prevPending)
-                .addAction(android.R.drawable.ic_media_pause, "Pause", togglePending)
+                .addAction(
+                    if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+                    if (isPlaying) "Pause" else "Play",
+                    togglePending
+                )
                 .addAction(android.R.drawable.ic_media_next, "Next", nextPending)
                 .addAction(android.R.drawable.ic_delete, "Stop", stopPending)
                 .setStyle(
@@ -136,9 +148,13 @@ class TTSForegroundService : Service() {
                     if (ttsManager.isPlaying()) {
                         ttsManager.pause()
                         updatePlaybackState(PlaybackState.STATE_PAUSED)
+                        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        nm.notify(NOTIFICATION_ID, buildNotification(this, lastTitle, "Paused", false))
                     } else {
                         ttsManager.resume()
                         updatePlaybackState(PlaybackState.STATE_PLAYING)
+                        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        nm.notify(NOTIFICATION_ID, buildNotification(this, lastTitle, lastSubtitle, true))
                     }
                 }
                 return START_STICKY
@@ -154,7 +170,8 @@ class TTSForegroundService : Service() {
         }
 
         val title = intent?.getStringExtra("title") ?: "Reading..."
-        startForeground(NOTIFICATION_ID, buildNotification(this, title, "Starting..."))
+        lastTitle = title
+        startForeground(NOTIFICATION_ID, buildNotification(this, title, "Starting...", true))
         updatePlaybackState(PlaybackState.STATE_PLAYING)
 
         return START_STICKY
@@ -185,12 +202,14 @@ class TTSForegroundService : Service() {
                     Logger.d(TAG, "MediaSession: onPlay")
                     getTtsManager()?.resume()
                     updatePlaybackState(PlaybackState.STATE_PLAYING)
+                    refreshNotification(true)
                 }
 
                 override fun onPause() {
                     Logger.d(TAG, "MediaSession: onPause")
                     getTtsManager()?.pause()
                     updatePlaybackState(PlaybackState.STATE_PAUSED)
+                    refreshNotification(false)
                 }
 
                 override fun onStop() {
@@ -246,6 +265,16 @@ class TTSForegroundService : Service() {
         }
 
         updatePlaybackState(PlaybackState.STATE_PLAYING)
+    }
+
+    private fun refreshNotification(isPlaying: Boolean) {
+        try {
+            val subtitle = if (isPlaying) lastSubtitle else "Paused"
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIFICATION_ID, buildNotification(this, lastTitle, subtitle, isPlaying))
+        } catch (e: Exception) {
+            Logger.w(TAG, "Failed to refresh notification: ${e.message}")
+        }
     }
 
     private fun updatePlaybackState(state: Int) {

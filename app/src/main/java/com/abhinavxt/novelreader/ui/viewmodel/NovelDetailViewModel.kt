@@ -348,7 +348,8 @@ class NovelDetailViewModel(
 
     /**
      * Export a chapter as a WAV audio file using the current TTS voice.
-     * Fetches chapter content if needed, then runs the export.
+     * Fetches chapter content, then delegates to AudioExporter's own scope
+     * so the export survives navigating away from this screen.
      */
     fun exportChapterAudio(chapter: Chapter) {
         val currentState = _uiState.value
@@ -362,7 +363,8 @@ class NovelDetailViewModel(
                     return@launch
                 }
 
-                val success = audioExporter.exportChapter(
+                // Launch in AudioExporter's own scope — continues even if ViewModel is cleared
+                audioExporter.launchExport(
                     chapterId = chapter.id,
                     novelTitle = currentState.novel.title,
                     chapterTitle = chapter.title,
@@ -370,9 +372,11 @@ class NovelDetailViewModel(
                     text = content,
                     speakerId = if (ttsManager.sherpaEngine.isReady)
                         ttsManager.sherpaEngine.getCurrentSpeakerIdValue() else 0,
-                    speed = 1.0f
+                    speed = 1.0f,
+                    onComplete = { success ->
+                        if (success) refreshAudioExportStatus()
+                    }
                 )
-                if (success) refreshAudioExportStatus()
             } catch (e: Exception) {
                 Logger.e("NovelDetailVM", "Audio export failed", e)
             }
@@ -381,6 +385,7 @@ class NovelDetailViewModel(
 
     /**
      * Export ALL chapters as audio sequentially. Skips already-exported chapters.
+     * Runs in AudioExporter's own scope so it survives screen navigation.
      */
     fun exportAllChaptersAudio() {
         val currentState = _uiState.value
@@ -389,39 +394,44 @@ class NovelDetailViewModel(
         viewModelScope.launch {
             val novel = currentState.novel
             val exported = _audioExportedChapters.value
+            val voiceName = ttsManager.currentVoice.value?.displayName ?: "default"
+            val speakerId = if (ttsManager.sherpaEngine.isReady)
+                ttsManager.sherpaEngine.getCurrentSpeakerIdValue() else 0
 
+            // Pre-fetch content for all unexported chapters
+            val chaptersToExport = mutableListOf<AudioExporter.ExportChapterInfo>()
             for (chapter in novel.chapters) {
-                if (chapter.id in exported) {
-                    Logger.d("NovelDetailVM", "Skipping already exported: ${chapter.title}")
-                    continue
-                }
-
+                if (chapter.id in exported) continue
                 try {
                     val content = repository.getChapterContent(novelId, chapter.id, chapter.url)
-                    if (content.isNullOrBlank()) {
-                        Logger.w("NovelDetailVM", "No content for: ${chapter.title}, skipping")
-                        continue
-                    }
-
-                    val success = audioExporter.exportChapter(
-                        chapterId = chapter.id,
-                        novelTitle = novel.title,
-                        chapterTitle = chapter.title,
-                        voiceName = ttsManager.currentVoice.value?.displayName ?: "default",
-                        text = content,
-                        speakerId = if (ttsManager.sherpaEngine.isReady)
-                            ttsManager.sherpaEngine.getCurrentSpeakerIdValue() else 0,
-                        speed = 1.0f
-                    )
-                    if (success) {
-                        _audioExportedChapters.value = _audioExportedChapters.value + chapter.id
+                    if (!content.isNullOrBlank()) {
+                        chaptersToExport.add(
+                            AudioExporter.ExportChapterInfo(
+                                chapterId = chapter.id,
+                                chapterTitle = chapter.title,
+                                content = content
+                            )
+                        )
                     }
                 } catch (e: Exception) {
-                    Logger.e("NovelDetailVM", "Export failed for ${chapter.title}", e)
+                    Logger.w("NovelDetailVM", "Failed to fetch content for ${chapter.title}")
                 }
             }
 
-            refreshAudioExportStatus()
+            // Launch in AudioExporter's own scope
+            audioExporter.launchExportAll(
+                chapters = chaptersToExport,
+                novelTitle = novel.title,
+                voiceName = voiceName,
+                speakerId = speakerId,
+                alreadyExported = exported,
+                onEachComplete = { chapterId ->
+                    _audioExportedChapters.value = _audioExportedChapters.value + chapterId
+                },
+                onAllDone = {
+                    refreshAudioExportStatus()
+                }
+            )
         }
     }
 
