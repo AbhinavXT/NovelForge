@@ -146,7 +146,11 @@ fun ReaderScreen(
         if (state is ReaderUiState.Success && shouldAutoContinue) {
             // Small delay to ensure UI is ready
             kotlinx.coroutines.delay(500)
-            ttsManager.autoContinueIfNeeded(state.chapter.content) {
+            ttsManager.autoContinueIfNeeded(
+                text = state.chapter.content,
+                novelTitle = state.chapter.novelTitle,
+                chapterTitle = state.chapter.chapterTitle
+            ) {
                 // On this chapter complete, go to next with auto-retry enabled
                 if (viewModel.canGoNext()) {
                     viewModel.goToNextChapterWithRetry()
@@ -477,6 +481,8 @@ private fun ReaderContent(
                     currentSentence = currentSentence,
                     ttsSettings = ttsSettings,
                     chapterContent = chapter.content,
+                    novelTitle = chapter.novelTitle,
+                    chapterTitle = chapter.chapterTitle,
                     canGoNext = canGoNext,
                     startFromParagraph = listState.firstVisibleItemIndex,
                     onNextChapter = onNextChapter,
@@ -583,6 +589,8 @@ private fun TTSControlsPanel(
     currentSentence: Int,
     ttsSettings: com.abhinavxt.novelreader.data.TTSSettings,
     chapterContent: String,
+    novelTitle: String,
+    chapterTitle: String,
     canGoNext: Boolean,
     startFromParagraph: Int,
     onNextChapter: () -> Unit,
@@ -795,7 +803,12 @@ private fun TTSControlsPanel(
                             TTSState.PLAYING -> ttsManager.pause()
                             TTSState.PAUSED -> ttsManager.resume()
                             else -> {
-                                ttsManager.speakText(chapterContent, startFromParagraph) {
+                                ttsManager.speakText(
+                                    text = chapterContent,
+                                    startFromParagraph = startFromParagraph,
+                                    novelTitle = novelTitle,
+                                    chapterTitle = chapterTitle
+                                ) {
                                     if (canGoNext) {
                                         onNextChapterWithRetry()
                                     }

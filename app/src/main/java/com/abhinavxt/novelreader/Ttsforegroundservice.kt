@@ -19,10 +19,12 @@ import com.abhinavxt.novelreader.R
 import com.abhinavxt.novelreader.util.Logger
 
 /**
- * Foreground Service to keep TTS callbacks working when app is in background.
+ * Foreground Service for TTS playback.
  *
- * Integrates [MediaSession] so hardware media buttons (earphones, Bluetooth,
- * lock screen controls) can pause/resume/stop TTS playback.
+ * Shows a rich media-style notification with:
+ *  - Novel title, chapter name, sentence progress
+ *  - Previous / Pause / Next media controls
+ *  - Hardware media button support (earphones, Bluetooth, lock screen)
  */
 class TTSForegroundService : Service() {
 
@@ -30,6 +32,11 @@ class TTSForegroundService : Service() {
         private const val CHANNEL_ID = "tts_playback_channel"
         private const val NOTIFICATION_ID = 1001
         private const val TAG = "TTSFgService"
+
+        private const val ACTION_TOGGLE = "TOGGLE_TTS"
+        private const val ACTION_STOP = "STOP_TTS"
+        private const val ACTION_PREV = "PREV_TTS"
+        private const val ACTION_NEXT = "NEXT_TTS"
 
         fun start(context: Context, title: String = "Reading...") {
             val intent = Intent(context, TTSForegroundService::class.java).apply {
@@ -47,48 +54,57 @@ class TTSForegroundService : Service() {
         }
 
         fun updateNotification(context: Context, title: String, progress: String) {
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.notify(NOTIFICATION_ID, createNotification(context, title, progress))
+            try {
+                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.notify(NOTIFICATION_ID, buildNotification(context, title, progress))
+            } catch (e: Exception) {
+                Logger.w(TAG, "Failed to update notification: ${e.message}")
+            }
         }
 
-        private fun createNotification(context: Context, title: String, progress: String): Notification {
-            val intent = Intent(context, MainActivity::class.java).apply {
+        private fun buildNotification(context: Context, title: String, subtitle: String): Notification {
+            val openIntent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
             }
-            val pendingIntent = PendingIntent.getActivity(
-                context, 0, intent,
+            val openPending = PendingIntent.getActivity(
+                context, 0, openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            // Pause/Resume action
-            val pauseIntent = Intent(context, TTSForegroundService::class.java).apply {
-                action = "TOGGLE_TTS"
-            }
-            val pausePendingIntent = PendingIntent.getService(
-                context, 2, pauseIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-
-            // Stop action
-            val stopIntent = Intent(context, TTSForegroundService::class.java).apply {
-                action = "STOP_TTS"
-            }
-            val stopPendingIntent = PendingIntent.getService(
-                context, 1, stopIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
+            val prevPending = actionPending(context, ACTION_PREV, 3)
+            val togglePending = actionPending(context, ACTION_TOGGLE, 2)
+            val nextPending = actionPending(context, ACTION_NEXT, 4)
+            val stopPending = actionPending(context, ACTION_STOP, 1)
 
             return NotificationCompat.Builder(context, CHANNEL_ID)
                 .setContentTitle(title)
-                .setContentText(progress)
+                .setContentText(subtitle)
+                .setSubText("Novel Reader")
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setOngoing(true)
-                .setContentIntent(pendingIntent)
-                .addAction(android.R.drawable.ic_media_pause, "Pause", pausePendingIntent)
-                .addAction(android.R.drawable.ic_delete, "Stop", stopPendingIntent)
+                .setContentIntent(openPending)
+                .addAction(android.R.drawable.ic_media_previous, "Prev", prevPending)
+                .addAction(android.R.drawable.ic_media_pause, "Pause", togglePending)
+                .addAction(android.R.drawable.ic_media_next, "Next", nextPending)
+                .addAction(android.R.drawable.ic_delete, "Stop", stopPending)
+                .setStyle(
+                    androidx.media.app.NotificationCompat.MediaStyle()
+                        .setShowActionsInCompactView(0, 1, 2)
+                )
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .build()
+        }
+
+        private fun actionPending(context: Context, action: String, requestCode: Int): PendingIntent {
+            val intent = Intent(context, TTSForegroundService::class.java).apply {
+                this.action = action
+            }
+            return PendingIntent.getService(
+                context, requestCode, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
         }
     }
 
@@ -106,17 +122,16 @@ class TTSForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val app = application as? com.abhinavxt.novelreader.NovelReaderApplication
+        val ttsManager = getTtsManager()
 
         when (intent?.action) {
-            "STOP_TTS" -> {
-                app?.ttsManager?.stop()
+            ACTION_STOP -> {
+                ttsManager?.stop()
                 updatePlaybackState(PlaybackState.STATE_STOPPED)
                 stopSelf()
                 return START_NOT_STICKY
             }
-            "TOGGLE_TTS" -> {
-                val ttsManager = app?.ttsManager
+            ACTION_TOGGLE -> {
                 if (ttsManager != null) {
                     if (ttsManager.isPlaying()) {
                         ttsManager.pause()
@@ -128,10 +143,18 @@ class TTSForegroundService : Service() {
                 }
                 return START_STICKY
             }
+            ACTION_PREV -> {
+                ttsManager?.skipToPrevious()
+                return START_STICKY
+            }
+            ACTION_NEXT -> {
+                ttsManager?.skipToNext()
+                return START_STICKY
+            }
         }
 
         val title = intent?.getStringExtra("title") ?: "Reading..."
-        startForeground(NOTIFICATION_ID, createNotification(this, title, "Playing..."))
+        startForeground(NOTIFICATION_ID, buildNotification(this, title, "Starting..."))
         updatePlaybackState(PlaybackState.STATE_PLAYING)
 
         return START_STICKY
@@ -149,11 +172,11 @@ class TTSForegroundService : Service() {
         super.onDestroy()
     }
 
-    // ── MediaSession ─────────────────────────────────────────────
-
     private fun getTtsManager(): TTSManager? {
         return (application as? com.abhinavxt.novelreader.NovelReaderApplication)?.ttsManager
     }
+
+    // -- MediaSession --
 
     private fun setupMediaSession() {
         mediaSession = MediaSession(this, "NovelReaderTTS").apply {
@@ -202,37 +225,17 @@ class TTSForegroundService : Service() {
                         when (keyEvent.keyCode) {
                             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                             KeyEvent.KEYCODE_HEADSETHOOK -> {
-                                // Single earphone button press — toggle play/pause
-                                val ttsManager = getTtsManager()
-                                if (ttsManager != null) {
-                                    if (ttsManager.isPlaying()) {
-                                        onPause()
-                                    } else {
-                                        onPlay()
-                                    }
+                                val mgr = getTtsManager()
+                                if (mgr != null) {
+                                    if (mgr.isPlaying()) onPause() else onPlay()
                                 }
                                 return true
                             }
-                            KeyEvent.KEYCODE_MEDIA_PLAY -> {
-                                onPlay()
-                                return true
-                            }
-                            KeyEvent.KEYCODE_MEDIA_PAUSE -> {
-                                onPause()
-                                return true
-                            }
-                            KeyEvent.KEYCODE_MEDIA_STOP -> {
-                                onStop()
-                                return true
-                            }
-                            KeyEvent.KEYCODE_MEDIA_NEXT -> {
-                                onSkipToNext()
-                                return true
-                            }
-                            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
-                                onSkipToPrevious()
-                                return true
-                            }
+                            KeyEvent.KEYCODE_MEDIA_PLAY -> { onPlay(); return true }
+                            KeyEvent.KEYCODE_MEDIA_PAUSE -> { onPause(); return true }
+                            KeyEvent.KEYCODE_MEDIA_STOP -> { onStop(); return true }
+                            KeyEvent.KEYCODE_MEDIA_NEXT -> { onSkipToNext(); return true }
+                            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { onSkipToPrevious(); return true }
                         }
                     }
                     return super.onMediaButtonEvent(mediaButtonEvent)
@@ -260,8 +263,6 @@ class TTSForegroundService : Service() {
                 .build()
         )
     }
-
-    // ── Notification channel ─────────────────────────────────────
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

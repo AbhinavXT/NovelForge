@@ -107,6 +107,10 @@ class TTSManager(private val context: Context) {
     private var currentIndex = 0
     private var onChapterComplete: (() -> Unit)? = null
 
+    // Now-playing metadata for notification
+    private var nowPlayingNovelTitle: String = ""
+    private var nowPlayingChapterTitle: String = ""
+
     // ── Backward compatibility ───────────────────────────────────
     // These expose the Android Voice objects for the existing voice picker UI.
     // They only work when Google TTS is the active engine.
@@ -211,18 +215,7 @@ class TTSManager(private val context: Context) {
         _activeEngineId.value = engine.engineId
         _engineReady.value = true
 
-        // Restore saved voice to the engine before refreshing voice list
-        val savedVoiceId = _settings.value.voiceName
-        if (savedVoiceId != null) {
-            try {
-                engine.setVoice(savedVoiceId)
-                Logger.d("TTSManager", "Restored saved voice: $savedVoiceId")
-            } catch (e: Exception) {
-                Logger.w("TTSManager", "Failed to restore saved voice: $savedVoiceId")
-            }
-        }
-
-        // Refresh voice list (will now pick up the restored voice from getCurrentVoiceId())
+        // Refresh voice list
         refreshVoiceList()
         Logger.d("TTSManager", "Active engine: ${engine.displayName}")
     }
@@ -245,8 +238,8 @@ class TTSManager(private val context: Context) {
         Logger.d("TTSManager", "Total voices: ${allVoices.size}")
         _availableVoices.value = allVoices
 
-        // Update current voice — try engine's current, fall back to saved setting
-        val currentId = activeEngine.getCurrentVoiceId() ?: _settings.value.voiceName
+        // Update current voice
+        val currentId = activeEngine.getCurrentVoiceId()
         _currentVoice.value = allVoices.find { it.id == currentId }
 
         // Legacy Android Voice support
@@ -346,7 +339,13 @@ class TTSManager(private val context: Context) {
 
     // ── Playback control ─────────────────────────────────────────
 
-    fun speakText(text: String, startFromParagraph: Int = 0, onComplete: (() -> Unit)? = null) {
+    fun speakText(
+        text: String,
+        startFromParagraph: Int = 0,
+        novelTitle: String = "",
+        chapterTitle: String = "",
+        onComplete: (() -> Unit)? = null
+    ) {
         if (!activeEngine.isReady) {
             Logger.e("TTSManager", "Active engine not ready")
             return
@@ -354,6 +353,10 @@ class TTSManager(private val context: Context) {
 
         stop()
         _shouldAutoContinue.value = false
+
+        // Save metadata for notification
+        if (novelTitle.isNotBlank()) nowPlayingNovelTitle = novelTitle
+        if (chapterTitle.isNotBlank()) nowPlayingChapterTitle = chapterTitle
 
         segments = parseTextIntoSegments(text)
 
@@ -380,15 +383,21 @@ class TTSManager(private val context: Context) {
         onChapterComplete = onComplete
         _state.value = TTSState.LOADING
 
-        TTSForegroundService.start(context, "Novel Reader")
+        TTSForegroundService.start(context, nowPlayingNovelTitle.ifBlank { "Novel Reader" })
 
         speakCurrentSentence()
     }
 
-    fun autoContinueIfNeeded(text: String, startFromParagraph: Int = 0, onComplete: (() -> Unit)? = null) {
+    fun autoContinueIfNeeded(
+        text: String,
+        startFromParagraph: Int = 0,
+        novelTitle: String = "",
+        chapterTitle: String = "",
+        onComplete: (() -> Unit)? = null
+    ) {
         if (_shouldAutoContinue.value) {
             Logger.d("TTSManager", "Auto-continuing TTS for new chapter")
-            speakText(text, startFromParagraph, onComplete)
+            speakText(text, startFromParagraph, novelTitle, chapterTitle, onComplete)
         }
     }
 
@@ -412,6 +421,18 @@ class TTSManager(private val context: Context) {
             volume = s.volume,
             onStart = {
                 _state.value = TTSState.PLAYING
+                // Update notification with progress
+                val progress = "${currentIndex + 1}/${segments.size}"
+                val subtitle = if (nowPlayingChapterTitle.isNotBlank()) {
+                    "$nowPlayingChapterTitle  •  $progress"
+                } else {
+                    "Sentence $progress"
+                }
+                TTSForegroundService.updateNotification(
+                    context,
+                    nowPlayingNovelTitle.ifBlank { "Novel Reader" },
+                    subtitle
+                )
                 // Pre-generate the next sentence while this one plays
                 pregenerateNextSentences()
             },
@@ -512,6 +533,8 @@ class TTSManager(private val context: Context) {
         segments = emptyList()
         _state.value = TTSState.IDLE
         _shouldAutoContinue.value = false
+        nowPlayingNovelTitle = ""
+        nowPlayingChapterTitle = ""
 
         TTSForegroundService.stop(context)
     }
