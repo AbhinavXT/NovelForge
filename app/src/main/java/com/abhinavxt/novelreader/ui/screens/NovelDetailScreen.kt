@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -263,6 +264,7 @@ fun NovelDetailScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NovelDetailContent(
     novel: Novel,
@@ -509,15 +511,21 @@ private fun NovelDetailContent(
                     }
                 }
 
-                // Chapter search bar
-                item {
-                    ChapterSearchBar(
-                        query = searchQuery,
-                        onQueryChange = { searchQuery = it },
-                        resultCount = filteredChapters.size,
-                        totalCount = novel.chapters.size
-                    )
-                    HorizontalDivider()
+                // Chapter search bar — sticky so it stays visible while scrolling
+                stickyHeader {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surface)
+                    ) {
+                        ChapterSearchBar(
+                            query = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            resultCount = filteredChapters.size,
+                            totalCount = novel.chapters.size
+                        )
+                        HorizontalDivider()
+                    }
                 }
 
                 if (filteredChapters.isEmpty() && searchQuery.isNotBlank()) {
