@@ -3,6 +3,7 @@
 A feature-rich Android app for reading web novels and EPUB files with multi-engine neural text-to-speech, audio export, bookmarks, and chapter management. Built with Kotlin, Jetpack Compose, and a clean MVVM architecture.
 
 <p align="center">
+  <img src="screenshots/home.png" width="200" alt="Home Screen"/>
   <img src="screenshots/library.png" width="200" alt="Library"/>
   <img src="screenshots/reader.png" width="200" alt="Reader"/>
   <img src="screenshots/tts.png" width="200" alt="TTS Playback"/>
