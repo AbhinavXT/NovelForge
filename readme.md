@@ -4,7 +4,6 @@ A feature-rich Android app for reading web novels and EPUB files with multi-engi
 
 <p align="center">
   <img src="screenshots/home.png" width="200" alt="Home Screen"/>
-  <img src="screenshots/library.png" width="200" alt="Library"/>
   <img src="screenshots/reader.png" width="200" alt="Reader"/>
   <img src="screenshots/tts.png" width="200" alt="TTS Playback"/>
   <img src="screenshots/audio_player.png" width="200" alt="Audio Player"/>
