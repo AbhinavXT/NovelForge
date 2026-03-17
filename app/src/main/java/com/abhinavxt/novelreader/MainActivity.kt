@@ -16,6 +16,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -30,6 +31,7 @@ import com.abhinavxt.novelreader.data.BackupManager
 import com.abhinavxt.novelreader.data.DownloadManager
 import com.abhinavxt.novelreader.data.NovelRepository
 import com.abhinavxt.novelreader.data.TTSManager
+import com.abhinavxt.novelreader.data.ThemePreferences
 import com.abhinavxt.novelreader.ui.NavigationHost
 import com.abhinavxt.novelreader.ui.Screen
 import com.abhinavxt.novelreader.ui.theme.NovelReaderTheme
@@ -48,9 +50,17 @@ class MainActivity : ComponentActivity() {
         val downloadManager = app.downloadManager
         val ttsManager = app.ttsManager
         val backupManager = app.backupManager
+        val themePreferences = app.themePreferences
 
         setContent {
-            NovelReaderTheme {
+            // Observe theme settings as Compose state
+            val themeMode by themePreferences.themeMode.collectAsState()
+            val colorScheme by themePreferences.colorScheme.collectAsState()
+
+            NovelReaderTheme(
+                themeMode = themeMode,
+                appColorScheme = colorScheme
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -59,7 +69,8 @@ class MainActivity : ComponentActivity() {
                         repository = repository,
                         downloadManager = downloadManager,
                         ttsManager = ttsManager,
-                        backupManager = backupManager
+                        backupManager = backupManager,
+                        themePreferences = themePreferences
                     )
                 }
             }
@@ -108,7 +119,8 @@ fun NovelReaderApp(
     repository: NovelRepository,
     downloadManager: DownloadManager,
     ttsManager: TTSManager,
-    backupManager: BackupManager
+    backupManager: BackupManager,
+    themePreferences: ThemePreferences
 ) {
     val navController = rememberNavController()
 
@@ -177,6 +189,7 @@ fun NovelReaderApp(
                 downloadManager = downloadManager,
                 ttsManager = ttsManager,
                 backupManager = backupManager,
+                themePreferences = themePreferences,
                 audioPlayerViewModel = audioPlayerViewModel,
                 modifier = Modifier.padding(innerPadding)
             )

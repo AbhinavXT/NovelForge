@@ -5,6 +5,7 @@ import com.abhinavxt.novelreader.data.BackupManager
 import com.abhinavxt.novelreader.data.DownloadManager
 import com.abhinavxt.novelreader.data.NovelRepository
 import com.abhinavxt.novelreader.data.TTSManager
+import com.abhinavxt.novelreader.data.ThemePreferences
 import com.abhinavxt.novelreader.data.database.AppDatabase
 import com.abhinavxt.novelreader.util.Logger
 
@@ -24,6 +25,9 @@ class NovelReaderApplication : Application() {
 
     // Backup manager - depends on repository
     val backupManager by lazy { BackupManager(this, repository) }
+
+    // Theme preferences
+    val themePreferences by lazy { ThemePreferences(this) }
 
     override fun onCreate() {
         super.onCreate()

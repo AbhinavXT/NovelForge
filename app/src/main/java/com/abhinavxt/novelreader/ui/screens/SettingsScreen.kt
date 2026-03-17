@@ -1,8 +1,12 @@
 package com.abhinavxt.novelreader.ui.screens
 
 import android.content.Intent
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,14 +19,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -32,6 +42,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -48,11 +60,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.abhinavxt.novelreader.data.BackupInfo
 import com.abhinavxt.novelreader.data.BackupManager
+import com.abhinavxt.novelreader.data.ColorScheme
+import com.abhinavxt.novelreader.data.ThemeMode
+import com.abhinavxt.novelreader.data.ThemePreferences
+import com.abhinavxt.novelreader.ui.theme.*
 import com.abhinavxt.novelreader.ui.viewmodel.BackupUiState
 import com.abhinavxt.novelreader.ui.viewmodel.SettingsViewModel
 
@@ -60,11 +78,14 @@ import com.abhinavxt.novelreader.ui.viewmodel.SettingsViewModel
 @Composable
 fun SettingsScreen(
     backupManager: BackupManager,
+    themePreferences: ThemePreferences,
     viewModel: SettingsViewModel = viewModel(
-        factory = SettingsViewModel.Factory(backupManager)
+        factory = SettingsViewModel.Factory(backupManager, themePreferences)
     )
 ) {
     val backupState by viewModel.backupState.collectAsState()
+    val currentThemeMode by viewModel.themeMode.collectAsState()
+    val currentColorScheme by viewModel.colorScheme.collectAsState()
 
     // File picker for creating backup
     val createBackupLauncher = rememberLauncherForActivityResult(
@@ -94,7 +115,93 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            // Backup & Restore Section
+            // ── Appearance Section ────────────────────────────────
+            Text(
+                text = "Appearance",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Theme Mode
+            Text(
+                text = "Theme",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ThemeMode.entries.forEach { mode ->
+                    val icon = when (mode) {
+                        ThemeMode.SYSTEM -> Icons.Default.BrightnessAuto
+                        ThemeMode.LIGHT -> Icons.Default.LightMode
+                        ThemeMode.DARK -> Icons.Default.DarkMode
+                    }
+                    FilterChip(
+                        selected = currentThemeMode == mode,
+                        onClick = { viewModel.setThemeMode(mode) },
+                        label = { Text(mode.label) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Color Scheme
+            Text(
+                text = "Color",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ColorScheme.entries.forEach { scheme ->
+                    val previewColor = when (scheme) {
+                        ColorScheme.DYNAMIC -> MaterialTheme.colorScheme.primary
+                        ColorScheme.PURPLE -> PreviewPurple
+                        ColorScheme.BLUE -> PreviewBlue
+                        ColorScheme.GREEN -> PreviewGreen
+                        ColorScheme.TEAL -> PreviewTeal
+                        ColorScheme.RED -> PreviewRed
+                        ColorScheme.ORANGE -> PreviewOrange
+                    }
+                    val isSelected = currentColorScheme == scheme
+                    // Hide Dynamic option on pre-Android 12 (not supported)
+                    if (scheme != ColorScheme.DYNAMIC || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        ColorCircle(
+                            color = previewColor,
+                            label = scheme.label,
+                            isSelected = isSelected,
+                            onClick = { viewModel.setColorScheme(scheme) }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── Backup & Restore Section ─────────────────────────
             Text(
                 text = "Backup & Restore",
                 style = MaterialTheme.typography.titleMedium,
@@ -251,7 +358,7 @@ fun SettingsScreen(
             HorizontalDivider()
             Spacer(modifier = Modifier.height(24.dp))
 
-            // About Section
+            // ── About Section ────────────────────────────────────
             Text(
                 text = "About",
                 style = MaterialTheme.typography.titleMedium,
@@ -360,6 +467,54 @@ fun SettingsScreen(
         is BackupUiState.Idle -> { /* Do nothing */ }
     }
 }
+
+// ── Color circle picker ──────────────────────────────────────────
+
+@Composable
+private fun ColorCircle(
+    color: Color,
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(color)
+                .then(
+                    if (isSelected) Modifier.border(
+                        width = 3.dp,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        shape = CircleShape
+                    ) else Modifier
+                )
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isSelected) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Selected",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isSelected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+// ── Dialogs (unchanged) ──────────────────────────────────────────
 
 @Composable
 private fun LoadingDialog() {

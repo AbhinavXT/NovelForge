@@ -17,6 +17,7 @@ import androidx.navigation.navArgument
 import com.abhinavxt.novelreader.AppConfig
 import com.abhinavxt.novelreader.data.DownloadManager
 import com.abhinavxt.novelreader.data.NovelRepository
+import com.abhinavxt.novelreader.data.ThemePreferences
 import com.abhinavxt.novelreader.ui.screens.*
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -114,6 +115,7 @@ fun NavigationHost(
     downloadManager: DownloadManager,
     ttsManager: TTSManager,
     backupManager: BackupManager,
+    themePreferences: ThemePreferences,
     audioPlayerViewModel: AudioPlayerViewModel,
     modifier: Modifier = Modifier
 ) {
@@ -192,7 +194,8 @@ fun NavigationHost(
 
         composable(Screen.Settings.route) {
             SettingsScreen(
-                backupManager = backupManager
+                backupManager = backupManager,
+                themePreferences = themePreferences
             )
         }
 

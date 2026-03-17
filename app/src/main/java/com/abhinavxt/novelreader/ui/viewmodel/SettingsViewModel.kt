@@ -7,6 +7,9 @@ import androidx.lifecycle.viewModelScope
 import com.abhinavxt.novelreader.data.BackupInfo
 import com.abhinavxt.novelreader.data.BackupManager
 import com.abhinavxt.novelreader.data.BackupResult
+import com.abhinavxt.novelreader.data.ColorScheme
+import com.abhinavxt.novelreader.data.ThemeMode
+import com.abhinavxt.novelreader.data.ThemePreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,11 +25,24 @@ sealed class BackupUiState {
 }
 
 class SettingsViewModel(
-    private val backupManager: BackupManager
+    private val backupManager: BackupManager,
+    private val themePreferences: ThemePreferences
 ) : ViewModel() {
 
     private val _backupState = MutableStateFlow<BackupUiState>(BackupUiState.Idle)
     val backupState: StateFlow<BackupUiState> = _backupState.asStateFlow()
+
+    // Theme state — delegates to ThemePreferences StateFlows
+    val themeMode: StateFlow<ThemeMode> = themePreferences.themeMode
+    val colorScheme: StateFlow<ColorScheme> = themePreferences.colorScheme
+
+    fun setThemeMode(mode: ThemeMode) {
+        themePreferences.setThemeMode(mode)
+    }
+
+    fun setColorScheme(scheme: ColorScheme) {
+        themePreferences.setColorScheme(scheme)
+    }
 
     fun generateBackupFilename(): String {
         return backupManager.generateBackupFilename()
@@ -86,11 +102,12 @@ class SettingsViewModel(
     }
 
     class Factory(
-        private val backupManager: BackupManager
+        private val backupManager: BackupManager,
+        private val themePreferences: ThemePreferences
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return SettingsViewModel(backupManager) as T
+            return SettingsViewModel(backupManager, themePreferences) as T
         }
     }
 }
