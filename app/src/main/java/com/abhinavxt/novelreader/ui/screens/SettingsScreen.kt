@@ -68,6 +68,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.abhinavxt.novelreader.data.BackupInfo
 import com.abhinavxt.novelreader.data.BackupManager
 import com.abhinavxt.novelreader.data.ColorScheme
+import com.abhinavxt.novelreader.data.DictionaryLanguage
 import com.abhinavxt.novelreader.data.ThemeMode
 import com.abhinavxt.novelreader.data.ThemePreferences
 import com.abhinavxt.novelreader.ui.theme.*
@@ -86,6 +87,7 @@ fun SettingsScreen(
     val backupState by viewModel.backupState.collectAsState()
     val currentThemeMode by viewModel.themeMode.collectAsState()
     val currentColorScheme by viewModel.colorScheme.collectAsState()
+    val currentDictionaryLanguage by viewModel.dictionaryLanguage.collectAsState()
 
     // File picker for creating backup
     val createBackupLauncher = rememberLauncherForActivityResult(
@@ -194,6 +196,61 @@ fun SettingsScreen(
                             onClick = { viewModel.setColorScheme(scheme) }
                         )
                     }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Dictionary Language
+            Text(
+                text = "Dictionary Language",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "Words you select in the reader will be looked up in this language",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Show first row (3 chips)
+                DictionaryLanguage.entries.take(3).forEach { language ->
+                    FilterChip(
+                        selected = currentDictionaryLanguage == language,
+                        onClick = { viewModel.setDictionaryLanguage(language) },
+                        label = { Text(language.label) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Show second row (remaining chips)
+                DictionaryLanguage.entries.drop(3).forEach { language ->
+                    FilterChip(
+                        selected = currentDictionaryLanguage == language,
+                        onClick = { viewModel.setDictionaryLanguage(language) },
+                        label = { Text(language.label) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                // Fill empty slots if needed
+                repeat(3 - DictionaryLanguage.entries.drop(3).size) {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
 

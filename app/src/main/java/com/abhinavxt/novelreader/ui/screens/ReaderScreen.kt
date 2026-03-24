@@ -1,14 +1,17 @@
 package com.abhinavxt.novelreader.ui.screens
 
 import android.annotation.SuppressLint
+import android.content.ClipboardManager
+import android.content.Context
+import android.view.ActionMode
+import android.view.Menu
+import android.view.MenuItem
+import android.view.View
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,11 +28,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Headphones
@@ -48,13 +51,12 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -63,7 +65,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -74,8 +78,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalTextToolbar
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.TextToolbar
+import androidx.compose.ui.platform.TextToolbarStatus
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -88,9 +97,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.abhinavxt.novelreader.R
+import com.abhinavxt.novelreader.data.DictionaryState
 import com.abhinavxt.novelreader.data.NovelRepository
 import com.abhinavxt.novelreader.data.TTSManager
 import com.abhinavxt.novelreader.data.TTSState
+import com.abhinavxt.novelreader.data.ThemePreferences
 import com.abhinavxt.novelreader.data.model.ReaderSettings
 import com.abhinavxt.novelreader.data.model.ReaderTheme
 import com.abhinavxt.novelreader.data.model.ReaderFont
@@ -113,9 +124,10 @@ fun ReaderScreen(
     novelUrl: String,
     repository: NovelRepository,
     ttsManager: TTSManager,
+    themePreferences: ThemePreferences? = null,
     onBackClick: () -> Unit,
     viewModel: ReaderViewModel = viewModel(
-        factory = ReaderViewModel.provideFactory(novelId, chapterId, chapterUrl, novelUrl = novelUrl, repository)
+        factory = ReaderViewModel.provideFactory(novelId, chapterId, chapterUrl, novelUrl = novelUrl, repository, themePreferences)
     )
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -132,6 +144,9 @@ fun ReaderScreen(
     // Bookmark state
     val isInLibrary by viewModel.isInLibrary.collectAsState()
     val bookmarkSaved by viewModel.bookmarkSavedEvent.collectAsState()
+
+    // Dictionary state
+    val dictionaryState by viewModel.dictionaryState.collectAsState()
 
     // Stop TTS when leaving screen
     DisposableEffect(Unit) {
@@ -205,7 +220,11 @@ fun ReaderScreen(
                     viewModel.addBookmarkAtParagraph(index, text)
                 },
                 onBookmarkSavedShown = { viewModel.clearBookmarkSavedEvent() },
-                onShowModelDownload = { showModelDownloadDialog = true }
+                onShowModelDownload = { showModelDownloadDialog = true },
+                // Dictionary parameters
+                dictionaryState = dictionaryState,
+                onLookupWord = { word -> viewModel.lookupWord(word) },
+                onDismissDictionary = { viewModel.dismissDictionary() }
             )
         }
     }
@@ -318,7 +337,11 @@ private fun ReaderContent(
     bookmarkSaved: Boolean,
     onAddBookmark: (paragraphIndex: Int, paragraphText: String) -> Unit,
     onBookmarkSavedShown: () -> Unit,
-    onShowModelDownload: () -> Unit
+    onShowModelDownload: () -> Unit,
+    // Dictionary
+    dictionaryState: DictionaryState,
+    onLookupWord: (String) -> Unit,
+    onDismissDictionary: () -> Unit
 ) {
     val colors = getThemeColors(settings.theme)
 
@@ -446,7 +469,8 @@ private fun ReaderContent(
                         ttsManager = ttsManager,
                         colors = colors,
                         settings = settings,
-                        onAddBookmark = onAddBookmark
+                        onAddBookmark = onAddBookmark,
+                        onLookupWord = onLookupWord
                     )
                 }
 
@@ -496,14 +520,20 @@ private fun ReaderContent(
             }
         }
     }
+
+    // Dictionary bottom sheet — shown when user taps "Define" on selected text
+    DictionaryBottomSheet(
+        dictionaryState = dictionaryState,
+        onDismiss = onDismissDictionary
+    )
 }
 
 /**
- * A paragraph of text that supports long-press to bookmark.
- * Only shows the bookmark popup when the novel is in the user's library.
- * This wraps both normal paragraphs and TTS-highlighted paragraphs.
+ * A paragraph of text that supports native text selection.
+ * The selection toolbar shows: Copy, Define, and Bookmark (if in library).
+ * "Define" looks up the selected word in the dictionary.
+ * "Bookmark" saves the paragraph as a bookmark.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun BookmarkableParagraph(
     paragraph: String,
@@ -513,71 +543,135 @@ private fun BookmarkableParagraph(
     ttsManager: TTSManager,
     colors: ThemeColors,
     settings: ReaderSettings,
-    onAddBookmark: (Int, String) -> Unit
+    onAddBookmark: (Int, String) -> Unit,
+    onLookupWord: (String) -> Unit
 ) {
-    // Controls whether the bookmark dropdown menu is visible
-    var showBookmarkPopup by remember { mutableStateOf(false) }
+    val view = LocalView.current
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                // No visual ripple on normal tap — we don't want the paragraph
-                // to flash every time the user taps to scroll
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-                onClick = { /* Normal tap does nothing — scrolling handles itself */ },
-                onLongClick = {
-                    // Only allow bookmarking for novels saved in the library
-                    if (isInLibrary) {
-                        showBookmarkPopup = true
+    val textToolbar = remember(view, index, isInLibrary) {
+        ReaderTextToolbar(
+            view = view,
+            onDefineRequested = { selectedText -> onLookupWord(selectedText) },
+            onBookmarkRequested = if (isInLibrary) {
+                { onAddBookmark(index, paragraph) }
+            } else null
+        )
+    }
+
+    CompositionLocalProvider(LocalTextToolbar provides textToolbar) {
+        SelectionContainer {
+            // Render the paragraph text — either with TTS highlighting or plain
+            if (isCurrentTTSParagraph) {
+                HighlightedParagraph(
+                    paragraph = paragraph,
+                    currentSentenceIndex = ttsManager.currentSentenceInParagraph.collectAsState().value,
+                    textColor = colors.text,
+                    highlightColor = colors.text.copy(alpha = 0.15f),
+                    fontSize = settings.fontSize,
+                    fontFamily = settings.font.toFontFamily(),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+            } else {
+                Text(
+                    text = paragraph,
+                    color = colors.text,
+                    fontSize = settings.fontSize.sp,
+                    fontFamily = settings.font.toFontFamily(),
+                    lineHeight = (settings.fontSize * 1.6).sp,
+                    textAlign = TextAlign.Justify,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Custom TextToolbar that adds "Define" and optionally "Bookmark" actions
+ * alongside the standard "Copy" in the floating text selection menu.
+ */
+private class ReaderTextToolbar(
+    private val view: View,
+    private val onDefineRequested: (String) -> Unit,
+    private val onBookmarkRequested: (() -> Unit)?
+) : TextToolbar {
+
+    private var actionMode: ActionMode? = null
+
+    override val status: TextToolbarStatus
+        get() = if (actionMode != null) TextToolbarStatus.Shown else TextToolbarStatus.Hidden
+
+    override fun showMenu(
+        rect: Rect,
+        onCopyRequested: (() -> Unit)?,
+        onPasteRequested: (() -> Unit)?,
+        onCutRequested: (() -> Unit)?,
+        onSelectAllRequested: (() -> Unit)?
+    ) {
+        val callback = object : ActionMode.Callback2() {
+            override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+                if (onCopyRequested != null) {
+                    menu.add(0, MENU_COPY, 0, "Copy")
+                }
+                menu.add(0, MENU_DEFINE, 1, "Define")
+                if (onBookmarkRequested != null) {
+                    menu.add(0, MENU_BOOKMARK, 2, "Bookmark")
+                }
+                return true
+            }
+
+            override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean = false
+
+            override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+                when (item.itemId) {
+                    MENU_COPY -> {
+                        onCopyRequested?.invoke()
+                    }
+                    MENU_DEFINE -> {
+                        // Copy text to clipboard first, then read it for lookup
+                        onCopyRequested?.invoke()
+                        val clipboard = view.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val selectedText = clipboard.primaryClip
+                            ?.getItemAt(0)?.text?.toString()?.trim() ?: ""
+                        if (selectedText.isNotBlank()) {
+                            onDefineRequested(selectedText)
+                        }
+                    }
+                    MENU_BOOKMARK -> {
+                        onBookmarkRequested?.invoke()
                     }
                 }
-            )
-    ) {
-        // Render the paragraph text — either with TTS highlighting or plain
-        if (isCurrentTTSParagraph) {
-            HighlightedParagraph(
-                paragraph = paragraph,
-                currentSentenceIndex = ttsManager.currentSentenceInParagraph.collectAsState().value,
-                textColor = colors.text,
-                highlightColor = colors.text.copy(alpha = 0.15f),
-                fontSize = settings.fontSize,
-                fontFamily = settings.font.toFontFamily(),
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-        } else {
-            Text(
-                text = paragraph,
-                color = colors.text,
-                fontSize = settings.fontSize.sp,
-                fontFamily = settings.font.toFontFamily(),
-                lineHeight = (settings.fontSize * 1.6).sp,
-                textAlign = TextAlign.Justify,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
+                mode.finish()
+                return true
+            }
+
+            override fun onDestroyActionMode(mode: ActionMode) {
+                actionMode = null
+            }
+
+            override fun onGetContentRect(mode: ActionMode, view: View, outRect: android.graphics.Rect) {
+                outRect.set(
+                    rect.left.toInt(),
+                    rect.top.toInt(),
+                    rect.right.toInt(),
+                    rect.bottom.toInt()
+                )
+            }
         }
 
-        // The bookmark popup that appears on long-press
-        DropdownMenu(
-            expanded = showBookmarkPopup,
-            onDismissRequest = { showBookmarkPopup = false }
-        ) {
-            DropdownMenuItem(
-                text = { Text("Bookmark this passage") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Bookmark,
-                        contentDescription = null,
-                        tint = Color(0xFFFFB300)  // Amber/gold to stand out
-                    )
-                },
-                onClick = {
-                    showBookmarkPopup = false
-                    onAddBookmark(index, paragraph)
-                }
-            )
-        }
+        actionMode?.finish()
+        actionMode = view.startActionMode(callback, ActionMode.TYPE_FLOATING)
+    }
+
+    override fun hide() {
+        actionMode?.finish()
+        actionMode = null
+    }
+
+    companion object {
+        private const val MENU_COPY = 1
+        private const val MENU_DEFINE = 2
+        private const val MENU_BOOKMARK = 3
     }
 }
 
@@ -1458,4 +1552,142 @@ private fun HighlightedParagraph(
         textAlign = TextAlign.Justify,
         modifier = modifier
     )
+}
+
+/**
+ * Bottom sheet that displays dictionary definitions for a selected word.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DictionaryBottomSheet(
+    dictionaryState: DictionaryState,
+    onDismiss: () -> Unit
+) {
+    if (dictionaryState is DictionaryState.Idle) return
+
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            when (dictionaryState) {
+                is DictionaryState.Loading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+
+                is DictionaryState.NotFound -> {
+                    Text(
+                        text = dictionaryState.word,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "No definition found for this word.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is DictionaryState.Error -> {
+                    Text(
+                        text = "Dictionary Error",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = dictionaryState.message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is DictionaryState.Success -> {
+                    val result = dictionaryState.result
+
+                    // Word + phonetic
+                    Text(
+                        text = result.word,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (result.phonetic != null) {
+                        Text(
+                            text = result.phonetic,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    if (result.language != null) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = result.language,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Definitions grouped by part of speech
+                    var lastPartOfSpeech = ""
+                    result.definitions.forEach { def ->
+                        if (def.partOfSpeech != lastPartOfSpeech) {
+                            if (lastPartOfSpeech.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                            }
+                            Text(
+                                text = def.partOfSpeech,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            lastPartOfSpeech = def.partOfSpeech
+                        }
+
+                        Row(modifier = Modifier.padding(start = 8.dp, bottom = 6.dp)) {
+                            Text(
+                                text = "•  ",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Column {
+                                Text(
+                                    text = def.definition,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                if (def.example != null) {
+                                    Text(
+                                        text = "\"${def.example}\"",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                is DictionaryState.Idle -> { /* won't reach here */ }
+            }
+        }
+    }
 }

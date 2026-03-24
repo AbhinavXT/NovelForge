@@ -3,7 +3,10 @@ package com.abhinavxt.novelreader.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.abhinavxt.novelreader.data.DictionaryRepository
+import com.abhinavxt.novelreader.data.DictionaryState
 import com.abhinavxt.novelreader.data.NovelRepository
+import com.abhinavxt.novelreader.data.ThemePreferences
 import com.abhinavxt.novelreader.data.model.Chapter
 import com.abhinavxt.novelreader.data.model.ReaderSettings
 import com.abhinavxt.novelreader.data.model.ReaderTheme
@@ -54,7 +57,8 @@ class ReaderViewModel(
     initialChapterId: String,
     initialChapterUrl: String,
     private val novelUrl: String,
-    private val repository: NovelRepository
+    private val repository: NovelRepository,
+    private val themePreferences: ThemePreferences? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
@@ -85,6 +89,37 @@ class ReaderViewModel(
     // so the UI can show a snackbar confirmation
     private val _bookmarkSavedEvent = MutableStateFlow(false)
     val bookmarkSavedEvent: StateFlow<Boolean> = _bookmarkSavedEvent.asStateFlow()
+
+    // ============ DICTIONARY STATE ============
+
+    private val _dictionaryState = MutableStateFlow<DictionaryState>(DictionaryState.Idle)
+    val dictionaryState: StateFlow<DictionaryState> = _dictionaryState.asStateFlow()
+
+    /**
+     * Look up a word in the dictionary. Called when user taps "Define"
+     * in the text selection toolbar. Uses the language from preferences.
+     */
+    fun lookupWord(word: String) {
+        val cleanWord = word.trim()
+        if (cleanWord.isBlank()) return
+
+        _dictionaryState.value = DictionaryState.Loading
+
+        val languageCode = themePreferences?.dictionaryLanguage?.value?.code ?: "en"
+
+        viewModelScope.launch {
+            val result = DictionaryRepository.lookup(cleanWord, languageCode)
+            _dictionaryState.value = if (result != null) {
+                DictionaryState.Success(result)
+            } else {
+                DictionaryState.NotFound(cleanWord)
+            }
+        }
+    }
+
+    fun dismissDictionary() {
+        _dictionaryState.value = DictionaryState.Idle
+    }
 
     init {
         loadChapterList()
@@ -481,12 +516,13 @@ class ReaderViewModel(
             chapterId: String,
             chapterUrl: String,
             novelUrl: String,
-            repository: NovelRepository
+            repository: NovelRepository,
+            themePreferences: ThemePreferences? = null
         ): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository) as T
+                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences) as T
                 }
             }
         }

@@ -22,6 +22,15 @@ enum class ColorScheme(val label: String) {
     ORANGE("Orange")
 }
 
+enum class DictionaryLanguage(val code: String, val label: String) {
+    ENGLISH("en", "English"),
+    HINDI("hi", "Hindi"),
+    JAPANESE("ja", "Japanese"),
+    CHINESE("zh", "Chinese"),
+    FRENCH("fr", "French"),
+    SPANISH("es", "Spanish")
+}
+
 class ThemePreferences(context: Context) {
 
     private val prefs: SharedPreferences =
@@ -33,6 +42,9 @@ class ThemePreferences(context: Context) {
     private val _colorScheme = MutableStateFlow(loadColorScheme())
     val colorScheme: StateFlow<ColorScheme> = _colorScheme.asStateFlow()
 
+    private val _dictionaryLanguage = MutableStateFlow(loadDictionaryLanguage())
+    val dictionaryLanguage: StateFlow<DictionaryLanguage> = _dictionaryLanguage.asStateFlow()
+
     fun setThemeMode(mode: ThemeMode) {
         prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
         _themeMode.value = mode
@@ -41,6 +53,11 @@ class ThemePreferences(context: Context) {
     fun setColorScheme(scheme: ColorScheme) {
         prefs.edit().putString(KEY_COLOR_SCHEME, scheme.name).apply()
         _colorScheme.value = scheme
+    }
+
+    fun setDictionaryLanguage(language: DictionaryLanguage) {
+        prefs.edit().putString(KEY_DICTIONARY_LANGUAGE, language.name).apply()
+        _dictionaryLanguage.value = language
     }
 
     private fun loadThemeMode(): ThemeMode {
@@ -61,9 +78,19 @@ class ThemePreferences(context: Context) {
         }
     }
 
+    private fun loadDictionaryLanguage(): DictionaryLanguage {
+        val name = prefs.getString(KEY_DICTIONARY_LANGUAGE, DictionaryLanguage.ENGLISH.name)
+        return try {
+            DictionaryLanguage.valueOf(name ?: DictionaryLanguage.ENGLISH.name)
+        } catch (_: IllegalArgumentException) {
+            DictionaryLanguage.ENGLISH
+        }
+    }
+
     companion object {
         private const val PREFS_NAME = "novel_reader_theme"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_COLOR_SCHEME = "color_scheme"
+        private const val KEY_DICTIONARY_LANGUAGE = "dictionary_language"
     }
 }

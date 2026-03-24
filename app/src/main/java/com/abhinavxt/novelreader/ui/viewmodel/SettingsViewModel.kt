@@ -8,6 +8,7 @@ import com.abhinavxt.novelreader.data.BackupInfo
 import com.abhinavxt.novelreader.data.BackupManager
 import com.abhinavxt.novelreader.data.BackupResult
 import com.abhinavxt.novelreader.data.ColorScheme
+import com.abhinavxt.novelreader.data.DictionaryLanguage
 import com.abhinavxt.novelreader.data.ThemeMode
 import com.abhinavxt.novelreader.data.ThemePreferences
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,6 +36,7 @@ class SettingsViewModel(
     // Theme state — delegates to ThemePreferences StateFlows
     val themeMode: StateFlow<ThemeMode> = themePreferences.themeMode
     val colorScheme: StateFlow<ColorScheme> = themePreferences.colorScheme
+    val dictionaryLanguage: StateFlow<DictionaryLanguage> = themePreferences.dictionaryLanguage
 
     fun setThemeMode(mode: ThemeMode) {
         themePreferences.setThemeMode(mode)
@@ -42,6 +44,10 @@ class SettingsViewModel(
 
     fun setColorScheme(scheme: ColorScheme) {
         themePreferences.setColorScheme(scheme)
+    }
+
+    fun setDictionaryLanguage(language: DictionaryLanguage) {
+        themePreferences.setDictionaryLanguage(language)
     }
 
     fun generateBackupFilename(): String {

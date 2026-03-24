@@ -259,6 +259,7 @@ fun NavigationHost(
                 novelUrl = novelUrl,
                 repository = repository,
                 ttsManager = ttsManager,
+                themePreferences = themePreferences,
                 onBackClick = { navController.popBackStack() }
             )
         }
