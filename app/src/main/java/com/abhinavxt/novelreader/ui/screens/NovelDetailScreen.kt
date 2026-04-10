@@ -41,8 +41,10 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -77,6 +79,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.abhinavxt.novelreader.AppConfig
 import com.abhinavxt.novelreader.data.DownloadManager
+import com.abhinavxt.novelreader.data.DownloadStatus
 import com.abhinavxt.novelreader.ui.components.ModelDownloadDialog
 import com.abhinavxt.novelreader.data.NovelDownloadState
 import com.abhinavxt.novelreader.data.NovelRepository
@@ -111,6 +114,15 @@ fun NovelDetailScreen(
     val uiState by viewModel.uiState.collectAsState()
     val downloadState by downloadManager.novelDownloadState.collectAsState()
     val downloadingChapters by viewModel.downloadingChapters.collectAsState()
+    val activeDownloads by downloadManager.activeDownloads.collectAsState()
+
+    // Merge: show spinner for chapters being downloaded individually OR via bulk
+    val allDownloadingChapters = remember(downloadingChapters, activeDownloads) {
+        val bulkDownloading = activeDownloads
+            .filter { it.value.status == DownloadStatus.DOWNLOADING }
+            .keys
+        downloadingChapters + bulkDownloading
+    }
     val bookmarks by viewModel.bookmarks.collectAsState()
     val bookmarkCount by viewModel.bookmarkCount.collectAsState()
     val exportState by viewModel.exportState.collectAsState()
@@ -215,7 +227,7 @@ fun NovelDetailScreen(
                     isInLibrary = state.isInLibrary,
                     isLocalNovel = state.isLocalNovel,
                     downloadState = downloadState,
-                    downloadingChapters = downloadingChapters,
+                    downloadingChapters = allDownloadingChapters,
                     exportingChapters = exportingChapters,
                     audioExportedChapters = audioExportedChapters,
                     exportState = exportState,
@@ -226,6 +238,9 @@ fun NovelDetailScreen(
                     onDownloadChapter = { chapter -> viewModel.downloadChapter(chapter) },
                     onExportChapterAudio = { chapter -> viewModel.exportChapterAudio(chapter) },
                     onExportAllAudio = { viewModel.exportAllChaptersAudio() },
+                    onExportRangeAudio = { from, to ->
+                        viewModel.exportChapterRangeAudio(from, to)
+                    },
                     onCancelExport = { viewModel.cancelAudioExport() },
                     availableVoices = availableVoices,
                     currentVoice = currentVoice,
@@ -236,6 +251,19 @@ fun NovelDetailScreen(
                                 novelId = novelId,
                                 chapters = state.novel.chapters
                             )
+                            viewModel.refreshDownloadStatus()
+                        }
+                    },
+                    onDownloadRange = { from, to ->
+                        scope.launch {
+                            val chaptersInRange = state.novel.chapters.filter {
+                                it.number in from..to && !it.isDownloaded
+                            }
+                            downloadManager.downloadAllChapters(
+                                novelId = novelId,
+                                chapters = chaptersInRange
+                            )
+                            viewModel.refreshDownloadStatus()
                         }
                     },
                     onDeleteBookmark = { bookmarkId -> viewModel.deleteBookmark(bookmarkId) },
@@ -282,11 +310,13 @@ private fun NovelDetailContent(
     onDownloadChapter: (Chapter) -> Unit,
     onExportChapterAudio: (Chapter) -> Unit,
     onExportAllAudio: () -> Unit,
+    onExportRangeAudio: (fromChapter: Int, toChapter: Int) -> Unit,
     onCancelExport: () -> Unit,
     availableVoices: List<com.abhinavxt.novelreader.data.tts.VoiceInfo>,
     currentVoice: com.abhinavxt.novelreader.data.tts.VoiceInfo?,
     onVoiceSelected: (com.abhinavxt.novelreader.data.tts.VoiceInfo) -> Unit,
     onDownloadAll: () -> Unit,
+    onDownloadRange: (fromChapter: Int, toChapter: Int) -> Unit,
     onDeleteBookmark: (Long) -> Unit,
     onUpdateBookmarkNote: (Long, String?) -> Unit,
     onBookmarkClick: (BookmarkEntity) -> Unit,
@@ -296,6 +326,9 @@ private fun NovelDetailContent(
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedTab by rememberSaveable { mutableStateOf(0) }
+    var showDownloadedOnly by remember { mutableStateOf(false) }
+    var showDownloadRangeDialog by remember { mutableStateOf(false) }
+    var showExportRangeDialog by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
@@ -305,23 +338,29 @@ private fun NovelDetailContent(
         if (!hasScrolledToReading && currentReadingChapterId != null && searchQuery.isBlank()) {
             val chapterIndex = novel.chapters.indexOfFirst { it.id == currentReadingChapterId }
             if (chapterIndex >= 0) {
-                // Offset: header, description, tabRow, downloadBadge, exportRow, stickyHeader(voice+search) = 6
-                val scrollTarget = 6 + chapterIndex
+                // Offset: header, description, tabRow, statusCard, stickyHeader(voice+search+filter) = 5
+                val scrollTarget = 5 + chapterIndex
                 listState.scrollToItem(scrollTarget)
                 hasScrolledToReading = true
             }
         }
     }
 
-    // Filter chapters based on search query
-    val filteredChapters = remember(novel.chapters, searchQuery) {
-        if (searchQuery.isBlank()) {
-            novel.chapters
-        } else {
+    // Filter chapters based on search query and download filter
+    val filteredChapters = remember(novel.chapters, searchQuery, showDownloadedOnly) {
+        var result = novel.chapters
+
+        // Apply downloaded-only filter
+        if (showDownloadedOnly) {
+            result = result.filter { it.isDownloaded }
+        }
+
+        // Apply search filter
+        if (searchQuery.isNotBlank()) {
             val query = searchQuery.trim()
             val chapterNumber = query.toIntOrNull()
 
-            novel.chapters.filter { chapter ->
+            result = result.filter { chapter ->
                 if (chapterNumber != null) {
                     chapter.number == chapterNumber ||
                             chapter.number.toString().contains(query)
@@ -331,6 +370,8 @@ private fun NovelDetailContent(
                 }
             }
         }
+
+        result
     }
 
     LazyColumn(
@@ -412,103 +453,128 @@ private fun NovelDetailContent(
             0 -> {
                 // ===== CHAPTERS TAB =====
 
+                // Compact status + actions card
                 item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Spacer(modifier = Modifier.weight(1f))
-
-                        // Show downloaded count badge
-                        val downloadedCount = novel.chapters.count { it.isDownloaded }
-                        if (downloadedCount > 0 && !isLocalNovel && AppConfig.ONLINE_SOURCES_ENABLED) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                shape = MaterialTheme.shapes.small
-                            ) {
-                                Text(
-                                    text = "$downloadedCount downloaded",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Export All as Audio button
-                item {
+                    val downloadedCount = novel.chapters.count { it.isDownloaded }
                     val exportedCount = audioExportedChapters.size
                     val totalCount = novel.chapters.size
                     val isAnyExporting = exportingChapters.isNotEmpty()
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (exportedCount > 0) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.tertiaryContainer,
-                                shape = MaterialTheme.shapes.small
+                    if ((downloadedCount > 0 || exportedCount > 0 || !isLocalNovel) && AppConfig.ONLINE_SOURCES_ENABLED) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                            ),
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text(
-                                    text = "$exportedCount/$totalCount audio exported",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                                )
-                            }
-                        }
+                                // Stats row
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (downloadedCount > 0) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                Icons.Default.DownloadDone,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp),
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "$downloadedCount/$totalCount",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                    if (exportedCount > 0) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                Icons.Default.MusicNote,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp),
+                                                tint = MaterialTheme.colorScheme.tertiary
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "$exportedCount/$totalCount",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.tertiary
+                                            )
+                                        }
+                                    }
 
-                        Spacer(modifier = Modifier.weight(1f))
+                                    Spacer(modifier = Modifier.weight(1f))
 
-                        if (isAnyExporting) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Exporting...",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                TextButton(onClick = onCancelExport) {
-                                    Text("Cancel")
+                                    // Export actions
+                                    if (isAnyExporting) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Exporting…",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
+                                        TextButton(
+                                            onClick = onCancelExport,
+                                            modifier = Modifier.height(28.dp),
+                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                        ) {
+                                            Text("Cancel", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    } else if (exportedCount < totalCount) {
+                                        TextButton(
+                                            onClick = onExportAllAudio,
+                                            modifier = Modifier.height(28.dp),
+                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.GraphicEq,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = if (exportedCount == 0) "Export" else "Export (${totalCount - exportedCount})",
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        }
+                                        TextButton(
+                                            onClick = { showExportRangeDialog = true },
+                                            modifier = Modifier.height(28.dp),
+                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                        ) {
+                                            Text("Range", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    }
                                 }
-                            }
-                        } else if (exportedCount < totalCount) {
-                            TextButton(onClick = onExportAllAudio) {
-                                Icon(
-                                    imageVector = Icons.Default.GraphicEq,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = if (exportedCount == 0) "Export All as Audio"
-                                    else "Export Remaining (${ totalCount - exportedCount })"
-                                )
                             }
                         }
                     }
                 }
 
-                // Voice picker + search bar — sticky so they stay visible while scrolling
+                // Voice picker + search bar + filters — sticky
                 stickyHeader {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(MaterialTheme.colorScheme.surface)
                     ) {
-                        // Voice picker row — compact, sits above search
+                        // Voice picker row
                         AudioVoicePicker(
                             availableVoices = availableVoices,
                             currentVoice = currentVoice,
@@ -516,13 +582,56 @@ private fun NovelDetailContent(
                             onShowModelDownload = onShowModelDownload
                         )
 
-                        // Search bar
+                        // Search + filter in one block
                         ChapterSearchBar(
                             query = searchQuery,
                             onQueryChange = { searchQuery = it },
                             resultCount = filteredChapters.size,
                             totalCount = novel.chapters.size
                         )
+
+                        // Filter row
+                        val downloadedCount = novel.chapters.count { it.isDownloaded }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FilterChip(
+                                selected = !showDownloadedOnly,
+                                onClick = { showDownloadedOnly = false },
+                                label = { Text("All", style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.height(28.dp)
+                            )
+                            if (downloadedCount > 0) {
+                                FilterChip(
+                                    selected = showDownloadedOnly,
+                                    onClick = { showDownloadedOnly = true },
+                                    label = { Text("Offline ($downloadedCount)", style = MaterialTheme.typography.labelSmall) },
+                                    modifier = Modifier.height(28.dp)
+                                )
+                            }
+
+                            if (!isLocalNovel && AppConfig.ONLINE_SOURCES_ENABLED) {
+                                Spacer(modifier = Modifier.weight(1f))
+                                TextButton(
+                                    onClick = { showDownloadRangeDialog = true },
+                                    modifier = Modifier.height(28.dp),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Download,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Range", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+
                         HorizontalDivider()
                     }
                 }
@@ -613,6 +722,33 @@ private fun NovelDetailContent(
                 }
             }
         }
+    }
+
+    // Download Range Dialog
+    if (showDownloadRangeDialog) {
+        DownloadRangeDialog(
+            totalChapters = novel.chapters.size,
+            onConfirm = { from, to ->
+                onDownloadRange(from, to)
+                showDownloadRangeDialog = false
+            },
+            onDismiss = { showDownloadRangeDialog = false }
+        )
+    }
+
+    // Export Range Dialog
+    if (showExportRangeDialog) {
+        DownloadRangeDialog(
+            totalChapters = novel.chapters.size,
+            title = "Export Chapters as Audio",
+            confirmLabel = "Export",
+            description = "Export a range of chapters as audio files. Already exported chapters are skipped.",
+            onConfirm = { from, to ->
+                onExportRangeAudio(from, to)
+                showExportRangeDialog = false
+            },
+            onDismiss = { showExportRangeDialog = false }
+        )
     }
 }
 
@@ -794,11 +930,13 @@ private fun NovelHeader(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 val isDownloading = downloadState?.novelId == novel.id && downloadState.isDownloading
-                val isThisNovelDownloading = downloadState?.novelId == novel.id
+                val downloadedCount = novel.chapters.count { it.isDownloaded }
+                val totalCount = novel.chapters.size
+                val allDownloaded = downloadedCount == totalCount && totalCount > 0
 
                 OutlinedButton(
                     onClick = onDownloadAll,
-                    enabled = !isDownloading && novel.chapters.isNotEmpty(),
+                    enabled = !isDownloading && !allDownloaded && novel.chapters.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     if (isDownloading) {
@@ -808,14 +946,22 @@ private fun NovelHeader(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Downloading ${downloadState?.downloadedChapters}/${downloadState?.totalChapters}")
-                    } else if (isThisNovelDownloading && downloadState?.downloadedChapters == downloadState?.totalChapters) {
+                    } else if (allDownloaded) {
                         Icon(
                             imageVector = Icons.Default.DownloadDone,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Downloaded")
+                        Text("All Downloaded")
+                    } else if (downloadedCount > 0) {
+                        Icon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Download Remaining (${totalCount - downloadedCount})")
                     } else {
                         Icon(
                             imageVector = Icons.Default.Download,
@@ -823,7 +969,7 @@ private fun NovelHeader(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Download All (${novel.chapters.size})")
+                        Text("Download All ($totalCount)")
                     }
                 }
             }
@@ -1353,4 +1499,72 @@ private fun EditBookmarkNoteDialog(
 private fun formatBookmarkDate(timestamp: Long): String {
     val sdf = SimpleDateFormat("MMM d, yyyy 'at' h:mm a", Locale.getDefault())
     return sdf.format(Date(timestamp))
+}
+
+@Composable
+private fun DownloadRangeDialog(
+    totalChapters: Int,
+    onConfirm: (from: Int, to: Int) -> Unit,
+    onDismiss: () -> Unit,
+    title: String = "Download Chapters",
+    confirmLabel: String = "Download",
+    description: String = "Download a range of chapters (1–$totalChapters). Already downloaded chapters are skipped."
+) {
+    var fromText by remember { mutableStateOf("1") }
+    var toText by remember { mutableStateOf(totalChapters.toString()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = fromText,
+                        onValueChange = { fromText = it.filter { c -> c.isDigit() } },
+                        label = { Text("From") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text("to")
+                    OutlinedTextField(
+                        value = toText,
+                        onValueChange = { toText = it.filter { c -> c.isDigit() } },
+                        label = { Text("To") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                val from = (fromText.toIntOrNull() ?: 1).coerceIn(1, totalChapters)
+                val to = (toText.toIntOrNull() ?: totalChapters).coerceIn(from, totalChapters)
+                val count = to - from + 1
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "$count chapter${if (count != 1) "s" else ""} selected",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val from = (fromText.toIntOrNull() ?: 1).coerceIn(1, totalChapters)
+                    val to = (toText.toIntOrNull() ?: totalChapters).coerceIn(from, totalChapters)
+                    onConfirm(from, to)
+                }
+            ) { Text(confirmLabel) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }

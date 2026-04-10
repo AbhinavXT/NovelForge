@@ -39,7 +39,7 @@ data class ReadingProgressEntity(
     val novelId: String,
     val currentChapterId: String,
     val currentChapterNumber: Int = 0,
-    val paragraphIndex: Int = 0,  // Which paragraph user was reading (changed from scrollPosition)
+    val paragraphIndex: Int = 0,
     val chaptersRead: Int = 0,
     val lastReadAt: Long
 )
@@ -55,9 +55,6 @@ data class ReaderSettingsEntity(
     val font: String = "SANS_SERIF"
 )
 
-// Stores bookmarks within chapters.
-// Each bookmark captures a position in a chapter along with
-// a text snippet (for preview) and an optional user note.
 @Entity(tableName = "bookmarks")
 data class BookmarkEntity(
     @PrimaryKey(autoGenerate = true)
@@ -65,7 +62,7 @@ data class BookmarkEntity(
 
     val novelId: String,
     val chapterId: String,
-    val chapterUrl: String,           // NEW — stores the URL so we can navigate back
+    val chapterUrl: String,
     val chapterNumber: Int,
     val chapterTitle: String,
 
@@ -74,4 +71,31 @@ data class BookmarkEntity(
     val note: String? = null,
 
     val createdAt: Long = System.currentTimeMillis()
+)
+
+// ============ Pronunciation Dictionary ============
+
+@Entity(tableName = "pronunciation_entries")
+data class PronunciationEntry(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+
+    val word: String,          // Original word (e.g. "Xiulan")
+    val replacement: String,   // Phonetic replacement (e.g. "shoo-lan")
+
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+// ============ Reading Stats ============
+
+@Entity(tableName = "reading_stats")
+data class ReadingStatEvent(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+
+    val novelId: String,
+    val chapterId: String,
+    val wordsRead: Int,           // Word count of the chapter
+    val readingTimeMs: Long,      // Time spent reading this session (ms)
+    val completedAt: Long = System.currentTimeMillis()
 )

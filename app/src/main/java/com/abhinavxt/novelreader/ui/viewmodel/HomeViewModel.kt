@@ -125,8 +125,23 @@ class HomeViewModel(
                 novelId.startsWith("rnf_") -> {
                     "https://readnovelfull.com/${novelId.removePrefix("rnf_")}.html"
                 }
+                novelId.startsWith("fwn_") -> {
+                    "https://freewebnovel.com/novel/${novelId.removePrefix("fwn_")}"
+                }
+                novelId.startsWith("lr_") -> {
+                    "https://libread.com/libread/${novelId.removePrefix("lr_")}"
+                }
+                novelId.startsWith("nfn_") -> {
+                    "https://novelfull.net/${novelId.removePrefix("nfn_")}.html"
+                }
+                novelId.startsWith("pr_") -> {
+                    val slug = novelId.removePrefix("pr_").replace("~", "/")
+                    "https://pawread.com/$slug"
+                }
+                novelId.startsWith("pt_") -> {
+                    "https://primodialtranslation.com/series/${novelId.removePrefix("pt_")}/"
+                }
                 novelId.startsWith("local_") -> {
-                    // Local novels don't need a URL, use placeholder
                     "local://$novelId"
                 }
                 else -> ""

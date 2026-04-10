@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
@@ -80,6 +81,8 @@ import com.abhinavxt.novelreader.ui.viewmodel.SettingsViewModel
 fun SettingsScreen(
     backupManager: BackupManager,
     themePreferences: ThemePreferences,
+    onNavigateToPronunciation: () -> Unit = {},
+    onNavigateToReadingStats: () -> Unit = {},
     viewModel: SettingsViewModel = viewModel(
         factory = SettingsViewModel.Factory(backupManager, themePreferences)
     )
@@ -402,8 +405,244 @@ fun SettingsScreen(
                                     "• Reading progress & position\n" +
                                     "• Downloaded chapters (optional)\n" +
                                     "• Bookmarks & notes\n" +
+                                    "• Pronunciation dictionary\n" +
                                     "• Reader settings (font, theme)\n" +
                                     "• TTS settings",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── TTS Section ─────────────────────────────────────
+            Text(
+                text = "Text-to-Speech",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(
+                onClick = onNavigateToPronunciation,
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Pronunciation Dictionary",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Fix mispronounced character names",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── Updates Section ──────────────────────────────────
+            Text(
+                text = "Chapter Updates",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val updatePrefs = remember {
+                context.getSharedPreferences(
+                    com.abhinavxt.novelreader.worker.UpdateCheckerWorker.PREFS_NAME,
+                    android.content.Context.MODE_PRIVATE
+                )
+            }
+            var updateCheckerEnabled by remember {
+                mutableStateOf(
+                    updatePrefs.getBoolean(com.abhinavxt.novelreader.worker.UpdateCheckerWorker.PREF_ENABLED, false)
+                )
+            }
+            var autoDownloadEnabled by remember {
+                mutableStateOf(
+                    updatePrefs.getBoolean(com.abhinavxt.novelreader.worker.UpdateCheckerWorker.PREF_AUTO_DOWNLOAD, false)
+                )
+            }
+            var checkInterval by remember {
+                mutableStateOf(
+                    updatePrefs.getLong(com.abhinavxt.novelreader.worker.UpdateCheckerWorker.PREF_INTERVAL_HOURS, 12)
+                )
+            }
+
+            // Update checker toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Check for new chapters",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Periodically check library novels for updates",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = updateCheckerEnabled,
+                    onCheckedChange = { enabled ->
+                        updateCheckerEnabled = enabled
+                        updatePrefs.edit()
+                            .putBoolean(com.abhinavxt.novelreader.worker.UpdateCheckerWorker.PREF_ENABLED, enabled)
+                            .apply()
+                        com.abhinavxt.novelreader.worker.UpdateCheckerWorker.schedule(
+                            context, enabled, checkInterval
+                        )
+                    }
+                )
+            }
+
+            // Interval picker (only shown when enabled)
+            if (updateCheckerEnabled) {
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Check every",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(6L, 12L, 24L).forEach { hours ->
+                        FilterChip(
+                            selected = checkInterval == hours,
+                            onClick = {
+                                checkInterval = hours
+                                updatePrefs.edit()
+                                    .putLong(com.abhinavxt.novelreader.worker.UpdateCheckerWorker.PREF_INTERVAL_HOURS, hours)
+                                    .apply()
+                                com.abhinavxt.novelreader.worker.UpdateCheckerWorker.schedule(
+                                    context, true, hours
+                                )
+                            },
+                            label = { Text("${hours}h") }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Auto-download toggle
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Auto-download new chapters",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Download chapters automatically when found",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = autoDownloadEnabled,
+                        onCheckedChange = { enabled ->
+                            autoDownloadEnabled = enabled
+                            updatePrefs.edit()
+                                .putBoolean(com.abhinavxt.novelreader.worker.UpdateCheckerWorker.PREF_AUTO_DOWNLOAD, enabled)
+                                .apply()
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Check now button
+                OutlinedButton(
+                    onClick = {
+                        com.abhinavxt.novelreader.worker.UpdateCheckerWorker.runNow(context)
+                    }
+                ) {
+                    Text("Check Now")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── Reading Stats Section ────────────────────────────
+            Text(
+                text = "Reading",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(
+                onClick = onNavigateToReadingStats,
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Reading Stats",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Words read, time spent, streaks",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -425,7 +664,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Novel Reader v1.5.0",
+                text = "Novel Reader v1.6.0",
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium
             )
@@ -445,18 +684,22 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
-                        text = "What's New in v1.5.0",
+                        text = "What's New in v1.6.0",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "• Download neural voices directly from novel detail screen\n" +
-                                "• Export chapters as audio in multiple voices per chapter\n" +
-                                "• Adaptive CPU thread tuning for faster Kokoro/Kitten TTS\n" +
-                                "• Fixed TTS skipping sentences during real-time playback\n" +
-                                "• Improved audio player layout",
+                        text = "• Pronunciation dictionary for TTS name corrections\n" +
+                                "• Reading stats dashboard with streaks and daily charts\n" +
+                                "• Chapter update checker with auto-download\n" +
+                                "• Offline filter and download/export range picker\n" +
+                                "• Library sorting (last read, title, chapters, added)\n" +
+                                "• Update badges on library cards\n" +
+                                "• Bookmarks and pronunciations included in backup\n" +
+                                "• 6 new reader themes (Nord, Mocha, Dracula, AMOLED, Gruvbox, Catppuccin)\n" +
+                                "• Primordial Translation source added",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -472,15 +715,18 @@ fun SettingsScreen(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "• Multi-source novel browsing (RoyalRoad, ReadNovelFull)\n" +
+                text = "• 7 novel sources + EPUB import\n" +
                         "• On-device neural TTS (Piper, Kokoro, KittenTTS)\n" +
-                        "• Google TTS integration with 67+ voices\n" +
-                        "• Per-chapter audio export to WAV\n" +
+                        "• Google TTS with 67+ voices across 24 languages\n" +
+                        "• Pronunciation dictionary for character names\n" +
+                        "• Per-chapter audio export with range selection\n" +
                         "• Built-in audio player with speed control\n" +
+                        "• Reading stats, streaks, and daily tracking\n" +
                         "• Bookmarks with notes and passage snippets\n" +
-                        "• Chapter search and jump navigation\n" +
-                        "• Library filters, chapter downloads, EPUB import\n" +
-                        "• Backup and restore",
+                        "• 14 reader themes including Nord, Mocha, Dracula\n" +
+                        "• Scheduled chapter update checker\n" +
+                        "• Dictionary lookup (6 languages)\n" +
+                        "• Backup and restore with full data",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -685,6 +931,12 @@ private fun RestoreConfirmDialog(
                         InfoRow("Novels", "${info.novelCount}")
                         InfoRow("Chapters", "${info.chapterCount}")
                         InfoRow("Downloaded", "${info.downloadedChapterCount}")
+                        if (info.bookmarkCount > 0) {
+                            InfoRow("Bookmarks", "${info.bookmarkCount}")
+                        }
+                        if (info.pronunciationCount > 0) {
+                            InfoRow("Pronunciations", "${info.pronunciationCount}")
+                        }
                         InfoRow("Created", info.createdAt)
                         InfoRow("Size", info.sizeFormatted)
                     }

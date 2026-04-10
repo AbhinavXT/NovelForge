@@ -125,9 +125,10 @@ fun ReaderScreen(
     repository: NovelRepository,
     ttsManager: TTSManager,
     themePreferences: ThemePreferences? = null,
+    statsTracker: com.abhinavxt.novelreader.data.ReadingStatsTracker? = null,
     onBackClick: () -> Unit,
     viewModel: ReaderViewModel = viewModel(
-        factory = ReaderViewModel.provideFactory(novelId, chapterId, chapterUrl, novelUrl = novelUrl, repository, themePreferences)
+        factory = ReaderViewModel.provideFactory(novelId, chapterId, chapterUrl, novelUrl = novelUrl, repository, themePreferences, statsTracker)
     )
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -1406,6 +1407,12 @@ private fun ReaderBottomBar(
                     ReaderTheme.NAVY -> "🌌"
                     ReaderTheme.SOLARIZED_LIGHT -> "🏜️"
                     ReaderTheme.SOLARIZED_DARK -> "🌃"
+                    ReaderTheme.NORD -> "❄️"
+                    ReaderTheme.MOCHA -> "☕"
+                    ReaderTheme.DRACULA -> "🧛"
+                    ReaderTheme.AMOLED -> "⬛"
+                    ReaderTheme.GRUVBOX -> "🍂"
+                    ReaderTheme.CATPPUCCIN -> "🐱"
                 },
                 fontSize = 18.sp
             )
@@ -1473,6 +1480,36 @@ fun getThemeColors(theme: ReaderTheme): ThemeColors {
             background = Color(0xFF002B36),
             text = Color(0xFF839496),
             secondaryText = Color(0xFF586E75)
+        )
+        ReaderTheme.NORD -> ThemeColors(
+            background = Color(0xFF2E3440),
+            text = Color(0xFFD8DEE9),
+            secondaryText = Color(0xFF7B88A1)
+        )
+        ReaderTheme.MOCHA -> ThemeColors(
+            background = Color(0xFF1C1410),
+            text = Color(0xFFD4A864),
+            secondaryText = Color(0xFF8B7355)
+        )
+        ReaderTheme.DRACULA -> ThemeColors(
+            background = Color(0xFF282A36),
+            text = Color(0xFFF8F8F2),
+            secondaryText = Color(0xFF6272A4)
+        )
+        ReaderTheme.AMOLED -> ThemeColors(
+            background = Color(0xFF000000),
+            text = Color(0xFFDDDDDD),
+            secondaryText = Color(0xFF666666)
+        )
+        ReaderTheme.GRUVBOX -> ThemeColors(
+            background = Color(0xFF282828),
+            text = Color(0xFFEBDBB2),
+            secondaryText = Color(0xFF928374)
+        )
+        ReaderTheme.CATPPUCCIN -> ThemeColors(
+            background = Color(0xFF1E1E2E),
+            text = Color(0xFFCDD6F4),
+            secondaryText = Color(0xFF7F849C)
         )
     }
 }

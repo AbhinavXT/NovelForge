@@ -3,7 +3,9 @@ package com.abhinavxt.novelreader.data
 import android.content.Context
 import android.net.Uri
 import com.abhinavxt.novelreader.data.database.ChapterEntity
+import com.abhinavxt.novelreader.data.database.BookmarkEntity
 import com.abhinavxt.novelreader.data.database.NovelEntity
+import com.abhinavxt.novelreader.data.database.PronunciationEntry
 import com.abhinavxt.novelreader.data.database.ReadingProgressEntity
 import com.abhinavxt.novelreader.data.database.ReaderSettingsEntity
 import com.abhinavxt.novelreader.util.Logger
@@ -25,10 +27,12 @@ data class BackupData(
     val chapters: List<ChapterBackup>,
     val readingProgress: List<ReadingProgressBackup>,
     val readerSettings: ReaderSettingsBackup?,
-    val ttsSettings: TTSSettingsBackup?
+    val ttsSettings: TTSSettingsBackup?,
+    val bookmarks: List<BookmarkBackup>? = null,
+    val pronunciationEntries: List<PronunciationBackup>? = null
 ) {
     companion object {
-        const val BACKUP_VERSION = 1
+        const val BACKUP_VERSION = 2
     }
 }
 
@@ -82,6 +86,24 @@ data class TTSSettingsBackup(
     val volume: Float
 )
 
+data class BookmarkBackup(
+    val id: Long,
+    val novelId: String,
+    val chapterId: String,
+    val chapterUrl: String,
+    val chapterNumber: Int,
+    val chapterTitle: String,
+    val paragraphIndex: Int,
+    val textSnippet: String,
+    val note: String?,
+    val createdAt: Long
+)
+
+data class PronunciationBackup(
+    val word: String,
+    val replacement: String
+)
+
 /**
  * Result of a backup/restore operation
  */
@@ -95,7 +117,8 @@ sealed class BackupResult {
  */
 class BackupManager(
     private val context: Context,
-    private val repository: NovelRepository
+    private val repository: NovelRepository,
+    var pronunciationManager: PronunciationManager? = null
 ) {
     private val gson: Gson = GsonBuilder()
         .setPrettyPrinting()
@@ -188,13 +211,36 @@ class BackupManager(
                 volume = ttsPrefs.getFloat("tts_volume", 1.0f)
             )
 
+            // Bookmarks
+            val bookmarkBackups = repository.getAllBookmarksForBackup().map { bm ->
+                BookmarkBackup(
+                    id = bm.id,
+                    novelId = bm.novelId,
+                    chapterId = bm.chapterId,
+                    chapterUrl = bm.chapterUrl,
+                    chapterNumber = bm.chapterNumber,
+                    chapterTitle = bm.chapterTitle,
+                    paragraphIndex = bm.paragraphIndex,
+                    textSnippet = bm.textSnippet,
+                    note = bm.note,
+                    createdAt = bm.createdAt
+                )
+            }
+
+            // Pronunciation dictionary
+            val pronunciationBackups = pronunciationManager?.getAllForBackup()?.map { entry ->
+                PronunciationBackup(word = entry.word, replacement = entry.replacement)
+            }
+
             // Create backup object
             val backup = BackupData(
                 novels = novelBackups,
                 chapters = chapterBackups,
                 readingProgress = progressBackups,
                 readerSettings = settingsBackup,
-                ttsSettings = ttsBackup
+                ttsSettings = ttsBackup,
+                bookmarks = bookmarkBackups,
+                pronunciationEntries = pronunciationBackups
             )
 
             // Write to file
@@ -207,9 +253,14 @@ class BackupManager(
             val sizeKb = jsonString.length / 1024
             Logger.d("BackupManager", "Backup created successfully (${sizeKb}KB)")
 
+            val bookmarkCount = bookmarkBackups.size
+            val pronunciationCount = pronunciationBackups?.size ?: 0
+
             BackupResult.Success(
                 "Backup created successfully!\n" +
-                        "${novels.size} novels, ${chapters.filter { it.isDownloaded }.size} downloaded chapters"
+                        "${novels.size} novels, ${chapters.filter { it.isDownloaded }.size} downloaded chapters" +
+                        (if (bookmarkCount > 0) ", $bookmarkCount bookmarks" else "") +
+                        (if (pronunciationCount > 0) ", $pronunciationCount pronunciations" else "")
             )
         } catch (e: Exception) {
             Logger.e("BackupManager", "Backup failed", e)
@@ -316,12 +367,51 @@ class BackupManager(
                     .apply()
             }
 
+            // Restore bookmarks
+            var bookmarksRestored = 0
+            backup.bookmarks?.forEach { bm ->
+                try {
+                    repository.insertBookmarkForRestore(
+                        BookmarkEntity(
+                            id = bm.id,
+                            novelId = bm.novelId,
+                            chapterId = bm.chapterId,
+                            chapterUrl = bm.chapterUrl,
+                            chapterNumber = bm.chapterNumber,
+                            chapterTitle = bm.chapterTitle,
+                            paragraphIndex = bm.paragraphIndex,
+                            textSnippet = bm.textSnippet,
+                            note = bm.note,
+                            createdAt = bm.createdAt
+                        )
+                    )
+                    bookmarksRestored++
+                } catch (e: Exception) {
+                    Logger.w("BackupManager", "Failed to restore bookmark: ${e.message}")
+                }
+            }
+
+            // Restore pronunciation dictionary
+            var pronunciationsRestored = 0
+            backup.pronunciationEntries?.forEach { entry ->
+                try {
+                    pronunciationManager?.insertForRestore(
+                        PronunciationEntry(word = entry.word, replacement = entry.replacement)
+                    )
+                    pronunciationsRestored++
+                } catch (e: Exception) {
+                    Logger.w("BackupManager", "Failed to restore pronunciation: ${e.message}")
+                }
+            }
+
             Logger.d("BackupManager", "Restore completed successfully")
 
             BackupResult.Success(
                 "Restore completed!\n" +
                         "$novelsRestored novels, $chaptersRestored chapters" +
-                        if (downloadedRestored > 0) ", $downloadedRestored downloaded" else ""
+                        (if (downloadedRestored > 0) ", $downloadedRestored downloaded" else "") +
+                        (if (bookmarksRestored > 0) ", $bookmarksRestored bookmarks" else "") +
+                        (if (pronunciationsRestored > 0) ", $pronunciationsRestored pronunciations" else "")
             )
         } catch (e: com.google.gson.JsonSyntaxException) {
             Logger.e("BackupManager", "Invalid backup file format", e)
@@ -353,6 +443,8 @@ class BackupManager(
                 novelCount = backup.novels.size,
                 chapterCount = backup.chapters.size,
                 downloadedChapterCount = downloadedChapters,
+                bookmarkCount = backup.bookmarks?.size ?: 0,
+                pronunciationCount = backup.pronunciationEntries?.size ?: 0,
                 createdAt = createdDate,
                 version = backup.version,
                 sizeBytes = totalSize.toLong()
@@ -371,6 +463,8 @@ data class BackupInfo(
     val novelCount: Int,
     val chapterCount: Int,
     val downloadedChapterCount: Int,
+    val bookmarkCount: Int = 0,
+    val pronunciationCount: Int = 0,
     val createdAt: String,
     val version: Int,
     val sizeBytes: Long

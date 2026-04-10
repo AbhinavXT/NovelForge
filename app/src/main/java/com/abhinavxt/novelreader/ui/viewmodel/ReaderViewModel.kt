@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.abhinavxt.novelreader.data.DictionaryRepository
 import com.abhinavxt.novelreader.data.DictionaryState
 import com.abhinavxt.novelreader.data.NovelRepository
+import com.abhinavxt.novelreader.data.ReadingStatsTracker
 import com.abhinavxt.novelreader.data.ThemePreferences
 import com.abhinavxt.novelreader.data.model.Chapter
 import com.abhinavxt.novelreader.data.model.ReaderSettings
@@ -58,7 +59,8 @@ class ReaderViewModel(
     initialChapterUrl: String,
     private val novelUrl: String,
     private val repository: NovelRepository,
-    private val themePreferences: ThemePreferences? = null
+    private val themePreferences: ThemePreferences? = null,
+    private val statsTracker: ReadingStatsTracker? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
@@ -242,6 +244,9 @@ class ReaderViewModel(
                         settings = settings
                     )
 
+                    // Track reading stats
+                    statsTracker?.startSession(novelId, currentChapterId, content)
+
                     // Save reading progress
                     saveProgress(currentIndex + 1, savedParagraphIndex)
 
@@ -336,6 +341,8 @@ class ReaderViewModel(
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
             currentState.chapter.prevChapter?.let { prev ->
+                // End stats for current chapter before navigating
+                viewModelScope.launch { statsTracker?.endSession() }
                 shouldRestorePosition = false
                 autoRetryEnabled = false
                 autoRetryCount = 0
@@ -359,6 +366,8 @@ class ReaderViewModel(
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
             currentState.chapter.nextChapter?.let { next ->
+                // End stats for current chapter before navigating
+                viewModelScope.launch { statsTracker?.endSession() }
                 shouldRestorePosition = false
                 autoRetryEnabled = withAutoRetry
                 autoRetryCount = 0
@@ -425,7 +434,13 @@ class ReaderViewModel(
                 ReaderTheme.PAPER -> ReaderTheme.NAVY
                 ReaderTheme.NAVY -> ReaderTheme.SOLARIZED_LIGHT
                 ReaderTheme.SOLARIZED_LIGHT -> ReaderTheme.SOLARIZED_DARK
-                ReaderTheme.SOLARIZED_DARK -> ReaderTheme.LIGHT
+                ReaderTheme.SOLARIZED_DARK -> ReaderTheme.NORD
+                ReaderTheme.NORD -> ReaderTheme.MOCHA
+                ReaderTheme.MOCHA -> ReaderTheme.DRACULA
+                ReaderTheme.DRACULA -> ReaderTheme.AMOLED
+                ReaderTheme.AMOLED -> ReaderTheme.GRUVBOX
+                ReaderTheme.GRUVBOX -> ReaderTheme.CATPPUCCIN
+                ReaderTheme.CATPPUCCIN -> ReaderTheme.LIGHT
             }
             updateSettings(currentState.settings.copy(theme = nextTheme))
         }
@@ -510,6 +525,16 @@ class ReaderViewModel(
         )
     }
 
+    // ============ LIFECYCLE ============
+
+    override fun onCleared() {
+        super.onCleared()
+        // End reading stats session when leaving the reader
+        viewModelScope.launch {
+            statsTracker?.endSession()
+        }
+    }
+
     companion object {
         fun provideFactory(
             novelId: String,
@@ -517,12 +542,13 @@ class ReaderViewModel(
             chapterUrl: String,
             novelUrl: String,
             repository: NovelRepository,
-            themePreferences: ThemePreferences? = null
+            themePreferences: ThemePreferences? = null,
+            statsTracker: ReadingStatsTracker? = null
         ): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences) as T
+                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences, statsTracker) as T
                 }
             }
         }

@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,6 +61,7 @@ import com.abhinavxt.novelreader.data.NovelRepository
 import com.abhinavxt.novelreader.data.model.Novel
 import com.abhinavxt.novelreader.ui.viewmodel.ImportState
 import com.abhinavxt.novelreader.ui.viewmodel.LibraryFilter
+import com.abhinavxt.novelreader.ui.viewmodel.LibrarySort
 import com.abhinavxt.novelreader.ui.viewmodel.LibraryViewModel
 import java.io.File
 
@@ -74,6 +76,8 @@ fun LibraryScreen(
     val novels by viewModel.libraryNovels.collectAsState()
     val importState by viewModel.importState.collectAsState()
     val currentFilter by viewModel.currentFilter.collectAsState()
+    val currentSort by viewModel.currentSort.collectAsState()
+    val novelsWithUpdates by viewModel.novelsWithUpdates.collectAsState()
 
     // File picker launcher for EPUB files
     val epubPickerLauncher = rememberLauncherForActivityResult(
@@ -197,7 +201,32 @@ fun LibraryScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Sort row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Sort:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    LibrarySort.values().forEach { sort ->
+                        FilterChip(
+                            selected = currentSort == sort,
+                            onClick = { viewModel.setSort(sort) },
+                            label = { Text(sort.displayName, style = MaterialTheme.typography.labelSmall) },
+                            modifier = Modifier.height(28.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 if (novels.isEmpty()) {
                     // Empty state - varies by filter
@@ -243,7 +272,11 @@ fun LibraryScreen(
                         ) { novel ->
                             LibraryNovelItem(
                                 novel = novel,
-                                onClick = { onNovelClick(novel.id) },
+                                hasUpdate = novel.id in novelsWithUpdates,
+                                onClick = {
+                                    viewModel.clearUpdateBadge(novel.id)
+                                    onNovelClick(novel.id)
+                                },
                                 onRemove = { viewModel.removeFromLibrary(novel.id) }
                             )
                         }
@@ -354,6 +387,7 @@ private fun EmptyFilterState(
 @Composable
 private fun LibraryNovelItem(
     novel: Novel,
+    hasUpdate: Boolean = false,
     onClick: () -> Unit,
     onRemove: () -> Unit
 ) {
@@ -377,27 +411,42 @@ private fun LibraryNovelItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Cover image or placeholder
-            if (imageModel != null) {
-                AsyncImage(
-                    model = imageModel,
-                    contentDescription = "Cover of ${novel.title}",
-                    modifier = Modifier.size(48.dp, 64.dp),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Surface(
-                    modifier = Modifier.size(48.dp, 64.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.Book,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+            // Cover image or placeholder with update badge
+            Box {
+                if (imageModel != null) {
+                    AsyncImage(
+                        model = imageModel,
+                        contentDescription = "Cover of ${novel.title}",
+                        modifier = Modifier.size(48.dp, 64.dp),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Surface(
+                        modifier = Modifier.size(48.dp, 64.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Book,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
+                }
+
+                // Update badge
+                if (hasUpdate) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .align(Alignment.TopEnd)
+                            .background(
+                                color = MaterialTheme.colorScheme.error,
+                                shape = androidx.compose.foundation.shape.CircleShape
+                            )
+                    )
                 }
             }
 

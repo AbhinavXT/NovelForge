@@ -52,6 +52,9 @@ private data class TextSegment(
  */
 class TTSManager(private val context: Context) {
 
+    /** Set by NovelReaderApplication after both are initialized */
+    var pronunciationManager: PronunciationManager? = null
+
     private val prefs = context.getSharedPreferences("tts_prefs", Context.MODE_PRIVATE)
     private val handler = Handler(Looper.getMainLooper())
     private var pauseRunnable: Runnable? = null
@@ -409,12 +412,14 @@ class TTSManager(private val context: Context) {
         if (currentIndex >= segments.size) return
 
         val segment = segments[currentIndex]
+        // Apply pronunciation dictionary substitutions
+        val textToSpeak = pronunciationManager?.applyReplacements(segment.text) ?: segment.text
         Logger.d("TTSManager", "Speaking sentence $currentIndex: ${segment.text.take(50)}...")
 
         val s = _settings.value
 
         activeEngine.speak(
-            text = segment.text,
+            text = textToSpeak,
             utteranceId = "sentence_$currentIndex",
             speed = s.speed,
             pitch = s.pitch,

@@ -38,7 +38,6 @@ interface NovelDao {
     @Query("DELETE FROM novels WHERE id = :novelId")
     suspend fun deleteNovelById(novelId: String)
 
-
     // ============ Backup/Restore Queries ============
 
     @Query("SELECT * FROM novels")
@@ -112,6 +111,10 @@ interface ChapterDao {
 
     @Delete
     suspend fun deleteChapter(chapter: ChapterEntity)
+
+    // For update checker: get the highest chapter number stored for a novel
+    @Query("SELECT MAX(number) FROM chapters WHERE novelId = :novelId")
+    suspend fun getMaxChapterNumber(novelId: String): Int?
 }
 
 @Dao
@@ -141,7 +144,6 @@ interface ReadingProgressDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProgress(progress: ReadingProgressEntity)
 
-    // Updated to use paragraphIndex instead of scrollPosition
     @Query("""
         UPDATE reading_progress 
         SET currentChapterId = :chapterId, 
@@ -190,40 +192,114 @@ interface ReaderSettingsDao {
 @Dao
 interface BookmarkDao {
 
-    // Get all bookmarks for a novel, newest first — used for the bookmark tab on NovelDetailScreen
     @Query("SELECT * FROM bookmarks WHERE novelId = :novelId ORDER BY createdAt DESC")
     fun getBookmarksForNovel(novelId: String): Flow<List<BookmarkEntity>>
 
-    // Get bookmarks for a specific chapter — useful in the reader to show if current chapter has bookmarks
     @Query("SELECT * FROM bookmarks WHERE chapterId = :chapterId ORDER BY paragraphIndex ASC")
     fun getBookmarksForChapter(chapterId: String): Flow<List<BookmarkEntity>>
 
-    // Count bookmarks for a novel — handy for showing a badge count on the bookmark tab
     @Query("SELECT COUNT(*) FROM bookmarks WHERE novelId = :novelId")
     fun getBookmarkCount(novelId: String): Flow<Int>
 
-    // Check if a specific position is already bookmarked — prevents duplicate bookmarks
     @Query("SELECT EXISTS(SELECT 1 FROM bookmarks WHERE chapterId = :chapterId AND paragraphIndex = :paragraphIndex)")
     suspend fun isPositionBookmarked(chapterId: String, paragraphIndex: Int): Boolean
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBookmark(bookmark: BookmarkEntity): Long
 
-    // Update just the note field — for when users edit their annotation
     @Query("UPDATE bookmarks SET note = :note WHERE id = :bookmarkId")
     suspend fun updateNote(bookmarkId: Long, note: String?)
 
     @Query("DELETE FROM bookmarks WHERE id = :bookmarkId")
     suspend fun deleteBookmark(bookmarkId: Long)
 
-    // Clean up all bookmarks when a novel is removed from library
     @Query("DELETE FROM bookmarks WHERE novelId = :novelId")
     suspend fun deleteBookmarksForNovel(novelId: String)
 
-    // For backup/restore support (matches your existing pattern)
     @Query("SELECT * FROM bookmarks")
     suspend fun getAllBookmarksOnce(): List<BookmarkEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBookmarkReplace(bookmark: BookmarkEntity)
+}
+
+// ============ Pronunciation Dictionary DAO ============
+
+@Dao
+interface PronunciationDao {
+
+    @Query("SELECT * FROM pronunciation_entries ORDER BY word ASC")
+    fun getAllEntries(): Flow<List<PronunciationEntry>>
+
+    @Query("SELECT * FROM pronunciation_entries ORDER BY word ASC")
+    suspend fun getAllEntriesOnce(): List<PronunciationEntry>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEntry(entry: PronunciationEntry): Long
+
+    @Query("UPDATE pronunciation_entries SET word = :word, replacement = :replacement WHERE id = :id")
+    suspend fun updateEntry(id: Long, word: String, replacement: String)
+
+    @Query("DELETE FROM pronunciation_entries WHERE id = :id")
+    suspend fun deleteEntry(id: Long)
+
+    @Query("DELETE FROM pronunciation_entries")
+    suspend fun deleteAll()
+}
+
+// ============ Reading Stats DAO ============
+
+@Dao
+interface ReadingStatDao {
+
+    @Insert
+    suspend fun insertEvent(event: ReadingStatEvent)
+
+    // Total words read all time
+    @Query("SELECT COALESCE(SUM(wordsRead), 0) FROM reading_stats")
+    suspend fun getTotalWordsRead(): Int
+
+    // Total reading time all time (ms)
+    @Query("SELECT COALESCE(SUM(readingTimeMs), 0) FROM reading_stats")
+    suspend fun getTotalReadingTimeMs(): Long
+
+    // Total chapters completed
+    @Query("SELECT COUNT(*) FROM reading_stats")
+    suspend fun getTotalChaptersCompleted(): Int
+
+    // Stats for a given day (midnight to midnight)
+    @Query("SELECT COALESCE(SUM(wordsRead), 0) FROM reading_stats WHERE completedAt >= :dayStartMs AND completedAt < :dayEndMs")
+    suspend fun getWordsReadForDay(dayStartMs: Long, dayEndMs: Long): Int
+
+    @Query("SELECT COALESCE(SUM(readingTimeMs), 0) FROM reading_stats WHERE completedAt >= :dayStartMs AND completedAt < :dayEndMs")
+    suspend fun getReadingTimeMsForDay(dayStartMs: Long, dayEndMs: Long): Long
+
+    @Query("SELECT COUNT(*) FROM reading_stats WHERE completedAt >= :dayStartMs AND completedAt < :dayEndMs")
+    suspend fun getChaptersCompletedForDay(dayStartMs: Long, dayEndMs: Long): Int
+
+    // Days with any reading activity (for streak calculation)
+    // Returns distinct day timestamps (floored to midnight)
+    @Query("SELECT DISTINCT(completedAt / 86400000 * 86400000) as dayMs FROM reading_stats ORDER BY dayMs DESC")
+    suspend fun getActiveDaysMs(): List<Long>
+
+    // Per-novel stats
+    @Query("SELECT COALESCE(SUM(wordsRead), 0) FROM reading_stats WHERE novelId = :novelId")
+    suspend fun getWordsReadForNovel(novelId: String): Int
+
+    @Query("SELECT COALESCE(SUM(readingTimeMs), 0) FROM reading_stats WHERE novelId = :novelId")
+    suspend fun getReadingTimeMsForNovel(novelId: String): Long
+
+    @Query("SELECT COUNT(*) FROM reading_stats WHERE novelId = :novelId")
+    suspend fun getChaptersCompletedForNovel(novelId: String): Int
+
+    // Recent activity (last 30 days for chart)
+    @Query("SELECT * FROM reading_stats WHERE completedAt >= :sinceMs ORDER BY completedAt ASC")
+    suspend fun getEventsSince(sinceMs: Long): List<ReadingStatEvent>
+
+    // For backup
+    @Query("SELECT * FROM reading_stats")
+    suspend fun getAllEventsOnce(): List<ReadingStatEvent>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEventReplace(event: ReadingStatEvent)
 }

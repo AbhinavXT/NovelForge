@@ -30,6 +30,8 @@ import com.abhinavxt.novelreader.AppConfig
 import com.abhinavxt.novelreader.data.BackupManager
 import com.abhinavxt.novelreader.data.DownloadManager
 import com.abhinavxt.novelreader.data.NovelRepository
+import com.abhinavxt.novelreader.data.PronunciationManager
+import com.abhinavxt.novelreader.data.ReadingStatsTracker
 import com.abhinavxt.novelreader.data.TTSManager
 import com.abhinavxt.novelreader.data.ThemePreferences
 import com.abhinavxt.novelreader.ui.NavigationHost
@@ -51,6 +53,8 @@ class MainActivity : ComponentActivity() {
         val ttsManager = app.ttsManager
         val backupManager = app.backupManager
         val themePreferences = app.themePreferences
+        val pronunciationManager = app.pronunciationManager
+        val readingStatsTracker = app.readingStatsTracker
 
         setContent {
             // Observe theme settings as Compose state
@@ -70,7 +74,9 @@ class MainActivity : ComponentActivity() {
                         downloadManager = downloadManager,
                         ttsManager = ttsManager,
                         backupManager = backupManager,
-                        themePreferences = themePreferences
+                        themePreferences = themePreferences,
+                        pronunciationManager = pronunciationManager,
+                        readingStatsTracker = readingStatsTracker
                     )
                 }
             }
@@ -120,7 +126,9 @@ fun NovelReaderApp(
     downloadManager: DownloadManager,
     ttsManager: TTSManager,
     backupManager: BackupManager,
-    themePreferences: ThemePreferences
+    themePreferences: ThemePreferences,
+    pronunciationManager: PronunciationManager,
+    readingStatsTracker: ReadingStatsTracker
 ) {
     val navController = rememberNavController()
 
@@ -190,6 +198,8 @@ fun NovelReaderApp(
                 ttsManager = ttsManager,
                 backupManager = backupManager,
                 themePreferences = themePreferences,
+                pronunciationManager = pronunciationManager,
+                readingStatsTracker = readingStatsTracker,
                 audioPlayerViewModel = audioPlayerViewModel,
                 modifier = Modifier.padding(innerPadding)
             )

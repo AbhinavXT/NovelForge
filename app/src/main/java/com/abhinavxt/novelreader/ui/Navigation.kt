@@ -24,6 +24,8 @@ import java.net.URLEncoder
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryMusic
 import com.abhinavxt.novelreader.data.BackupManager
+import com.abhinavxt.novelreader.data.PronunciationManager
+import com.abhinavxt.novelreader.data.ReadingStatsTracker
 import com.abhinavxt.novelreader.data.TTSManager
 import com.abhinavxt.novelreader.ui.viewmodel.AudioPlayerViewModel
 
@@ -90,6 +92,18 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
             return "audio_player/$encodedFolder/$encodedPath"
         }
     }
+
+    object Pronunciation : Screen(
+        route = "pronunciation",
+        title = "Pronunciation",
+        icon = Icons.Default.MenuBook
+    )
+
+    object ReadingStats : Screen(
+        route = "reading_stats",
+        title = "Reading Stats",
+        icon = Icons.Default.MenuBook
+    )
 }
 
 private fun constructNovelUrl(novelId: String): String {
@@ -128,6 +142,8 @@ fun NavigationHost(
     ttsManager: TTSManager,
     backupManager: BackupManager,
     themePreferences: ThemePreferences,
+    pronunciationManager: PronunciationManager,
+    readingStatsTracker: ReadingStatsTracker,
     audioPlayerViewModel: AudioPlayerViewModel,
     modifier: Modifier = Modifier
 ) {
@@ -207,7 +223,28 @@ fun NavigationHost(
         composable(Screen.Settings.route) {
             SettingsScreen(
                 backupManager = backupManager,
-                themePreferences = themePreferences
+                themePreferences = themePreferences,
+                onNavigateToPronunciation = {
+                    navController.navigate(Screen.Pronunciation.route)
+                },
+                onNavigateToReadingStats = {
+                    navController.navigate(Screen.ReadingStats.route)
+                }
+            )
+        }
+
+        composable(Screen.Pronunciation.route) {
+            PronunciationScreen(
+                pronunciationManager = pronunciationManager,
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.ReadingStats.route) {
+            ReadingStatsScreen(
+                readingStatsTracker = readingStatsTracker,
+                repository = repository,
+                onBackClick = { navController.popBackStack() }
             )
         }
 
@@ -272,6 +309,7 @@ fun NavigationHost(
                 repository = repository,
                 ttsManager = ttsManager,
                 themePreferences = themePreferences,
+                statsTracker = readingStatsTracker,
                 onBackClick = { navController.popBackStack() }
             )
         }

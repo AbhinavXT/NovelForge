@@ -436,6 +436,57 @@ class NovelDetailViewModel(
     }
 
     /**
+     * Export a range of chapters (by chapter number) as audio.
+     * Works like exportAllChaptersAudio but only for chapters in the range.
+     */
+    fun exportChapterRangeAudio(fromChapter: Int, toChapter: Int) {
+        val currentState = _uiState.value
+        if (currentState !is NovelDetailUiState.Success) return
+
+        viewModelScope.launch {
+            val novel = currentState.novel
+            val exported = _audioExportedChapters.value
+            val voiceName = ttsManager.currentVoice.value?.displayName ?: "default"
+            val speakerId = if (ttsManager.sherpaEngine.isReady)
+                ttsManager.sherpaEngine.getCurrentSpeakerIdValue() else 0
+
+            val chaptersToExport = mutableListOf<AudioExporter.ExportChapterInfo>()
+            for (chapter in novel.chapters) {
+                if (chapter.number !in fromChapter..toChapter) continue
+                if (chapter.id in exported) continue
+                try {
+                    val content = repository.getChapterContent(novelId, chapter.id, chapter.url)
+                    if (!content.isNullOrBlank()) {
+                        chaptersToExport.add(
+                            AudioExporter.ExportChapterInfo(
+                                chapterId = chapter.id,
+                                chapterTitle = chapter.title,
+                                content = content
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    Logger.w("NovelDetailVM", "Failed to fetch content for ${chapter.title}")
+                }
+            }
+
+            audioExporter.launchExportAll(
+                chapters = chaptersToExport,
+                novelTitle = novel.title,
+                voiceName = voiceName,
+                speakerId = speakerId,
+                alreadyExported = exported,
+                onEachComplete = { chapterId ->
+                    _audioExportedChapters.value = _audioExportedChapters.value + chapterId
+                },
+                onAllDone = {
+                    refreshAudioExportStatus()
+                }
+            )
+        }
+    }
+
+    /**
      * Cancel the current audio export.
      */
     fun cancelAudioExport() {
