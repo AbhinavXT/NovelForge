@@ -6,7 +6,6 @@ import com.abhinavxt.novelreader.data.model.NovelPreview
 import com.abhinavxt.novelreader.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
@@ -29,11 +28,7 @@ class PrimordialTranslationSource : Source {
     override val name = "Primordial Translation"
     override val baseUrl = "https://primodialtranslation.com"
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .build()
+    private val client = SourceManager.sharedClient
 
     private val userAgent =
         "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
@@ -182,9 +177,16 @@ class PrimordialTranslationSource : Source {
                 ?: "Unknown"
 
             // Cover image
-            val coverUrl = document.selectFirst(".thumb img, .seriesthumbnail img, .seriestucontl img, .infoanime img")
-                ?.let { img ->
+            val coverUrl = (
+                    document.selectFirst(".thumb img, .seriesthumbnail img, .seriestucontl img, .infoanime img")
+                        ?: document.selectFirst("img.wp-post-image")
+                        ?: document.selectFirst(".thumbook img, .novel-cover img, .summary_image img")
+                        ?: document.selectFirst("meta[property=og:image]")?.let { null } // handled below
+                    )?.let { img ->
                     img.attr("abs:src").ifBlank { img.attr("abs:data-src") }
+                }?.ifBlank {
+                    // Last resort: og:image meta tag
+                    document.selectFirst("meta[property=og:image]")?.attr("content")
                 }?.ifBlank { null }
 
             // Description

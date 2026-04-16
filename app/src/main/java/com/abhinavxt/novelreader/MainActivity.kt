@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,6 +17,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -28,6 +30,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.abhinavxt.novelreader.AppConfig
 import com.abhinavxt.novelreader.data.BackupManager
+import com.abhinavxt.novelreader.data.ChapterPrefetcher
 import com.abhinavxt.novelreader.data.DownloadManager
 import com.abhinavxt.novelreader.data.NovelRepository
 import com.abhinavxt.novelreader.data.PronunciationManager
@@ -41,6 +44,39 @@ import com.abhinavxt.novelreader.ui.viewmodel.AudioPlayerViewModel
 import com.abhinavxt.novelreader.util.Logger
 
 class MainActivity : ComponentActivity() {
+
+    // ── Volume key navigation ───────────────────────────────────
+    // Track whether the reader screen is active so we only intercept
+    // volume keys when the user is actually reading. This is set by
+    // the Compose UI via the callback below.
+    @Volatile
+    private var isReaderScreenActive = false
+
+    /** Called by NovelReaderApp composable when reader route changes. */
+    fun setReaderActive(active: Boolean) {
+        isReaderScreenActive = active
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        // Only intercept volume keys when the reader screen is active.
+        // The ReaderScreen composable decides whether to act on the event
+        // based on its own volumeKeyNavigation setting — the Activity
+        // just forwards every volume key press unconditionally.
+        if (isReaderScreenActive) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_VOLUME_UP -> {
+                    (application as NovelReaderApplication).emitVolumeKey(VolumeKeyEvent.UP)
+                    return true  // Consume — prevents system volume UI from showing
+                }
+                KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                    (application as NovelReaderApplication).emitVolumeKey(VolumeKeyEvent.DOWN)
+                    return true
+                }
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -76,7 +112,8 @@ class MainActivity : ComponentActivity() {
                         backupManager = backupManager,
                         themePreferences = themePreferences,
                         pronunciationManager = pronunciationManager,
-                        readingStatsTracker = readingStatsTracker
+                        readingStatsTracker = readingStatsTracker,
+                        chapterPrefetcher = app.chapterPrefetcher
                     )
                 }
             }
@@ -128,9 +165,40 @@ fun NovelReaderApp(
     backupManager: BackupManager,
     themePreferences: ThemePreferences,
     pronunciationManager: PronunciationManager,
-    readingStatsTracker: ReadingStatsTracker
+    readingStatsTracker: ReadingStatsTracker,
+    chapterPrefetcher: ChapterPrefetcher
 ) {
     val navController = rememberNavController()
+
+    // Deep-link: if the app was opened from an update notification,
+    // navigate to the novel's detail screen automatically
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        val activity = context as? ComponentActivity
+        activity?.intent?.getStringExtra(
+            com.abhinavxt.novelreader.worker.UpdateCheckerWorker.EXTRA_NAVIGATE_NOVEL
+        )?.let { novelId ->
+            val url = com.abhinavxt.novelreader.data.source.SourceManager.constructNovelUrl(novelId)
+            navController.navigate(Screen.Detail.createRoute(novelId, url))
+            // Clear the extra so it doesn't re-navigate on config change
+            activity.intent.removeExtra(
+                com.abhinavxt.novelreader.worker.UpdateCheckerWorker.EXTRA_NAVIGATE_NOVEL
+            )
+        }
+    }
+
+    // ── Track reader screen active state for volume key interception ──
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentDestination = navBackStackEntry?.destination
+    val currentRoute = currentDestination?.route
+
+    // Tell the Activity whether the reader is active so it knows
+    // to intercept volume keys in onKeyDown
+    LaunchedEffect(currentRoute) {
+        val activity = context as? MainActivity
+        val isOnReader = currentRoute?.startsWith("reader/") == true
+        activity?.setReaderActive(isOnReader)
+    }
 
     val bottomNavScreens = if (AppConfig.ONLINE_SOURCES_ENABLED) {
         listOf(
@@ -148,15 +216,11 @@ fun NovelReaderApp(
         )
     }
 
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentDestination = navBackStackEntry?.destination
-    val currentRoute = currentDestination?.route
-
     val showBottomNav = bottomNavScreens.any { screen ->
         currentRoute == screen.route
     }
 
-    val context = LocalContext.current
+//    val context = LocalContext.current
     val audioPlayerViewModel: AudioPlayerViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
         factory = AudioPlayerViewModel.provideFactory(context)
     )
@@ -200,6 +264,7 @@ fun NovelReaderApp(
                 themePreferences = themePreferences,
                 pronunciationManager = pronunciationManager,
                 readingStatsTracker = readingStatsTracker,
+                chapterPrefetcher = chapterPrefetcher,
                 audioPlayerViewModel = audioPlayerViewModel,
                 modifier = Modifier.padding(innerPadding)
             )

@@ -86,7 +86,13 @@ fun SearchScreen(
             value = searchQuery,
             onValueChange = { viewModel.onSearchQueryChange(it) },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Search on ${selectedSource.name}...") },
+            placeholder = {
+                Text(
+                    "Search on ${selectedSource.name}...",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.Search,

@@ -50,9 +50,6 @@ interface NovelDao {
     suspend fun getAllProgressOnce(): List<ReadingProgressEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertNovelReplace(novel: NovelEntity)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertChapterReplace(chapter: ChapterEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -60,6 +57,10 @@ interface NovelDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSettingsReplace(settings: ReaderSettingsEntity)
+
+    // ── NEW: Mark novel as "seen" to clear update badge ─────────
+    @Query("UPDATE novels SET previousTotalChapters = totalChapters WHERE id = :novelId")
+    suspend fun markUpdateSeen(novelId: String)
 }
 
 @Dao
@@ -124,9 +125,6 @@ interface ReadingProgressDao {
     suspend fun getProgress(novelId: String): ReadingProgressEntity?
 
     @Query("SELECT * FROM reading_progress WHERE novelId = :novelId")
-    suspend fun getProgressForNovel(novelId: String): ReadingProgressEntity?
-
-    @Query("SELECT * FROM reading_progress WHERE novelId = :novelId")
     fun getProgressFlow(novelId: String): Flow<ReadingProgressEntity?>
 
     @Query("SELECT * FROM reading_progress ORDER BY lastReadAt DESC")
@@ -165,9 +163,6 @@ interface ReadingProgressDao {
 
     @Query("DELETE FROM reading_progress WHERE novelId = :novelId")
     suspend fun deleteProgress(novelId: String)
-
-    @Query("DELETE FROM reading_progress WHERE novelId = :novelId")
-    suspend fun deleteProgressForNovel(novelId: String)
 }
 
 @Dao
@@ -277,10 +272,9 @@ interface ReadingStatDao {
     @Query("SELECT COUNT(*) FROM reading_stats WHERE completedAt >= :dayStartMs AND completedAt < :dayEndMs")
     suspend fun getChaptersCompletedForDay(dayStartMs: Long, dayEndMs: Long): Int
 
-    // Days with any reading activity (for streak calculation)
-    // Returns distinct day timestamps (floored to midnight)
-    @Query("SELECT DISTINCT(completedAt / 86400000 * 86400000) as dayMs FROM reading_stats ORDER BY dayMs DESC")
-    suspend fun getActiveDaysMs(): List<Long>
+    // Days with any reading activity — return raw timestamps for local timezone bucketing
+    @Query("SELECT completedAt FROM reading_stats ORDER BY completedAt DESC")
+    suspend fun getAllCompletedTimestamps(): List<Long>
 
     // Per-novel stats
     @Query("SELECT COALESCE(SUM(wordsRead), 0) FROM reading_stats WHERE novelId = :novelId")
@@ -302,4 +296,53 @@ interface ReadingStatDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEventReplace(event: ReadingStatEvent)
+}
+
+// ============ Highlights & Annotations DAO ============
+
+@Dao
+interface HighlightDao {
+
+    // Get all highlights for a chapter — used by reader to render overlays
+    @Query("SELECT * FROM highlights WHERE chapterId = :chapterId ORDER BY paragraphIndex ASC, startOffset ASC")
+    fun getHighlightsForChapter(chapterId: String): Flow<List<HighlightEntity>>
+
+    // Get all highlights for a novel — used by "All Highlights" screen
+    @Query("SELECT * FROM highlights WHERE novelId = :novelId ORDER BY chapterNumber ASC, paragraphIndex ASC")
+    fun getHighlightsForNovel(novelId: String): Flow<List<HighlightEntity>>
+
+    // Get highlights with notes only (annotations) — useful for export
+    @Query("SELECT * FROM highlights WHERE novelId = :novelId AND note IS NOT NULL AND note != '' ORDER BY chapterNumber ASC, paragraphIndex ASC")
+    fun getAnnotationsForNovel(novelId: String): Flow<List<HighlightEntity>>
+
+    // Total highlight count for a novel
+    @Query("SELECT COUNT(*) FROM highlights WHERE novelId = :novelId")
+    fun getHighlightCount(novelId: String): Flow<Int>
+
+    // Insert a new highlight
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertHighlight(highlight: HighlightEntity): Long
+
+    // Update the note (annotation) on an existing highlight
+    @Query("UPDATE highlights SET note = :note, updatedAt = :updatedAt WHERE id = :highlightId")
+    suspend fun updateNote(highlightId: Long, note: String?, updatedAt: Long = System.currentTimeMillis())
+
+    // Change highlight color
+    @Query("UPDATE highlights SET color = :color, updatedAt = :updatedAt WHERE id = :highlightId")
+    suspend fun updateColor(highlightId: Long, color: String, updatedAt: Long = System.currentTimeMillis())
+
+    // Delete a single highlight
+    @Query("DELETE FROM highlights WHERE id = :highlightId")
+    suspend fun deleteHighlight(highlightId: Long)
+
+    // Delete all highlights for a novel (when removing from library)
+    @Query("DELETE FROM highlights WHERE novelId = :novelId")
+    suspend fun deleteHighlightsForNovel(novelId: String)
+
+    // Backup/restore
+    @Query("SELECT * FROM highlights")
+    suspend fun getAllHighlightsOnce(): List<HighlightEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertHighlightReplace(highlight: HighlightEntity)
 }

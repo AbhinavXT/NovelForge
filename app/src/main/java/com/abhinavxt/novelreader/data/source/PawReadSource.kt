@@ -6,11 +6,9 @@ import com.abhinavxt.novelreader.data.model.NovelPreview
 import com.abhinavxt.novelreader.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
-import java.util.concurrent.TimeUnit
 
 /**
  * PawRead — unique site structure with onclick chapter navigation.
@@ -23,11 +21,7 @@ class PawReadSource : Source {
     override val name = "PawRead"
     override val baseUrl = "https://pawread.com"
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .build()
+    private val client = SourceManager.sharedClient
 
     private val userAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"

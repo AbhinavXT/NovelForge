@@ -6,16 +6,21 @@ import androidx.lifecycle.viewModelScope
 import com.abhinavxt.novelreader.data.DictionaryRepository
 import com.abhinavxt.novelreader.data.DictionaryState
 import com.abhinavxt.novelreader.data.NovelRepository
+import com.abhinavxt.novelreader.data.ChapterPrefetcher
 import com.abhinavxt.novelreader.data.ReadingStatsTracker
 import com.abhinavxt.novelreader.data.ThemePreferences
+import com.abhinavxt.novelreader.data.database.HighlightEntity
 import com.abhinavxt.novelreader.data.model.Chapter
 import com.abhinavxt.novelreader.data.model.ReaderSettings
 import com.abhinavxt.novelreader.data.model.ReaderTheme
 import com.abhinavxt.novelreader.data.model.ReaderFont
+import com.abhinavxt.novelreader.data.model.ReadingMode
+import com.abhinavxt.novelreader.data.model.PageTransition
 import com.abhinavxt.novelreader.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -60,7 +65,8 @@ class ReaderViewModel(
     private val novelUrl: String,
     private val repository: NovelRepository,
     private val themePreferences: ThemePreferences? = null,
-    private val statsTracker: ReadingStatsTracker? = null
+    private val statsTracker: ReadingStatsTracker? = null,
+    private val prefetcher: ChapterPrefetcher? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
@@ -83,24 +89,39 @@ class ReaderViewModel(
 
     // ============ BOOKMARK STATE ============
 
-    // Whether this novel is in the user's library (bookmarks only allowed for library novels)
     private val _isInLibrary = MutableStateFlow(false)
     val isInLibrary: StateFlow<Boolean> = _isInLibrary.asStateFlow()
 
-    // Feedback signal: emits true briefly when a bookmark is saved,
-    // so the UI can show a snackbar confirmation
-    private val _bookmarkSavedEvent = MutableStateFlow(false)
-    val bookmarkSavedEvent: StateFlow<Boolean> = _bookmarkSavedEvent.asStateFlow()
+    // ============ READING TIME ESTIMATE ============
+
+    private val _estimatedMinutesLeft = MutableStateFlow<Int?>(null)
+    val estimatedMinutesLeft: StateFlow<Int?> = _estimatedMinutesLeft.asStateFlow()
+
+    private val _userWPM = MutableStateFlow<Int?>(null)
+    val userWPM: StateFlow<Int?> = _userWPM.asStateFlow()
+
+    private val _bookmarkSavedEvent = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.BUFFERED)
+    val bookmarkSavedEvent = _bookmarkSavedEvent.receiveAsFlow()
 
     // ============ DICTIONARY STATE ============
 
     private val _dictionaryState = MutableStateFlow<DictionaryState>(DictionaryState.Idle)
     val dictionaryState: StateFlow<DictionaryState> = _dictionaryState.asStateFlow()
 
+    // ============ HIGHLIGHT STATE ============
+
     /**
-     * Look up a word in the dictionary. Called when user taps "Define"
-     * in the text selection toolbar. Uses the language from preferences.
+     * Highlights for the current chapter — observed by the reader to render
+     * colored overlays on paragraph text. Updated via Room Flow whenever
+     * the user adds/removes/edits a highlight.
      */
+    private val _chapterHighlights = MutableStateFlow<List<HighlightEntity>>(emptyList())
+    val chapterHighlights: StateFlow<List<HighlightEntity>> = _chapterHighlights.asStateFlow()
+
+    // Feedback signal: emits once when a highlight is saved
+    private val _highlightSavedEvent = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.BUFFERED)
+    val highlightSavedEvent = _highlightSavedEvent.receiveAsFlow()
+
     fun lookupWord(word: String) {
         val cleanWord = word.trim()
         if (cleanWord.isBlank()) return
@@ -140,7 +161,6 @@ class ReaderViewModel(
                     fetchChapterListFromNetwork()
                 }
 
-                // Check if novel is in library (bookmarks only allowed for library novels)
                 _isInLibrary.value = repository.isInLibrary(novelId)
 
                 loadChapter()
@@ -164,7 +184,6 @@ class ReaderViewModel(
         }
     }
 
-    // Split content into paragraphs for tracking
     private fun splitIntoParagraphs(content: String): List<String> {
         return content
             .split("\n\n", "\n")
@@ -172,7 +191,6 @@ class ReaderViewModel(
             .filter { it.isNotEmpty() }
     }
 
-    // Flag to indicate if we should auto-retry on failure (for TTS)
     private var autoRetryEnabled = false
     private val maxAutoRetries = 3
     private var autoRetryCount = 0
@@ -182,7 +200,9 @@ class ReaderViewModel(
             _uiState.value = ReaderUiState.Loading
 
             try {
-                val content = repository.getChapterContent(
+                val cachedContent = prefetcher?.getIfCached(currentChapterId)
+
+                val content = cachedContent ?: repository.getChapterContent(
                     novelId = novelId,
                     chapterId = currentChapterId,
                     chapterUrl = currentChapterUrl
@@ -208,10 +228,8 @@ class ReaderViewModel(
                     val isFirst = hasChapterList && currentIndex == 0
                     val isLast = hasChapterList && currentIndex == chapterList.size - 1 && currentIndex >= 0
 
-                    // Split content into paragraphs
                     val paragraphs = splitIntoParagraphs(content)
 
-                    // Get saved paragraph index for this chapter
                     val savedParagraphIndex = if (shouldRestorePosition) {
                         val progress = repository.getReadingProgress(novelId)
                         if (progress?.currentChapterId == currentChapterId) {
@@ -244,14 +262,32 @@ class ReaderViewModel(
                         settings = settings
                     )
 
-                    // Track reading stats
                     statsTracker?.startSession(novelId, currentChapterId, content)
 
-                    // Save reading progress
+                    viewModelScope.launch {
+                        val wordCount = content.split(Regex("\\s+")).count { it.isNotBlank() }
+                        val estimatedMins = statsTracker?.estimateMinutes(wordCount)
+                        _estimatedMinutesLeft.value = estimatedMins
+                        _userWPM.value = statsTracker?.getUserWPM()
+                    }
+
                     saveProgress(currentIndex + 1, savedParagraphIndex)
 
                     shouldRestorePosition = false
                     autoRetryEnabled = false
+
+                    // Load highlights for this chapter via Room Flow
+                    loadHighlightsForChapter(currentChapterId)
+
+                    if (chapterList.isNotEmpty() && currentIndex >= 0) {
+                        prefetcher?.prefetchAround(
+                            novelId = novelId,
+                            currentIndex = currentIndex,
+                            chapters = chapterList.map {
+                                ChapterPrefetcher.ChapterRef(id = it.id, url = it.url)
+                            }
+                        )
+                    }
                 } else {
                     handleLoadError("Failed to load chapter content. The source may be temporarily unavailable.")
                 }
@@ -268,8 +304,19 @@ class ReaderViewModel(
         }
     }
 
+    /**
+     * Observe highlights for the given chapter from Room.
+     * Collects into _chapterHighlights so the UI can render overlays.
+     */
+    private fun loadHighlightsForChapter(chapterId: String) {
+        viewModelScope.launch {
+            repository.getHighlightsForChapter(chapterId).collect { highlights ->
+                _chapterHighlights.value = highlights
+            }
+        }
+    }
+
     private fun handleLoadError(message: String) {
-        // Auto-retry if enabled and not exceeded max retries
         if (autoRetryEnabled && autoRetryCount < maxAutoRetries) {
             autoRetryCount++
             loadChapter()
@@ -289,16 +336,12 @@ class ReaderViewModel(
         retryCount = 0
         viewModelScope.launch {
             _uiState.value = ReaderUiState.Loading
-
             try {
                 val dbChapters = repository.getChapters(novelId).first()
                 if (dbChapters.isNotEmpty()) {
                     chapterList = dbChapters
                 }
-            } catch (e: Exception) {
-                // Ignore
-            }
-
+            } catch (e: Exception) { /* Ignore */ }
             loadChapter()
         }
     }
@@ -318,7 +361,6 @@ class ReaderViewModel(
         }
     }
 
-    // Save paragraph index - called from UI when scrolling
     fun saveParagraphIndex(paragraphIndex: Int) {
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
@@ -341,7 +383,6 @@ class ReaderViewModel(
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
             currentState.chapter.prevChapter?.let { prev ->
-                // End stats for current chapter before navigating
                 viewModelScope.launch { statsTracker?.endSession() }
                 shouldRestorePosition = false
                 autoRetryEnabled = false
@@ -357,7 +398,6 @@ class ReaderViewModel(
         goToNextChapter(withAutoRetry = false)
     }
 
-    // Separate function for TTS auto-continue with retry
     fun goToNextChapterWithRetry() {
         goToNextChapter(withAutoRetry = true)
     }
@@ -366,7 +406,6 @@ class ReaderViewModel(
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
             currentState.chapter.nextChapter?.let { next ->
-                // End stats for current chapter before navigating
                 viewModelScope.launch { statsTracker?.endSession() }
                 shouldRestorePosition = false
                 autoRetryEnabled = withAutoRetry
@@ -397,12 +436,10 @@ class ReaderViewModel(
         return currentState is ReaderUiState.Success && currentState.chapter.nextChapter != null
     }
 
-    // Settings methods
     fun updateSettings(newSettings: ReaderSettings) {
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
             _uiState.value = currentState.copy(settings = newSettings)
-
             viewModelScope.launch {
                 repository.saveReaderSettings(newSettings)
             }
@@ -411,15 +448,15 @@ class ReaderViewModel(
 
     fun increaseFontSize() {
         val currentState = _uiState.value
-        if (currentState is ReaderUiState.Success && currentState.settings.fontSize < 28) {
-            updateSettings(currentState.settings.copy(fontSize = currentState.settings.fontSize + 2))
+        if (currentState is ReaderUiState.Success && currentState.settings.fontSize < 32) {
+            updateSettings(currentState.settings.copy(fontSize = currentState.settings.fontSize + 1))
         }
     }
 
     fun decreaseFontSize() {
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success && currentState.settings.fontSize > 12) {
-            updateSettings(currentState.settings.copy(fontSize = currentState.settings.fontSize - 2))
+            updateSettings(currentState.settings.copy(fontSize = currentState.settings.fontSize - 1))
         }
     }
 
@@ -427,20 +464,17 @@ class ReaderViewModel(
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
             val nextTheme = when (currentState.settings.theme) {
-                ReaderTheme.LIGHT -> ReaderTheme.DARK
-                ReaderTheme.DARK -> ReaderTheme.SEPIA
-                ReaderTheme.SEPIA -> ReaderTheme.GREY
-                ReaderTheme.GREY -> ReaderTheme.PAPER
-                ReaderTheme.PAPER -> ReaderTheme.NAVY
-                ReaderTheme.NAVY -> ReaderTheme.SOLARIZED_LIGHT
-                ReaderTheme.SOLARIZED_LIGHT -> ReaderTheme.SOLARIZED_DARK
-                ReaderTheme.SOLARIZED_DARK -> ReaderTheme.NORD
-                ReaderTheme.NORD -> ReaderTheme.MOCHA
-                ReaderTheme.MOCHA -> ReaderTheme.DRACULA
-                ReaderTheme.DRACULA -> ReaderTheme.AMOLED
-                ReaderTheme.AMOLED -> ReaderTheme.GRUVBOX
+                ReaderTheme.PAPER -> ReaderTheme.SEPIA
+                ReaderTheme.SEPIA -> ReaderTheme.SOLARIZED_LIGHT
+                ReaderTheme.SOLARIZED_LIGHT -> ReaderTheme.DARK
+                ReaderTheme.DARK -> ReaderTheme.AMOLED
+                ReaderTheme.AMOLED -> ReaderTheme.NORD
+                ReaderTheme.NORD -> ReaderTheme.DRACULA
+                ReaderTheme.DRACULA -> ReaderTheme.GRUVBOX
                 ReaderTheme.GRUVBOX -> ReaderTheme.CATPPUCCIN
-                ReaderTheme.CATPPUCCIN -> ReaderTheme.LIGHT
+                ReaderTheme.CATPPUCCIN -> ReaderTheme.NAVY
+                ReaderTheme.NAVY -> ReaderTheme.GREY
+                ReaderTheme.GREY -> ReaderTheme.PAPER
             }
             updateSettings(currentState.settings.copy(theme = nextTheme))
         }
@@ -450,10 +484,14 @@ class ReaderViewModel(
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
             val nextFont = when (currentState.settings.font) {
-                ReaderFont.SANS_SERIF -> ReaderFont.SERIF
-                ReaderFont.SERIF -> ReaderFont.MONOSPACE
-                ReaderFont.MONOSPACE -> ReaderFont.CURSIVE
-                ReaderFont.CURSIVE -> ReaderFont.SANS_SERIF
+                ReaderFont.LITERATA -> ReaderFont.LORA
+                ReaderFont.LORA -> ReaderFont.MERRIWEATHER
+                ReaderFont.MERRIWEATHER -> ReaderFont.CRIMSON_TEXT
+                ReaderFont.CRIMSON_TEXT -> ReaderFont.SOURCE_SANS
+                ReaderFont.SOURCE_SANS -> ReaderFont.NOTO_SANS
+                ReaderFont.NOTO_SANS -> ReaderFont.OPEN_DYSLEXIC
+                ReaderFont.OPEN_DYSLEXIC -> ReaderFont.JETBRAINS_MONO
+                ReaderFont.JETBRAINS_MONO -> ReaderFont.LITERATA
             }
             updateSettings(currentState.settings.copy(font = nextFont))
         }
@@ -468,11 +506,6 @@ class ReaderViewModel(
 
     // ============ BOOKMARK METHODS ============
 
-    /**
-     * Called when the user long-presses a paragraph and taps "Bookmark".
-     * Creates a bookmark storing the paragraph position, a text snippet,
-     * and the chapter URL so we can navigate back to it later.
-     */
     fun addBookmarkAtParagraph(paragraphIndex: Int, paragraphText: String) {
         val currentState = _uiState.value
         if (currentState !is ReaderUiState.Success) return
@@ -481,7 +514,6 @@ class ReaderViewModel(
 
         viewModelScope.launch {
             try {
-                // Truncate the paragraph text to create a readable preview snippet
                 val snippet = if (paragraphText.length > 150) {
                     paragraphText.take(150).trim() + "…"
                 } else {
@@ -499,21 +531,84 @@ class ReaderViewModel(
                 )
 
                 Logger.d("Bookmark added at Ch.${chapter.chapterNumber}, paragraph $paragraphIndex")
-
-                // Signal the UI to show a confirmation snackbar
-                _bookmarkSavedEvent.value = true
+                _bookmarkSavedEvent.trySend(Unit)
             } catch (e: Exception) {
                 Logger.e("Failed to add bookmark", e)
             }
         }
     }
 
+    // ============ HIGHLIGHT METHODS ============
+
     /**
-     * Called by the UI after it has shown the snackbar,
-     * to reset the one-shot event so it doesn't fire again.
+     * Add a highlight from a text selection in the reader.
+     *
+     * The highlight is stored with paragraph index and character offsets
+     * so we can render the overlay accurately. The selected text is also
+     * stored for display in the "All Highlights" list even if the source
+     * chapter content changes later.
      */
-    fun clearBookmarkSavedEvent() {
-        _bookmarkSavedEvent.value = false
+    fun addHighlight(
+        paragraphIndex: Int,
+        startOffset: Int,
+        endOffset: Int,
+        selectedText: String,
+        color: String = "YELLOW"
+    ) {
+        val currentState = _uiState.value
+        if (currentState !is ReaderUiState.Success) return
+
+        val chapter = currentState.chapter
+
+        viewModelScope.launch {
+            try {
+                repository.addHighlight(
+                    novelId = novelId,
+                    chapterId = currentChapterId,
+                    chapterNumber = chapter.chapterNumber,
+                    chapterTitle = chapter.chapterTitle,
+                    paragraphIndex = paragraphIndex,
+                    startOffset = startOffset,
+                    endOffset = endOffset,
+                    selectedText = selectedText,
+                    color = color
+                )
+                Logger.d("Highlight added: Ch.${chapter.chapterNumber}, para $paragraphIndex [$startOffset:$endOffset]")
+                _highlightSavedEvent.trySend(Unit)
+            } catch (e: Exception) {
+                Logger.e("Failed to add highlight", e)
+            }
+        }
+    }
+
+    fun updateHighlightNote(highlightId: Long, note: String?) {
+        viewModelScope.launch {
+            try {
+                repository.updateHighlightNote(highlightId, note)
+            } catch (e: Exception) {
+                Logger.e("Failed to update highlight note", e)
+            }
+        }
+    }
+
+    fun updateHighlightColor(highlightId: Long, color: String) {
+        viewModelScope.launch {
+            try {
+                repository.updateHighlightColor(highlightId, color)
+            } catch (e: Exception) {
+                Logger.e("Failed to update highlight color", e)
+            }
+        }
+    }
+
+    fun deleteHighlight(highlightId: Long) {
+        viewModelScope.launch {
+            try {
+                repository.deleteHighlight(highlightId)
+            } catch (e: Exception) {
+                Logger.e("Failed to delete highlight", e)
+            }
+        }
     }
 
     private fun Chapter.toChapterNav(): ChapterNav {
@@ -529,7 +624,7 @@ class ReaderViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        // End reading stats session when leaving the reader
+        prefetcher?.clear()
         viewModelScope.launch {
             statsTracker?.endSession()
         }
@@ -543,12 +638,13 @@ class ReaderViewModel(
             novelUrl: String,
             repository: NovelRepository,
             themePreferences: ThemePreferences? = null,
-            statsTracker: ReadingStatsTracker? = null
+            statsTracker: ReadingStatsTracker? = null,
+            prefetcher: ChapterPrefetcher? = null
         ): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences, statsTracker) as T
+                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences, statsTracker, prefetcher) as T
                 }
             }
         }

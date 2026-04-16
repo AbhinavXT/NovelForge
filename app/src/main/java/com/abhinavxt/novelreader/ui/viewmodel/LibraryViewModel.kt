@@ -65,11 +65,29 @@ class LibraryViewModel(
     private val _novelsWithUpdates = MutableStateFlow<Set<String>>(emptySet())
     val novelsWithUpdates: StateFlow<Set<String>> = _novelsWithUpdates.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     init {
         loadLibrary()
         loadNovelsWithDownloads()
         loadNovelsBeingRead()
         loadUpdateBadges()
+    }
+
+    /**
+     * Pull-to-refresh: reload library, downloads, reading progress, and update badges.
+     * Brief delay ensures the refresh indicator is visible.
+     */
+    fun refresh() {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            loadNovelsWithDownloads()
+            loadNovelsBeingRead()
+            loadUpdateBadges()
+            kotlinx.coroutines.delay(400) // brief delay so indicator is visible
+            _isRefreshing.value = false
+        }
     }
 
     private fun loadUpdateBadges() {

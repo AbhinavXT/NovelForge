@@ -5,6 +5,11 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -104,34 +109,16 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
         title = "Reading Stats",
         icon = Icons.Default.MenuBook
     )
+
+    object Changelog : Screen(
+        route = "changelog",
+        title = "Changelog",
+        icon = Icons.Default.MenuBook
+    )
 }
 
 private fun constructNovelUrl(novelId: String): String {
-    return when {
-        novelId.startsWith("rr_") -> {
-            "https://www.royalroad.com/fiction/${novelId.removePrefix("rr_")}"
-        }
-        novelId.startsWith("rnf_") -> {
-            "https://readnovelfull.com/${novelId.removePrefix("rnf_")}.html"
-        }
-        novelId.startsWith("fwn_") -> {
-            "https://freewebnovel.com/novel/${novelId.removePrefix("fwn_")}"
-        }
-        novelId.startsWith("lr_") -> {
-            "https://libread.com/libread/${novelId.removePrefix("lr_")}"
-        }
-        novelId.startsWith("nfn_") -> {
-            "https://novelfull.net/${novelId.removePrefix("nfn_")}.html"
-        }
-        novelId.startsWith("pt_") -> {
-            "https://primodialtranslation.com/series/${novelId.removePrefix("pt_")}/"
-        }
-        novelId.startsWith("local_") -> {
-            // Local novels don't need a URL, use placeholder
-            "local://$novelId"
-        }
-        else -> ""
-    }
+    return com.abhinavxt.novelreader.data.source.SourceManager.constructNovelUrl(novelId)
 }
 
 @Composable
@@ -144,6 +131,7 @@ fun NavigationHost(
     themePreferences: ThemePreferences,
     pronunciationManager: PronunciationManager,
     readingStatsTracker: ReadingStatsTracker,
+    chapterPrefetcher: com.abhinavxt.novelreader.data.ChapterPrefetcher,
     audioPlayerViewModel: AudioPlayerViewModel,
     modifier: Modifier = Modifier
 ) {
@@ -152,7 +140,35 @@ fun NavigationHost(
     NavHost(
         navController = navController,
         startDestination = startRoute,
-        modifier = modifier
+        modifier = modifier,
+        // ── Default screen transitions ──────────────────────────
+        // Slide in from right + fade in when navigating forward.
+        // Slide out to right + fade out when navigating back.
+        // 250ms feels snappy without being jarring.
+        enterTransition = {
+            slideInHorizontally(
+                initialOffsetX = { fullWidth -> fullWidth / 4 },
+                animationSpec = tween(250)
+            ) + fadeIn(animationSpec = tween(250))
+        },
+        exitTransition = {
+            slideOutHorizontally(
+                targetOffsetX = { fullWidth -> -fullWidth / 4 },
+                animationSpec = tween(250)
+            ) + fadeOut(animationSpec = tween(150))
+        },
+        popEnterTransition = {
+            slideInHorizontally(
+                initialOffsetX = { fullWidth -> -fullWidth / 4 },
+                animationSpec = tween(250)
+            ) + fadeIn(animationSpec = tween(250))
+        },
+        popExitTransition = {
+            slideOutHorizontally(
+                targetOffsetX = { fullWidth -> fullWidth / 4 },
+                animationSpec = tween(250)
+            ) + fadeOut(animationSpec = tween(150))
+        }
     ) {
         // ── Online source screens (Browse/Search/Home) ────────────
         // Only registered when online sources are enabled
@@ -161,6 +177,7 @@ fun NavigationHost(
             composable(Screen.Home.route) {
                 HomeScreen(
                     repository = repository,
+                    readingStatsTracker = readingStatsTracker,
                     onBrowseClick = {
                         navController.navigate(Screen.Search.route) {
                             popUpTo(navController.graph.findStartDestination().id) {
@@ -229,6 +246,9 @@ fun NavigationHost(
                 },
                 onNavigateToReadingStats = {
                     navController.navigate(Screen.ReadingStats.route)
+                },
+                onNavigateToChangelog = {
+                    navController.navigate(Screen.Changelog.route)
                 }
             )
         }
@@ -244,6 +264,12 @@ fun NavigationHost(
             ReadingStatsScreen(
                 readingStatsTracker = readingStatsTracker,
                 repository = repository,
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Changelog.route) {
+            ChangelogScreen(
                 onBackClick = { navController.popBackStack() }
             )
         }
@@ -267,6 +293,7 @@ fun NavigationHost(
                 repository = repository,
                 downloadManager = downloadManager,
                 ttsManager = ttsManager,
+                readingStatsTracker = readingStatsTracker,
                 onBackClick = { navController.popBackStack() },
                 onChapterClick = { chapterId, chapterUrl ->
                     navController.navigate(
@@ -310,6 +337,7 @@ fun NavigationHost(
                 ttsManager = ttsManager,
                 themePreferences = themePreferences,
                 statsTracker = readingStatsTracker,
+                chapterPrefetcher = chapterPrefetcher,
                 onBackClick = { navController.popBackStack() }
             )
         }

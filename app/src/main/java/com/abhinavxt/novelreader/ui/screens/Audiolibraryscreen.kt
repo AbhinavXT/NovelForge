@@ -1,6 +1,7 @@
 package com.abhinavxt.novelreader.ui.screens
 
 import androidx.compose.foundation.clickable
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -262,6 +263,13 @@ fun AudioChapterListScreen(
 ) {
     val novel = viewModel.getNovel(novelFolderName)
     val playbackState by viewModel.playbackState.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    // Audio merger
+    val audioMerger = remember { com.abhinavxt.novelreader.data.tts.AudioMerger(context) }
+    val mergeState by audioMerger.state.collectAsState()
+    var showMergeDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -304,6 +312,26 @@ fun AudioChapterListScreen(
                     .padding(padding),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+                // Merge as Audiobook button
+                if (novel.chapters.size > 1) {
+                    item {
+                        OutlinedButton(
+                            onClick = { showMergeDialog = true },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AudioFile,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Merge as Audiobook (${novel.chapters.size} chapters)")
+                        }
+                    }
+                }
+
                 items(novel.chapters, key = { it.filePath }) { chapter ->
                     AudioChapterItem(
                         chapter = chapter,
@@ -316,6 +344,91 @@ fun AudioChapterListScreen(
                 }
             }
         }
+    }
+
+    // Merge confirmation + progress dialog
+    if (showMergeDialog) {
+        val currentMergeState = mergeState
+        AlertDialog(
+            onDismissRequest = {
+                if (currentMergeState !is com.abhinavxt.novelreader.data.tts.AudioMerger.MergeState.Merging) {
+                    showMergeDialog = false
+                    audioMerger.reset()
+                }
+            },
+            title = {
+                Text(
+                    when (currentMergeState) {
+                        is com.abhinavxt.novelreader.data.tts.AudioMerger.MergeState.Idle -> "Merge as Audiobook"
+                        is com.abhinavxt.novelreader.data.tts.AudioMerger.MergeState.Merging -> "Merging…"
+                        is com.abhinavxt.novelreader.data.tts.AudioMerger.MergeState.Complete -> "Audiobook Created"
+                        is com.abhinavxt.novelreader.data.tts.AudioMerger.MergeState.Error -> "Merge Failed"
+                    }
+                )
+            },
+            text = {
+                Column {
+                    when (currentMergeState) {
+                        is com.abhinavxt.novelreader.data.tts.AudioMerger.MergeState.Idle -> {
+                            Text("Combine ${novel?.chapters?.size ?: 0} chapter files into a single audiobook WAV.")
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "Saved alongside the chapter files in Music/NovelReader/.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        is com.abhinavxt.novelreader.data.tts.AudioMerger.MergeState.Merging -> {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text("Chapter ${currentMergeState.currentChapter}/${currentMergeState.totalChapters}")
+                            }
+                        }
+                        is com.abhinavxt.novelreader.data.tts.AudioMerger.MergeState.Complete -> {
+                            val mins = currentMergeState.totalDurationMs / 60_000
+                            Text("Audiobook saved successfully.")
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Duration: ${mins}min",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        is com.abhinavxt.novelreader.data.tts.AudioMerger.MergeState.Error -> {
+                            Text(currentMergeState.message, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                when (currentMergeState) {
+                    is com.abhinavxt.novelreader.data.tts.AudioMerger.MergeState.Idle -> {
+                        Button(onClick = {
+                            scope.launch {
+                                audioMerger.mergeChapters(novelFolderName)
+                            }
+                        }) { Text("Merge") }
+                    }
+                    is com.abhinavxt.novelreader.data.tts.AudioMerger.MergeState.Complete,
+                    is com.abhinavxt.novelreader.data.tts.AudioMerger.MergeState.Error -> {
+                        Button(onClick = {
+                            showMergeDialog = false
+                            audioMerger.reset()
+                        }) { Text("Done") }
+                    }
+                    else -> {}
+                }
+            },
+            dismissButton = {
+                if (currentMergeState is com.abhinavxt.novelreader.data.tts.AudioMerger.MergeState.Idle) {
+                    OutlinedButton(onClick = { showMergeDialog = false }) { Text("Cancel") }
+                }
+            }
+        )
     }
 }
 

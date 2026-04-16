@@ -11,7 +11,12 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +38,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.TimerOff
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Headphones
@@ -51,10 +59,13 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -72,17 +83,23 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.platform.TextToolbar
 import androidx.compose.ui.platform.TextToolbarStatus
 import androidx.compose.ui.text.font.Font
@@ -101,19 +118,29 @@ import com.abhinavxt.novelreader.data.DictionaryState
 import com.abhinavxt.novelreader.data.NovelRepository
 import com.abhinavxt.novelreader.data.TTSManager
 import com.abhinavxt.novelreader.data.TTSState
+import com.abhinavxt.novelreader.data.SleepTimerMode
 import com.abhinavxt.novelreader.data.ThemePreferences
 import com.abhinavxt.novelreader.data.model.ReaderSettings
 import com.abhinavxt.novelreader.data.model.ReaderTheme
 import com.abhinavxt.novelreader.data.model.ReaderFont
+import com.abhinavxt.novelreader.data.model.ReadingMode
+import com.abhinavxt.novelreader.data.database.HighlightEntity
+import com.abhinavxt.novelreader.ui.components.QuickSettingsSheet
+import com.abhinavxt.novelreader.ui.components.PagedReaderContent
 import com.abhinavxt.novelreader.ui.viewmodel.ReaderChapterData
 import com.abhinavxt.novelreader.ui.viewmodel.ReaderUiState
 import com.abhinavxt.novelreader.ui.viewmodel.ReaderViewModel
 import com.abhinavxt.novelreader.data.tts.VoiceInfo
 import com.abhinavxt.novelreader.ui.components.ModelDownloadDialog
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import kotlinx.coroutines.delay
+import com.abhinavxt.novelreader.data.ChapterPrefetcher
+import com.abhinavxt.novelreader.NovelReaderApplication
+import com.abhinavxt.novelreader.VolumeKeyEvent
+import androidx.compose.foundation.gestures.animateScrollBy
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,9 +153,10 @@ fun ReaderScreen(
     ttsManager: TTSManager,
     themePreferences: ThemePreferences? = null,
     statsTracker: com.abhinavxt.novelreader.data.ReadingStatsTracker? = null,
+    chapterPrefetcher: ChapterPrefetcher? = null,
     onBackClick: () -> Unit,
     viewModel: ReaderViewModel = viewModel(
-        factory = ReaderViewModel.provideFactory(novelId, chapterId, chapterUrl, novelUrl = novelUrl, repository, themePreferences, statsTracker)
+        factory = ReaderViewModel.provideFactory(novelId, chapterId, chapterUrl, novelUrl = novelUrl, repository, themePreferences, statsTracker, chapterPrefetcher)
     )
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -144,10 +172,28 @@ fun ReaderScreen(
 
     // Bookmark state
     val isInLibrary by viewModel.isInLibrary.collectAsState()
-    val bookmarkSaved by viewModel.bookmarkSavedEvent.collectAsState()
+    // Bookmark event — collect one-shot from Channel
+    var bookmarkSavedFlag by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        viewModel.bookmarkSavedEvent.collect {
+            bookmarkSavedFlag = true
+        }
+    }
 
     // Dictionary state
     val dictionaryState by viewModel.dictionaryState.collectAsState()
+
+    // Reading time estimate
+    val estimatedMinutesLeft by viewModel.estimatedMinutesLeft.collectAsState()
+
+    // Highlight state — highlights for the current chapter
+    val chapterHighlights by viewModel.chapterHighlights.collectAsState()
+    var highlightSavedFlag by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        viewModel.highlightSavedEvent.collect {
+            highlightSavedFlag = true
+        }
+    }
 
     // Stop TTS when leaving screen
     DisposableEffect(Unit) {
@@ -209,6 +255,15 @@ fun ReaderScreen(
                 onDecreaseFontSize = { viewModel.decreaseFontSize() },
                 onCycleTheme = { viewModel.cycleTheme() },
                 onCycleFont = { viewModel.cycleFont() },
+                onSetTheme = { theme ->
+                    viewModel.updateSettings(state.settings.copy(theme = theme))
+                },
+                onSetFont = { font ->
+                    viewModel.updateSettings(state.settings.copy(font = font))
+                },
+                onUpdateSettings = { newSettings ->
+                    viewModel.updateSettings(newSettings)
+                },
                 canGoPrevious = viewModel.canGoPrevious(),
                 canGoNext = viewModel.canGoNext(),
                 onSaveParagraphIndex = { index ->
@@ -216,16 +271,30 @@ fun ReaderScreen(
                 },
                 // Bookmark parameters
                 isInLibrary = isInLibrary,
-                bookmarkSaved = bookmarkSaved,
+                bookmarkSaved = bookmarkSavedFlag,
                 onAddBookmark = { index, text ->
                     viewModel.addBookmarkAtParagraph(index, text)
                 },
-                onBookmarkSavedShown = { viewModel.clearBookmarkSavedEvent() },
+                onBookmarkSavedShown = { bookmarkSavedFlag = false },
                 onShowModelDownload = { showModelDownloadDialog = true },
                 // Dictionary parameters
                 dictionaryState = dictionaryState,
                 onLookupWord = { word -> viewModel.lookupWord(word) },
-                onDismissDictionary = { viewModel.dismissDictionary() }
+                onDismissDictionary = { viewModel.dismissDictionary() },
+                estimatedMinutesLeft = estimatedMinutesLeft,
+                // Highlight parameters
+                chapterHighlights = chapterHighlights,
+                highlightSaved = highlightSavedFlag,
+                onAddHighlight = { paragraphIndex, selectedText ->
+                    val currentState = viewModel.uiState.value
+                    if (currentState is ReaderUiState.Success) {
+                        val paragraph = currentState.chapter.paragraphs.getOrNull(paragraphIndex) ?: ""
+                        val startOffset = paragraph.indexOf(selectedText).coerceAtLeast(0)
+                        val endOffset = (startOffset + selectedText.length).coerceAtMost(paragraph.length)
+                        viewModel.addHighlight(paragraphIndex, startOffset, endOffset, selectedText)
+                    }
+                },
+                onHighlightSavedShown = { highlightSavedFlag = false }
             )
         }
     }
@@ -330,6 +399,9 @@ private fun ReaderContent(
     onDecreaseFontSize: () -> Unit,
     onCycleTheme: () -> Unit,
     onCycleFont: () -> Unit,
+    onSetTheme: (ReaderTheme) -> Unit,
+    onSetFont: (ReaderFont) -> Unit,
+    onUpdateSettings: (ReaderSettings) -> Unit,
     canGoPrevious: Boolean,
     canGoNext: Boolean,
     onSaveParagraphIndex: (Int) -> Unit,
@@ -342,13 +414,54 @@ private fun ReaderContent(
     // Dictionary
     dictionaryState: DictionaryState,
     onLookupWord: (String) -> Unit,
-    onDismissDictionary: () -> Unit
+    onDismissDictionary: () -> Unit,
+    estimatedMinutesLeft: Int? = null,
+    // Highlight parameters
+    chapterHighlights: List<HighlightEntity> = emptyList(),
+    highlightSaved: Boolean = false,
+    onAddHighlight: (paragraphIndex: Int, selectedText: String) -> Unit = { _, _ -> },
+    onHighlightSavedShown: () -> Unit = {}
 ) {
     val colors = getThemeColors(settings.theme)
+
+    // ── Immersive mode ──────────────────────────────────────────
+    // Tap center of screen to toggle. Hides top bar, bottom bar, and system bars.
+    var isImmersive by remember { mutableStateOf(false) }
+
+    // Control system bars (status bar + navigation bar)
+    val view = LocalView.current
+    DisposableEffect(isImmersive) {
+        val window = (view.context as? android.app.Activity)?.window
+            ?: return@DisposableEffect onDispose {}
+        val controller = WindowInsetsControllerCompat(window, view)
+        if (isImmersive) {
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
+        onDispose {
+            // Always restore system bars when leaving the reader
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    // Appearance bottom sheet state
+    var showAppearanceSheet by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
 
     var swipeOffset by remember { mutableFloatStateOf(0f) }
+
+    // Selection clearing: increment this key to force SelectionContainer recomposition
+    var selectionKey by remember { mutableIntStateOf(0) }
+
+    // Wrap onLookupWord to also clear selection
+    val lookupWordAndClearSelection: (String) -> Unit = { word ->
+        onLookupWord(word)
+        selectionKey++
+    }
 
     // Snackbar for bookmark confirmation
     val snackbarHostState = remember { SnackbarHostState() }
@@ -361,11 +474,22 @@ private fun ReaderContent(
         }
     }
 
-    LaunchedEffect(chapter.chapterId) {
-        if (chapter.savedParagraphIndex > 0) {
-            delay(100)
-            listState.scrollToItem(chapter.savedParagraphIndex)
+    // Show snackbar when a highlight is saved
+    LaunchedEffect(highlightSaved) {
+        if (highlightSaved) {
+            snackbarHostState.showSnackbar("Highlight saved!")
+            onHighlightSavedShown()
         }
+    }
+
+    LaunchedEffect(chapter.chapterId) {
+        // Always scroll to the saved position — for new chapters this is 0
+        // (top of page), for resumed chapters it's where the user left off.
+        // The old code had `if (savedParagraphIndex > 0)` which caused
+        // new chapters to start in the middle because the LazyColumn
+        // retained its previous scroll position.
+        delay(100)
+        listState.scrollToItem(chapter.savedParagraphIndex)
     }
 
     // Auto-scroll to current TTS paragraph
@@ -392,108 +516,214 @@ private fun ReaderContent(
         }
     }
 
+    // ── Quick settings bottom sheet: reading mode, themes, fonts, etc. ──
+    if (showAppearanceSheet) {
+        QuickSettingsSheet(
+            settings = settings,
+            onSettingsChanged = { newSettings -> onUpdateSettings(newSettings) },
+            onNavigateToPronunciation = null, // Wire up if nav controller is available
+            onDismiss = { showAppearanceSheet = false }
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
-            ReaderTopBar(
-                chapterTitle = chapter.chapterTitle,
-                novelTitle = chapter.novelTitle,
-                chapterNumber = chapter.chapterNumber,
-                totalChapters = chapter.totalChapters,
-                ttsState = ttsState,
-                onBackClick = onBackClick,
-                onTTSClick = onToggleTTSControls,
-                backgroundColor = colors.background,
-                contentColor = colors.text
-            )
+            AnimatedVisibility(
+                visible = !isImmersive,
+                enter = slideInVertically(initialOffsetY = { -it }),
+                exit = slideOutVertically(targetOffsetY = { -it })
+            ) {
+                ReaderTopBar(
+                    chapterTitle = chapter.chapterTitle,
+                    novelTitle = chapter.novelTitle,
+                    chapterNumber = chapter.chapterNumber,
+                    totalChapters = chapter.totalChapters,
+                    ttsState = ttsState,
+                    estimatedMinutesLeft = estimatedMinutesLeft,
+                    onBackClick = onBackClick,
+                    onTTSClick = onToggleTTSControls,
+                    backgroundColor = colors.background,
+                    contentColor = colors.text
+                )
+            }
         },
         bottomBar = {
-            ReaderBottomBar(
-                settings = settings,
-                canGoPrevious = canGoPrevious,
-                canGoNext = canGoNext,
-                onPreviousClick = onPreviousChapter,
-                onNextClick = onNextChapter,
-                onIncreaseFontSize = onIncreaseFontSize,
-                onDecreaseFontSize = onDecreaseFontSize,
-                onCycleTheme = onCycleTheme,
-                onCycleFont = onCycleFont,
-                backgroundColor = colors.background,
-                contentColor = colors.text
-            )
+            AnimatedVisibility(
+                visible = !isImmersive,
+                enter = slideInVertically(initialOffsetY = { it }),
+                exit = slideOutVertically(targetOffsetY = { it })
+            ) {
+                ReaderBottomBar(
+                    settings = settings,
+                    canGoPrevious = canGoPrevious,
+                    canGoNext = canGoNext,
+                    onPreviousClick = onPreviousChapter,
+                    onNextClick = onNextChapter,
+                    onIncreaseFontSize = onIncreaseFontSize,
+                    onDecreaseFontSize = onDecreaseFontSize,
+                    onOpenAppearance = { showAppearanceSheet = true },
+                    onToggleFullscreen = { isImmersive = true },
+                    backgroundColor = colors.background,
+                    contentColor = colors.text
+                )
+            }
         },
         containerColor = colors.background
     ) { paddingValues ->
+        // ── Keep screen on while reading (if enabled) ───────────
+        val screenView = LocalView.current
+        DisposableEffect(settings.keepScreenOn) {
+            if (settings.keepScreenOn) { screenView.keepScreenOn = true }
+            onDispose { screenView.keepScreenOn = false }
+        }
+
+        // ── Volume key navigation (scroll mode) ────────────────
+        // Collects volume key events from the Application flow.
+        // In scroll mode, scrolls by ~80% of visible height per press.
+        // In paged mode, PagedReaderContent handles it internally.
+        if (settings.volumeKeyNavigation && settings.readingMode == ReadingMode.SCROLL) {
+            val app = (screenView.context.applicationContext as? NovelReaderApplication)
+            if (app != null) {
+                LaunchedEffect(Unit) {
+                    app.volumeKeyEvents.collect { event ->
+                        val visibleHeight = listState.layoutInfo.viewportEndOffset -
+                                listState.layoutInfo.viewportStartOffset
+                        val scrollAmount = (visibleHeight * 0.8f)
+                        when (event) {
+                            VolumeKeyEvent.DOWN -> listState.animateScrollBy(scrollAmount)
+                            VolumeKeyEvent.UP -> listState.animateScrollBy(-scrollAmount)
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Common wrapper Box ──────────────────────────────────
+        // Both reading modes sit inside this Box so the TTS controls
+        // and immersive mode overlay can float on top of either mode.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(
-                        if (colors.isPaper) paperBackgroundModifier()
-                        else Modifier.background(colors.background)
-                    )
-                    .pointerInput(Unit) {
-                        detectHorizontalDragGestures(
-                            onDragEnd = {
-                                if (swipeOffset < -100 && canGoNext) {
-                                    onNextChapter()
-                                } else if (swipeOffset > 100 && canGoPrevious) {
-                                    onPreviousChapter()
+            // ── Reading mode: scroll vs paged ───────────────────
+            if (settings.readingMode == ReadingMode.PAGED) {
+                // Paged mode — horizontal pages with swipe + tap-to-turn
+                PagedReaderContent(
+                    paragraphs = chapter.paragraphs,
+                    settings = settings,
+                    colors = colors,
+                    savedParagraphIndex = chapter.savedParagraphIndex,
+                    onParagraphIndexChanged = { index -> onSaveParagraphIndex(index) },
+                    onToggleImmersive = { isImmersive = !isImmersive },
+                    onPreviousChapter = onPreviousChapter,
+                    onNextChapter = onNextChapter,
+                    canGoPrevious = canGoPrevious,
+                    canGoNext = canGoNext,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (colors.isPaper) paperBackgroundModifier()
+                            else Modifier.background(colors.background)
+                        )
+                )
+            } else {
+                // ── Scroll mode (existing behavior) ─────────────
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (colors.isPaper) paperBackgroundModifier()
+                            else Modifier.background(colors.background)
+                        )
+                        .pointerInput(Unit) {
+                            detectHorizontalDragGestures(
+                                onDragEnd = {
+                                    if (swipeOffset < -100 && canGoNext) {
+                                        onNextChapter()
+                                    } else if (swipeOffset > 100 && canGoPrevious) {
+                                        onPreviousChapter()
+                                    }
+                                    swipeOffset = 0f
+                                },
+                                onHorizontalDrag = { _, dragAmount ->
+                                    swipeOffset += dragAmount
                                 }
-                                swipeOffset = 0f
+                            )
+                        }
+                        .padding(horizontal = settings.horizontalMargin.dp, vertical = 8.dp)
+                ) {
+                    itemsIndexed(
+                        items = chapter.paragraphs,
+                        key = { index, _ -> "${chapter.chapterId}_$index" }
+                    ) { index, paragraph ->
+                        val isCurrentParagraph = ttsState == TTSState.PLAYING && index == currentTTSParagraph
+
+                        BookmarkableParagraph(
+                            paragraph = paragraph,
+                            index = index,
+                            selectionKey = selectionKey,
+                            isInLibrary = isInLibrary,
+                            isCurrentTTSParagraph = isCurrentParagraph,
+                            ttsManager = ttsManager,
+                            colors = colors,
+                            settings = settings,
+                            highlights = chapterHighlights.filter { it.paragraphIndex == index },
+                            onAddBookmark = { idx, text ->
+                                onAddBookmark(idx, text)
+                                selectionKey++
                             },
-                            onHorizontalDrag = { _, dragAmount ->
-                                swipeOffset += dragAmount
+                            onLookupWord = lookupWordAndClearSelection,
+                            onHighlight = { selectedText ->
+                                onAddHighlight(index, selectedText)
+                                selectionKey++
                             }
                         )
                     }
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                // Each paragraph is wrapped in BookmarkableParagraph which adds
-                // long-press detection for library novels
-                itemsIndexed(
-                    items = chapter.paragraphs,
-                    key = { index, _ -> "${chapter.chapterId}_$index" }
-                ) { index, paragraph ->
-                    val isCurrentParagraph = ttsState == TTSState.PLAYING && index == currentTTSParagraph
 
-                    BookmarkableParagraph(
-                        paragraph = paragraph,
-                        index = index,
-                        isInLibrary = isInLibrary,
-                        isCurrentTTSParagraph = isCurrentParagraph,
-                        ttsManager = ttsManager,
-                        colors = colors,
-                        settings = settings,
-                        onAddBookmark = onAddBookmark,
-                        onLookupWord = onLookupWord
-                    )
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        HorizontalDivider(color = colors.secondaryText.copy(alpha = 0.3f))
+                        Spacer(modifier = Modifier.height(24.dp))
+                    }
+
+                    item {
+                        ChapterEndNavigation(
+                            chapter = chapter,
+                            colors = colors,
+                            canGoPrevious = canGoPrevious,
+                            canGoNext = canGoNext,
+                            onPreviousChapter = onPreviousChapter,
+                            onNextChapter = onNextChapter
+                        )
+                        Spacer(modifier = Modifier.height(120.dp))
+                    }
                 }
+            } // end reading mode if/else
 
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider(color = colors.secondaryText.copy(alpha = 0.3f))
-                    Spacer(modifier = Modifier.height(24.dp))
-                }
-
-                item {
-                    ChapterEndNavigation(
-                        chapter = chapter,
-                        colors = colors,
-                        canGoPrevious = canGoPrevious,
-                        canGoNext = canGoNext,
-                        onPreviousChapter = onPreviousChapter,
-                        onNextChapter = onNextChapter
+            // ── Immersive mode: "tap to exit" pill at top ───────
+            // Visible in BOTH scroll and paged modes.
+            if (isImmersive) {
+                Surface(
+                    onClick = { isImmersive = false },
+                    color = colors.text.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 2.dp)
+                ) {
+                    Text(
+                        text = "tap to show bars",
+                        color = colors.text.copy(alpha = 0.5f),
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                     )
-                    Spacer(modifier = Modifier.height(120.dp))
                 }
             }
 
+            // ── TTS controls — visible in BOTH modes ────────────
             AnimatedVisibility(
                 visible = showTTSControls,
                 enter = slideInVertically(initialOffsetY = { it }),
@@ -509,7 +739,9 @@ private fun ReaderContent(
                     novelTitle = chapter.novelTitle,
                     chapterTitle = chapter.chapterTitle,
                     canGoNext = canGoNext,
-                    startFromParagraph = listState.firstVisibleItemIndex,
+                    startFromParagraph = if (settings.readingMode == ReadingMode.SCROLL) {
+                        listState.firstVisibleItemIndex
+                    } else 0,
                     onNextChapter = onNextChapter,
                     onNextChapterWithRetry = onNextChapterWithRetry,
                     onShowModelDownload = onShowModelDownload,
@@ -519,7 +751,8 @@ private fun ReaderContent(
                     }
                 )
             }
-        }
+        } // end common wrapper Box
+
     }
 
     // Dictionary bottom sheet — shown when user taps "Define" on selected text
@@ -531,21 +764,25 @@ private fun ReaderContent(
 
 /**
  * A paragraph of text that supports native text selection.
- * The selection toolbar shows: Copy, Define, and Bookmark (if in library).
+ * The selection toolbar shows: Copy, Define, Highlight, and Bookmark (if in library).
  * "Define" looks up the selected word in the dictionary.
+ * "Highlight" saves the selected text as a colored highlight.
  * "Bookmark" saves the paragraph as a bookmark.
  */
 @Composable
 private fun BookmarkableParagraph(
     paragraph: String,
     index: Int,
+    selectionKey: Int,
     isInLibrary: Boolean,
     isCurrentTTSParagraph: Boolean,
     ttsManager: TTSManager,
     colors: ThemeColors,
     settings: ReaderSettings,
+    highlights: List<HighlightEntity> = emptyList(),
     onAddBookmark: (Int, String) -> Unit,
-    onLookupWord: (String) -> Unit
+    onLookupWord: (String) -> Unit,
+    onHighlight: (String) -> Unit = {}
 ) {
     val view = LocalView.current
 
@@ -555,46 +792,76 @@ private fun BookmarkableParagraph(
             onDefineRequested = { selectedText -> onLookupWord(selectedText) },
             onBookmarkRequested = if (isInLibrary) {
                 { onAddBookmark(index, paragraph) }
+            } else null,
+            onHighlightRequested = if (isInLibrary) {
+                { selectedText -> onHighlight(selectedText) }
             } else null
         )
     }
 
     CompositionLocalProvider(LocalTextToolbar provides textToolbar) {
-        SelectionContainer {
-            // Render the paragraph text — either with TTS highlighting or plain
-            if (isCurrentTTSParagraph) {
-                HighlightedParagraph(
-                    paragraph = paragraph,
-                    currentSentenceIndex = ttsManager.currentSentenceInParagraph.collectAsState().value,
-                    textColor = colors.text,
-                    highlightColor = colors.text.copy(alpha = 0.15f),
-                    fontSize = settings.fontSize,
-                    fontFamily = settings.font.toFontFamily(),
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-            } else {
-                Text(
-                    text = paragraph,
-                    color = colors.text,
-                    fontSize = settings.fontSize.sp,
-                    fontFamily = settings.font.toFontFamily(),
-                    lineHeight = (settings.fontSize * 1.6).sp,
-                    textAlign = TextAlign.Justify,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
+        key(selectionKey) {
+            SelectionContainer {
+                if (isCurrentTTSParagraph) {
+                    HighlightedParagraph(
+                        paragraph = paragraph,
+                        currentSentenceIndex = ttsManager.currentSentenceInParagraph.collectAsState().value,
+                        textColor = colors.text,
+                        highlightColor = colors.text.copy(alpha = 0.15f),
+                        fontSize = settings.fontSize,
+                        lineSpacing = settings.lineSpacing,
+                        fontFamily = settings.font.toFontFamily(),
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                } else if (highlights.isNotEmpty()) {
+                    // Render paragraph with highlight overlays using AnnotatedString
+                    val annotatedText = buildAnnotatedString {
+                        append(paragraph)
+                        highlights.forEach { hl ->
+                            val s = hl.startOffset.coerceIn(0, paragraph.length)
+                            val e = hl.endOffset.coerceIn(s, paragraph.length)
+                            if (s < e) {
+                                addStyle(
+                                    SpanStyle(background = getHighlightColor(hl.color)),
+                                    s, e
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        text = annotatedText,
+                        color = colors.text,
+                        fontSize = settings.fontSize.sp,
+                        fontFamily = settings.font.toFontFamily(),
+                        lineHeight = (settings.fontSize * settings.lineSpacing).sp,
+                        textAlign = TextAlign.Justify,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                } else {
+                    Text(
+                        text = paragraph,
+                        color = colors.text,
+                        fontSize = settings.fontSize.sp,
+                        fontFamily = settings.font.toFontFamily(),
+                        lineHeight = (settings.fontSize * settings.lineSpacing).sp,
+                        textAlign = TextAlign.Justify,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                }
             }
         }
     }
 }
 
 /**
- * Custom TextToolbar that adds "Define" and optionally "Bookmark" actions
- * alongside the standard "Copy" in the floating text selection menu.
+ * Custom TextToolbar that adds "Define", "Highlight", and optionally "Bookmark"
+ * actions alongside the standard "Copy" in the floating text selection menu.
  */
 private class ReaderTextToolbar(
     private val view: View,
     private val onDefineRequested: (String) -> Unit,
-    private val onBookmarkRequested: (() -> Unit)?
+    private val onBookmarkRequested: (() -> Unit)?,
+    private val onHighlightRequested: ((String) -> Unit)? = null
 ) : TextToolbar {
 
     private var actionMode: ActionMode? = null
@@ -615,8 +882,11 @@ private class ReaderTextToolbar(
                     menu.add(0, MENU_COPY, 0, "Copy")
                 }
                 menu.add(0, MENU_DEFINE, 1, "Define")
+                if (onHighlightRequested != null) {
+                    menu.add(0, MENU_HIGHLIGHT, 2, "Highlight")
+                }
                 if (onBookmarkRequested != null) {
-                    menu.add(0, MENU_BOOKMARK, 2, "Bookmark")
+                    menu.add(0, MENU_BOOKMARK, 3, "Bookmark")
                 }
                 return true
             }
@@ -636,6 +906,16 @@ private class ReaderTextToolbar(
                             ?.getItemAt(0)?.text?.toString()?.trim() ?: ""
                         if (selectedText.isNotBlank()) {
                             onDefineRequested(selectedText)
+                        }
+                    }
+                    MENU_HIGHLIGHT -> {
+                        // Copy text to clipboard, then pass it to the highlight handler
+                        onCopyRequested?.invoke()
+                        val clipboard = view.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val selectedText = clipboard.primaryClip
+                            ?.getItemAt(0)?.text?.toString()?.trim() ?: ""
+                        if (selectedText.isNotBlank()) {
+                            onHighlightRequested?.invoke(selectedText)
                         }
                     }
                     MENU_BOOKMARK -> {
@@ -672,7 +952,8 @@ private class ReaderTextToolbar(
     companion object {
         private const val MENU_COPY = 1
         private const val MENU_DEFINE = 2
-        private const val MENU_BOOKMARK = 3
+        private const val MENU_HIGHLIGHT = 3
+        private const val MENU_BOOKMARK = 4
     }
 }
 
@@ -695,169 +976,169 @@ private fun TTSControlsPanel(
 ) {
     var showSettings by remember { mutableStateOf(false) }
     var showVoiceSelector by remember { mutableStateOf(false) }
+    var showSleepMenu by remember { mutableStateOf(false) }
 
     val availableVoices by ttsManager.availableVoices.collectAsState()
     val currentVoice by ttsManager.currentVoice.collectAsState()
+    val sleepMode by ttsManager.sleepTimerMode.collectAsState()
+    val sleepRemainingMs by ttsManager.sleepTimerRemainingMs.collectAsState()
 
-    Card(
+    val totalSentences = ttsManager.getSentenceCount()
+    val progress = if (totalSentences > 0) (currentSentence + 1).toFloat() / totalSentences else 0f
+
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(24.dp),
+        shadowElevation = 12.dp,
+        tonalElevation = 4.dp,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(top = 12.dp, bottom = 16.dp, start = 20.dp, end = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Header
+            // Drag handle
+            Box(
+                modifier = Modifier
+                    .width(36.dp)
+                    .height(4.dp)
+                    .background(
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                        RoundedCornerShape(2.dp)
+                    )
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Chapter info + close
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Text-to-Speech",
-                    style = MaterialTheme.typography.titleMedium
-                )
-
-                Row {
-                    IconButton(onClick = { showSettings = !showSettings }) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings"
-                        )
-                    }
-
-                    IconButton(onClick = onClose) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close"
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = chapterTitle,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (totalSentences > 0) {
+                        Text(
+                            text = "${currentSentence + 1} / $totalSentences",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
+
+                // Settings gear
+                IconButton(
+                    onClick = { showSettings = !showSettings },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Settings",
+                        modifier = Modifier.size(20.dp),
+                        tint = if (showSettings) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Sleep timer button + dropdown
+                Box {
+                    IconButton(
+                        onClick = { showSleepMenu = !showSleepMenu },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (sleepMode != SleepTimerMode.NONE)
+                                Icons.Default.Timer else Icons.Default.TimerOff,
+                            contentDescription = "Sleep timer",
+                            modifier = Modifier.size(20.dp),
+                            tint = if (sleepMode != SleepTimerMode.NONE)
+                                MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showSleepMenu,
+                        onDismissRequest = { showSleepMenu = false }
+                    ) {
+                        SleepTimerMode.entries.forEach { mode ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = mode.label,
+                                        color = if (mode == sleepMode)
+                                            MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                onClick = {
+                                    ttsManager.setSleepTimer(mode)
+                                    showSleepMenu = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
-            // Progress
-            val totalSentences = ttsManager.getSentenceCount()
-            if (totalSentences > 0) {
+            // Sleep timer status — shown when a timer is active
+            if (sleepMode != SleepTimerMode.NONE) {
+                val timerText = if (sleepMode == SleepTimerMode.END_OF_CHAPTER) {
+                    "⏱ Stopping at end of chapter"
+                } else if (sleepRemainingMs > 0) {
+                    val mins = (sleepRemainingMs / 60_000).toInt()
+                    val secs = ((sleepRemainingMs % 60_000) / 1000).toInt()
+                    "⏱ Sleep in ${mins}:${String.format("%02d", secs)}"
+                } else {
+                    "⏱ ${sleepMode.label}"
+                }
                 Text(
-                    text = "Sentence ${currentSentence + 1} of $totalSentences",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
+                    text = timerText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.fillMaxWidth(),
                     textAlign = TextAlign.Center
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Settings panel (collapsible)
-            AnimatedVisibility(visible = showSettings) {
-                Column(
+            // Progress bar
+            if (totalSentences > 0) {
+                Spacer(modifier = Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { progress },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 8.dp)
-                ) {
-                    // Speed slider
-                    SettingSlider(
-                        label = "Speed",
-                        value = ttsSettings.speed,
-                        valueDisplay = String.format("%.1fx", ttsSettings.speed),
-                        onValueChange = { ttsManager.setSpeed(it) },
-                        valueRange = 0.5f..2.0f,
-                        steps = 5
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Pitch slider
-                    SettingSlider(
-                        label = "Pitch",
-                        value = ttsSettings.pitch,
-                        valueDisplay = String.format("%.1f", ttsSettings.pitch),
-                        onValueChange = { ttsManager.setPitch(it) },
-                        valueRange = 0.5f..2.0f,
-                        steps = 5
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Volume slider
-                    SettingSlider(
-                        label = "Volume",
-                        value = ttsSettings.volume,
-                        valueDisplay = "${(ttsSettings.volume * 100).toInt()}%",
-                        onValueChange = { ttsManager.setVolume(it) },
-                        valueRange = 0f..1f
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Sentence pause slider
-                    SettingSlider(
-                        label = "Sentence Pause",
-                        value = ttsSettings.sentencePauseMs.toFloat(),
-                        valueDisplay = "${ttsSettings.sentencePauseMs}ms",
-                        onValueChange = { ttsManager.setSentencePause(it.toLong()) },
-                        valueRange = 0f..2000f,
-                        steps = 7
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Paragraph pause slider
-                    SettingSlider(
-                        label = "Paragraph Pause",
-                        value = ttsSettings.paragraphPauseMs.toFloat(),
-                        valueDisplay = "${ttsSettings.paragraphPauseMs}ms",
-                        onValueChange = { ttsManager.setParagraphPause(it.toLong()) },
-                        valueRange = 0f..3000f,
-                        steps = 5
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Voice selector button
-                    OutlinedButton(
-                        onClick = { showVoiceSelector = true },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.RecordVoiceOver,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = currentVoice?.displayName ?: "Select Voice",
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Download neural voices button
-                    TextButton(
-                        onClick = onShowModelDownload,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Get Neural Voices (Piper, Kokoro…)")
-                    }
-                }
+                        .height(3.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
             }
 
-            // Playback controls
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Playback controls — centered, clean
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
@@ -866,32 +1147,37 @@ private fun TTSControlsPanel(
                 // Stop
                 IconButton(
                     onClick = { ttsManager.stop() },
-                    enabled = ttsState != TTSState.IDLE
+                    enabled = ttsState != TTSState.IDLE,
+                    modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Stop,
                         contentDescription = "Stop",
+                        modifier = Modifier.size(22.dp),
+                        tint = if (ttsState != TTSState.IDLE)
+                            MaterialTheme.colorScheme.onSurface
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Previous sentence
+                IconButton(
+                    onClick = { ttsManager.skipToPrevious() },
+                    enabled = ttsState == TTSState.PLAYING || ttsState == TTSState.PAUSED,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SkipPrevious,
+                        contentDescription = "Previous",
                         modifier = Modifier.size(28.dp)
                     )
                 }
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Previous sentence
-                IconButton(
-                    onClick = { ttsManager.skipToPrevious() },
-                    enabled = ttsState == TTSState.PLAYING || ttsState == TTSState.PAUSED
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SkipPrevious,
-                        contentDescription = "Previous",
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Play/Pause
+                // Play/Pause — larger prominent button
                 Surface(
                     onClick = {
                         when (ttsState) {
@@ -911,20 +1197,29 @@ private fun TTSControlsPanel(
                             }
                         }
                     },
-                    shape = MaterialTheme.shapes.extraLarge,
+                    shape = CircleShape,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(56.dp)
+                    modifier = Modifier.size(60.dp),
+                    shadowElevation = 4.dp
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = if (ttsState == TTSState.PLAYING)
-                                Icons.Default.Pause
-                            else
-                                Icons.Default.PlayArrow,
-                            contentDescription = if (ttsState == TTSState.PLAYING) "Pause" else "Play",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(32.dp)
-                        )
+                        if (ttsState == TTSState.LOADING) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (ttsState == TTSState.PLAYING)
+                                    Icons.Default.Pause
+                                else
+                                    Icons.Default.PlayArrow,
+                                contentDescription = if (ttsState == TTSState.PLAYING) "Pause" else "Play",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
                     }
                 }
 
@@ -933,57 +1228,143 @@ private fun TTSControlsPanel(
                 // Next sentence
                 IconButton(
                     onClick = { ttsManager.skipToNext() },
-                    enabled = ttsState == TTSState.PLAYING || ttsState == TTSState.PAUSED
+                    enabled = ttsState == TTSState.PLAYING || ttsState == TTSState.PAUSED,
+                    modifier = Modifier.size(44.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.SkipNext,
                         contentDescription = "Next",
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(28.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
-                Spacer(modifier = Modifier.size(28.dp))
+                // Spacer to balance stop button
+                Spacer(modifier = Modifier.size(40.dp))
             }
 
-            // State indicator
-            when (ttsState) {
-                TTSState.LOADING -> {
-                    Text(
-                        text = "Loading...",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        textAlign = TextAlign.Center
-                    )
+            // Voice name pill
+            if (currentVoice != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    onClick = { showVoiceSelector = true },
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.RecordVoiceOver,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = currentVoice?.displayName ?: "",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
-                TTSState.ERROR -> {
-                    Text(
-                        text = "TTS Error - Check device settings",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        textAlign = TextAlign.Center
-                    )
-                }
-                else -> {}
             }
 
-            // Auto-continue indicator
-            if (ttsState == TTSState.PLAYING || ttsState == TTSState.PAUSED) {
+            // Error state
+            if (ttsState == TTSState.ERROR) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "📖 Will auto-continue to next chapter",
+                    text = "TTS Error — check device settings",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.error,
                     textAlign = TextAlign.Center
                 )
+            }
+
+            // Settings panel (collapsible)
+            AnimatedVisibility(visible = showSettings) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                ) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(bottom = 12.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+
+                    SettingSlider(
+                        label = "Speed",
+                        value = ttsSettings.speed,
+                        valueDisplay = String.format("%.1fx", ttsSettings.speed),
+                        onValueChange = { ttsManager.setSpeed(it) },
+                        valueRange = 0.5f..2.0f,
+                        steps = 5
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    SettingSlider(
+                        label = "Pitch",
+                        value = ttsSettings.pitch,
+                        valueDisplay = String.format("%.1f", ttsSettings.pitch),
+                        onValueChange = { ttsManager.setPitch(it) },
+                        valueRange = 0.5f..2.0f,
+                        steps = 5
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    SettingSlider(
+                        label = "Volume",
+                        value = ttsSettings.volume,
+                        valueDisplay = "${(ttsSettings.volume * 100).toInt()}%",
+                        onValueChange = { ttsManager.setVolume(it) },
+                        valueRange = 0f..1f
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    SettingSlider(
+                        label = "Sentence Gap",
+                        value = ttsSettings.sentencePauseMs.toFloat(),
+                        valueDisplay = "${ttsSettings.sentencePauseMs}ms",
+                        onValueChange = { ttsManager.setSentencePause(it.toLong()) },
+                        valueRange = 0f..2000f,
+                        steps = 7
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    SettingSlider(
+                        label = "Paragraph Gap",
+                        value = ttsSettings.paragraphPauseMs.toFloat(),
+                        valueDisplay = "${ttsSettings.paragraphPauseMs}ms",
+                        onValueChange = { ttsManager.setParagraphPause(it.toLong()) },
+                        valueRange = 0f..3000f,
+                        steps = 5
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Download neural voices
+                    TextButton(
+                        onClick = onShowModelDownload,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Get Neural Voices")
+                    }
+                }
             }
         }
     }
@@ -1244,6 +1625,7 @@ private fun ReaderTopBar(
     chapterNumber: Int,
     totalChapters: Int,
     ttsState: TTSState,
+    estimatedMinutesLeft: Int? = null,
     onBackClick: () -> Unit,
     onTTSClick: () -> Unit,
     backgroundColor: Color,
@@ -1290,6 +1672,14 @@ private fun ReaderTopBar(
                         color = contentColor.copy(alpha = 0.7f)
                     )
                 }
+                // Reading time estimate — shows "~12 min" based on user's WPM
+                if (estimatedMinutesLeft != null) {
+                    Text(
+                        text = " • ~${estimatedMinutesLeft} min",
+                        fontSize = 11.sp,
+                        color = contentColor.copy(alpha = 0.5f)
+                    )
+                }
             }
         }
 
@@ -1315,8 +1705,8 @@ private fun ReaderBottomBar(
     onNextClick: () -> Unit,
     onIncreaseFontSize: () -> Unit,
     onDecreaseFontSize: () -> Unit,
-    onCycleTheme: () -> Unit,
-    onCycleFont: () -> Unit,
+    onOpenAppearance: () -> Unit,
+    onToggleFullscreen: () -> Unit,
     backgroundColor: Color,
     contentColor: Color
 ) {
@@ -1324,10 +1714,11 @@ private fun ReaderBottomBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(backgroundColor)
-            .padding(horizontal = 4.dp),
+            .padding(horizontal = 4.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Previous chapter
         IconButton(
             onClick = onPreviousClick,
             enabled = canGoPrevious
@@ -1339,9 +1730,8 @@ private fun ReaderBottomBar(
             )
         }
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        // Font size controls
+        Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(
                 onClick = onDecreaseFontSize,
                 enabled = settings.fontSize > 12
@@ -1373,51 +1763,25 @@ private fun ReaderBottomBar(
             }
         }
 
-        TextButton(onClick = onCycleFont) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "Aa",
-                    fontSize = 14.sp,
-                    fontFamily = settings.font.toFontFamily(),
-                    color = contentColor
-                )
-                Text(
-                    text = when (settings.font) {
-                        ReaderFont.SANS_SERIF -> "Sans"
-                        ReaderFont.SERIF -> "Serif"
-                        ReaderFont.MONOSPACE -> "Mono"
-                        ReaderFont.CURSIVE -> "Script"
-                    },
-                    fontSize = 9.sp,
-                    color = contentColor.copy(alpha = 0.7f)
-                )
-            }
-        }
-
-        TextButton(onClick = onCycleTheme) {
-            Text(
-                text = when (settings.theme) {
-                    ReaderTheme.LIGHT -> "☀️"
-                    ReaderTheme.DARK -> "🌙"
-                    ReaderTheme.SEPIA -> "📜"
-                    ReaderTheme.GREY -> "🐘"
-                    ReaderTheme.PAPER -> "📄"
-                    ReaderTheme.NAVY -> "🌌"
-                    ReaderTheme.SOLARIZED_LIGHT -> "🏜️"
-                    ReaderTheme.SOLARIZED_DARK -> "🌃"
-                    ReaderTheme.NORD -> "❄️"
-                    ReaderTheme.MOCHA -> "☕"
-                    ReaderTheme.DRACULA -> "🧛"
-                    ReaderTheme.AMOLED -> "⬛"
-                    ReaderTheme.GRUVBOX -> "🍂"
-                    ReaderTheme.CATPPUCCIN -> "🐱"
-                },
-                fontSize = 18.sp
+        // Appearance button — opens theme/font bottom sheet
+        IconButton(onClick = onOpenAppearance) {
+            Icon(
+                imageVector = Icons.Filled.Palette,
+                contentDescription = "Theme & font settings",
+                tint = contentColor
             )
         }
 
+        // Fullscreen button — enters immersive mode (hides bars)
+        IconButton(onClick = onToggleFullscreen) {
+            Icon(
+                imageVector = Icons.Filled.Fullscreen,
+                contentDescription = "Enter fullscreen",
+                tint = contentColor
+            )
+        }
+
+        // Next chapter
         IconButton(
             onClick = onNextClick,
             enabled = canGoNext
@@ -1438,88 +1802,103 @@ data class ThemeColors(
     val isPaper: Boolean = false
 )
 
+/**
+ * Map highlight color name to a translucent Color for the reader overlay.
+ * These are intentionally semi-transparent (alpha ~0x40) so the
+ * underlying text remains readable across all reader themes.
+ */
+fun getHighlightColor(colorName: String): Color {
+    return when (colorName) {
+        "YELLOW" -> Color(0x40FFD700)
+        "GREEN"  -> Color(0x4000C853)
+        "BLUE"   -> Color(0x402979FF)
+        "PINK"   -> Color(0x40FF4081)
+        "PURPLE" -> Color(0x40AA00FF)
+        "ORANGE" -> Color(0x40FF6D00)
+        else     -> Color(0x40FFD700)
+    }
+}
+
 fun getThemeColors(theme: ReaderTheme): ThemeColors {
     return when (theme) {
-        ReaderTheme.LIGHT -> ThemeColors(
-            background = Color.White,
-            text = Color.Black,
-            secondaryText = Color.Gray
-        )
-        ReaderTheme.DARK -> ThemeColors(
-            background = Color(0xFF1A1A1A),
-            text = Color(0xFFE0E0E0),
-            secondaryText = Color(0xFF808080)
-        )
-        ReaderTheme.SEPIA -> ThemeColors(
-            background = Color(0xFFF5E6C8),
-            text = Color(0xFF5B4636),
-            secondaryText = Color(0xFF8B7355)
-        )
-        ReaderTheme.GREY -> ThemeColors(
-            background = Color(0xFF3C3F41),
-            text = Color(0xFFE0E0E0),
-            secondaryText = Color(0xFFB0B0B0)
-        )
+        // ── Daytime themes ──────────────────────────────────────
         ReaderTheme.PAPER -> ThemeColors(
-            background = Color(0xFFF8F4EC),
-            text = Color(0xFF2C2416),
+            background = Color(0xFFF5F0E8),    // Soft cream — lower luminance than #FFF
+            text = Color(0xFF2D2A26),           // Near-black brown, warm
             secondaryText = Color(0xFF5C5347),
             isPaper = true
         )
-        ReaderTheme.NAVY -> ThemeColors(
-            background = Color(0xFF001B2E),
-            text = Color(0xFFCDE5FF),
-            secondaryText = Color(0xFF8A9FAC)
-        )
-        ReaderTheme.SOLARIZED_LIGHT -> ThemeColors(
-            background = Color(0xFFFDF6E3),
-            text = Color(0xFF657B83),
-            secondaryText = Color(0xFF93A1A1)
-        )
-        ReaderTheme.SOLARIZED_DARK -> ThemeColors(
-            background = Color(0xFF002B36),
-            text = Color(0xFF839496),
-            secondaryText = Color(0xFF586E75)
-        )
-        ReaderTheme.NORD -> ThemeColors(
-            background = Color(0xFF2E3440),
-            text = Color(0xFFD8DEE9),
-            secondaryText = Color(0xFF7B88A1)
-        )
-        ReaderTheme.MOCHA -> ThemeColors(
-            background = Color(0xFF1C1410),
-            text = Color(0xFFD4A864),
+        ReaderTheme.SEPIA -> ThemeColors(
+            background = Color(0xFFFBF0D9),    // Exact Kindle sepia background
+            text = Color(0xFF5F4B32),           // Exact Kindle sepia text
             secondaryText = Color(0xFF8B7355)
         )
-        ReaderTheme.DRACULA -> ThemeColors(
-            background = Color(0xFF282A36),
-            text = Color(0xFFF8F8F2),
-            secondaryText = Color(0xFF6272A4)
+        ReaderTheme.SOLARIZED_LIGHT -> ThemeColors(
+            background = Color(0xFFFDF6E3),    // base3
+            text = Color(0xFF657B83),           // base00
+            secondaryText = Color(0xFF93A1A1)   // base1
+        )
+
+        // ── Nighttime / dark themes ─────────────────────────────
+        ReaderTheme.DARK -> ThemeColors(
+            background = Color(0xFF1A1A1A),
+            text = Color(0xFFD4D0C8),           // Warm grey — not harsh #E0E0E0
+            secondaryText = Color(0xFF808080)
         )
         ReaderTheme.AMOLED -> ThemeColors(
             background = Color(0xFF000000),
-            text = Color(0xFFDDDDDD),
+            text = Color(0xFFC8C8C8),           // Slightly muted to avoid OLED bloom
             secondaryText = Color(0xFF666666)
         )
+        ReaderTheme.NORD -> ThemeColors(
+            background = Color(0xFF2E3440),    // nord0 — Polar Night
+            text = Color(0xFFD8DEE9),           // nord4 — Snow Storm
+            secondaryText = Color(0xFF7B88A1)
+        )
+        ReaderTheme.DRACULA -> ThemeColors(
+            background = Color(0xFF282A36),    // spec.draculatheme.com Background
+            text = Color(0xFFF8F8F2),           // Foreground
+            secondaryText = Color(0xFF6272A4)   // Comment
+        )
         ReaderTheme.GRUVBOX -> ThemeColors(
-            background = Color(0xFF282828),
-            text = Color(0xFFEBDBB2),
-            secondaryText = Color(0xFF928374)
+            background = Color(0xFF282828),    // morhetz/gruvbox bg0
+            text = Color(0xFFEBDBB2),           // fg — warm cream
+            secondaryText = Color(0xFF928374)   // grey
         )
         ReaderTheme.CATPPUCCIN -> ThemeColors(
-            background = Color(0xFF1E1E2E),
-            text = Color(0xFFCDD6F4),
-            secondaryText = Color(0xFF7F849C)
+            background = Color(0xFF1E1E2E),    // catppuccin/catppuccin Base
+            text = Color(0xFFCDD6F4),           // Text
+            secondaryText = Color(0xFF7F849C)   // Overlay0
+        )
+
+        // ── Specialty ───────────────────────────────────────────
+        ReaderTheme.NAVY -> ThemeColors(
+            background = Color(0xFF0D1B2A),
+            text = Color(0xFFB0C4DE),           // Light steel blue
+            secondaryText = Color(0xFF6A8299)
+        )
+        ReaderTheme.GREY -> ThemeColors(
+            background = Color(0xFF303030),
+            text = Color(0xFFC0BCB4),           // Warm-neutral grey
+            secondaryText = Color(0xFF8A8580)
         )
     }
 }
 
 fun ReaderFont.toFontFamily(): FontFamily {
     return when (this) {
-        ReaderFont.SANS_SERIF -> FontFamily.SansSerif
-        ReaderFont.SERIF -> FontFamily(Font(R.font.merriweather_regular))
-        ReaderFont.MONOSPACE -> FontFamily(Font(R.font.jetbrains_mono_regular))
-        ReaderFont.CURSIVE -> FontFamily(Font(R.font.dancing_script_regular))
+        // Serif fonts — best for long-form fiction reading
+        ReaderFont.LITERATA -> FontFamily(Font(R.font.literata_regular))
+        ReaderFont.LORA -> FontFamily(Font(R.font.lora_regular))
+        ReaderFont.MERRIWEATHER -> FontFamily(Font(R.font.merriweather_regular))
+        ReaderFont.CRIMSON_TEXT -> FontFamily(Font(R.font.crimson_text_regular))
+        // Sans-serif — cleaner for non-fiction / UI-feel
+        ReaderFont.SOURCE_SANS -> FontFamily(Font(R.font.source_sans_regular))
+        ReaderFont.NOTO_SANS -> FontFamily(Font(R.font.noto_sans_regular))
+        // Accessibility
+        ReaderFont.OPEN_DYSLEXIC -> FontFamily(Font(R.font.open_dyslexic_regular))
+        // Monospace
+        ReaderFont.JETBRAINS_MONO -> FontFamily(Font(R.font.jetbrains_mono_regular))
     }
 }
 
@@ -1549,6 +1928,7 @@ private fun HighlightedParagraph(
     textColor: Color,
     highlightColor: Color,
     fontSize: Int,
+    lineSpacing: Float = 1.6f,
     fontFamily: FontFamily,
     modifier: Modifier = Modifier
 ) {
@@ -1585,7 +1965,7 @@ private fun HighlightedParagraph(
         color = textColor,
         fontSize = fontSize.sp,
         fontFamily = fontFamily,
-        lineHeight = (fontSize * 1.6).sp,
+        lineHeight = (fontSize * lineSpacing).sp,
         textAlign = TextAlign.Justify,
         modifier = modifier
     )

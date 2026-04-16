@@ -1,7 +1,10 @@
 package com.abhinavxt.novelreader
 
 import android.app.Application
+import coil.ImageLoader
+import coil.ImageLoaderFactory
 import com.abhinavxt.novelreader.data.BackupManager
+import com.abhinavxt.novelreader.data.ChapterPrefetcher
 import com.abhinavxt.novelreader.data.DownloadManager
 import com.abhinavxt.novelreader.data.NovelRepository
 import com.abhinavxt.novelreader.data.PronunciationManager
@@ -9,14 +12,29 @@ import com.abhinavxt.novelreader.data.ReadingStatsTracker
 import com.abhinavxt.novelreader.data.TTSManager
 import com.abhinavxt.novelreader.data.ThemePreferences
 import com.abhinavxt.novelreader.data.database.AppDatabase
+import com.abhinavxt.novelreader.data.tts.M4BAudiobookBuilder
 import com.abhinavxt.novelreader.util.Logger
 import com.abhinavxt.novelreader.worker.UpdateCheckerWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
 
-class NovelReaderApplication : Application() {
+/**
+ * Volume key events emitted by MainActivity.onKeyDown().
+ * The ReaderScreen collects this flow and scrolls/pages accordingly
+ * when volumeKeyNavigation is enabled in reader settings.
+ */
+enum class VolumeKeyEvent {
+    UP,   // Volume up pressed — scroll up / previous page
+    DOWN  // Volume down pressed — scroll down / next page
+}
+
+class NovelReaderApplication : Application(), ImageLoaderFactory {
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -44,6 +62,23 @@ class NovelReaderApplication : Application() {
     // Reading stats tracker
     val readingStatsTracker by lazy { ReadingStatsTracker(database.readingStatDao()) }
 
+    // Chapter pre-fetcher — caches upcoming chapters for instant navigation
+    val chapterPrefetcher by lazy { ChapterPrefetcher(repository) }
+
+    // M4B audiobook builder — encodes WAV chapters into chaptered M4B
+    val m4bBuilder by lazy { M4BAudiobookBuilder(this) }
+
+    // ── Volume key event bus ────────────────────────────────────
+    // MainActivity posts here on volume key press; ReaderScreen collects.
+    // SharedFlow with replay=0 means events are only received by active collectors.
+    private val _volumeKeyEvents = MutableSharedFlow<VolumeKeyEvent>(extraBufferCapacity = 1)
+    val volumeKeyEvents: SharedFlow<VolumeKeyEvent> = _volumeKeyEvents.asSharedFlow()
+
+    /** Called by MainActivity.onKeyDown when on the reader screen. */
+    fun emitVolumeKey(event: VolumeKeyEvent) {
+        _volumeKeyEvents.tryEmit(event)
+    }
+
     override fun onCreate() {
         super.onCreate()
 
@@ -55,6 +90,7 @@ class NovelReaderApplication : Application() {
         // Wire pronunciation manager into TTS and backup
         ttsManager.pronunciationManager = pronunciationManager
         backupManager.pronunciationManager = pronunciationManager
+        backupManager.readingStatsTracker = readingStatsTracker
 
         // Restore update checker schedule if it was enabled
         val prefs = getSharedPreferences(UpdateCheckerWorker.PREFS_NAME, MODE_PRIVATE)
@@ -68,5 +104,34 @@ class NovelReaderApplication : Application() {
     override fun onTerminate() {
         super.onTerminate()
         ttsManager.shutdown()
+        chapterPrefetcher.clear()
+    }
+
+    /**
+     * Global Coil ImageLoader with Referer header interceptor.
+     * Fixes cover loading for sources that reject requests without Referer.
+     */
+    override fun newImageLoader(): ImageLoader {
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val request = chain.request()
+                if (request.header("Referer") == null) {
+                    val url = request.url
+                    val referer = "${url.scheme}://${url.host}"
+                    chain.proceed(
+                        request.newBuilder()
+                            .header("Referer", referer)
+                            .build()
+                    )
+                } else {
+                    chain.proceed(request)
+                }
+            }
+            .build()
+
+        return ImageLoader.Builder(this)
+            .okHttpClient(client)
+            .crossfade(true)
+            .build()
     }
 }

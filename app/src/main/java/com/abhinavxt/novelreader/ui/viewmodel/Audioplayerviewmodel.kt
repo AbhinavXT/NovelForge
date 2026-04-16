@@ -96,7 +96,7 @@ class AudioPlayerViewModel(
                 ?.filter { it.isDirectory }
                 ?.mapNotNull { novelDir ->
                     val chapters = novelDir.listFiles()
-                        ?.filter { it.isFile && it.extension.lowercase() == "wav" }
+                        ?.filter { it.isFile && it.extension.lowercase() in listOf("wav", "m4b", "m4a", "mp3", "ogg") }
                         ?.sortedBy { it.name }
                         ?.map { file ->
                             AudioChapter(

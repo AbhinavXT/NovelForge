@@ -7,7 +7,6 @@ import com.abhinavxt.novelreader.data.model.NovelPreview
 import com.abhinavxt.novelreader.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
@@ -20,11 +19,7 @@ class ReadNovelFullSource : Source {
     override val name = "ReadNovelFull"
     override val baseUrl = "https://readnovelfull.com"
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .build()
+    private val client = SourceManager.sharedClient
 
     private suspend fun fetchDocument(url: String): Document? {
         return withContext(Dispatchers.IO) {

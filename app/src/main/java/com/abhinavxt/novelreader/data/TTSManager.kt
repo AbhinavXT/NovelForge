@@ -23,6 +23,20 @@ enum class TTSState {
     ERROR
 }
 
+/**
+ * Sleep timer modes for TTS playback.
+ * NONE = no timer. END_OF_CHAPTER = stop when current chapter finishes.
+ * TIMED_* = stop after the specified duration.
+ */
+enum class SleepTimerMode(val label: String, val durationMs: Long) {
+    NONE("Off", 0),
+    END_OF_CHAPTER("End of chapter", 0),
+    TIMED_15("15 minutes", 15 * 60 * 1000L),
+    TIMED_30("30 minutes", 30 * 60 * 1000L),
+    TIMED_45("45 minutes", 45 * 60 * 1000L),
+    TIMED_60("1 hour", 60 * 60 * 1000L),
+}
+
 data class TTSSettings(
     val speed: Float = 1.0f,
     val pitch: Float = 1.0f,
@@ -103,6 +117,18 @@ class TTSManager(private val context: Context) {
 
     private val _engineReady = MutableStateFlow(false)
     val engineReady: StateFlow<Boolean> = _engineReady.asStateFlow()
+
+    // ── Sleep timer ─────────────────────────────────────────────
+    private val _sleepTimerMode = MutableStateFlow(SleepTimerMode.NONE)
+    val sleepTimerMode: StateFlow<SleepTimerMode> = _sleepTimerMode.asStateFlow()
+
+    /** Remaining milliseconds for timed modes. 0 when not active. */
+    private val _sleepTimerRemainingMs = MutableStateFlow(0L)
+    val sleepTimerRemainingMs: StateFlow<Long> = _sleepTimerRemainingMs.asStateFlow()
+
+    private var sleepTimerRunnable: Runnable? = null
+    private var sleepTimerCountdownRunnable: Runnable? = null
+    private var sleepTimerEndTimeMs: Long = 0L
 
     // ── Sentence tracking ────────────────────────────────────────
 
@@ -217,6 +243,17 @@ class TTSManager(private val context: Context) {
         activeEngine = engine
         _activeEngineId.value = engine.engineId
         _engineReady.value = true
+
+        // Restore saved voice from preferences
+        val savedVoiceName = _settings.value.voiceName
+        if (savedVoiceName != null) {
+            try {
+                engine.setVoice(savedVoiceName)
+                Logger.d("TTSManager", "Restored saved voice: $savedVoiceName")
+            } catch (e: Exception) {
+                Logger.w("TTSManager", "Failed to restore voice $savedVoiceName: ${e.message}")
+            }
+        }
 
         // Refresh voice list
         refreshVoiceList()
@@ -354,7 +391,10 @@ class TTSManager(private val context: Context) {
             return
         }
 
-        stop()
+        // Use stopPlaybackOnly() instead of stop() — preserves the sleep timer.
+        // User might set a 30-min timer THEN press play. The old code called stop()
+        // here which cancelled the timer before playback even started.
+        stopPlaybackOnly()
         _shouldAutoContinue.value = false
 
         // Save metadata for notification
@@ -503,9 +543,16 @@ class TTSManager(private val context: Context) {
             }
         } else {
             // Chapter complete
-            _state.value = TTSState.IDLE
-            _shouldAutoContinue.value = true
-            onChapterComplete?.invoke()
+            if (_sleepTimerMode.value == SleepTimerMode.END_OF_CHAPTER) {
+                // Sleep timer: stop after this chapter
+                Logger.d("TTSManager", "Sleep timer: stopping at end of chapter")
+                cancelSleepTimer()
+                stop()
+            } else {
+                _state.value = TTSState.IDLE
+                _shouldAutoContinue.value = true
+                onChapterComplete?.invoke()
+            }
         }
     }
 
@@ -528,8 +575,36 @@ class TTSManager(private val context: Context) {
         }
     }
 
+    /**
+     * Stops current playback without touching the sleep timer.
+     *
+     * Used internally by [speakText] when starting new playback — the user
+     * might set a 30-min timer, then press play, or auto-continue to the
+     * next chapter. In all these cases the timer should keep running.
+     *
+     * The public [stop] method (below) cancels the timer because that
+     * represents the user explicitly stopping TTS.
+     */
+    private fun stopPlaybackOnly() {
+        cancelPendingPause()
+        activeEngine.stop()
+        currentIndex = 0
+        _currentSentenceIndex.value = 0
+        _currentParagraphIndex.value = 0
+        _currentSentenceInParagraph.value = 0
+        segments = emptyList()
+        _state.value = TTSState.IDLE
+        _shouldAutoContinue.value = false
+        nowPlayingNovelTitle = ""
+        nowPlayingChapterTitle = ""
+        TTSForegroundService.stop(context)
+    }
+
     fun stop() {
         cancelPendingPause()
+        cancelSleepTimerInternal()
+        _sleepTimerMode.value = SleepTimerMode.NONE
+        _sleepTimerRemainingMs.value = 0L
         activeEngine.stop()
         currentIndex = 0
         _currentSentenceIndex.value = 0
@@ -614,6 +689,75 @@ class TTSManager(private val context: Context) {
             activeEngine.stop()
             speakCurrentSentence()
         }
+    }
+
+    // ── Sleep timer controls ────────────────────────────────────
+
+    /**
+     * Set the sleep timer mode. Cancels any existing timer first.
+     *
+     * - NONE: no timer
+     * - END_OF_CHAPTER: TTS stops when the current chapter finishes
+     * - TIMED_*: TTS stops after the specified duration, with a
+     *   countdown that updates [sleepTimerRemainingMs] every second
+     */
+    fun setSleepTimer(mode: SleepTimerMode) {
+        cancelSleepTimerInternal()
+        _sleepTimerMode.value = mode
+
+        if (mode.durationMs > 0) {
+            // Timed mode — schedule stop + start countdown
+            sleepTimerEndTimeMs = System.currentTimeMillis() + mode.durationMs
+            _sleepTimerRemainingMs.value = mode.durationMs
+
+            // The actual stop runnable
+            sleepTimerRunnable = Runnable {
+                Logger.d("TTSManager", "Sleep timer expired — stopping TTS")
+                cancelSleepTimer()
+                stop()
+            }
+            handler.postDelayed(sleepTimerRunnable!!, mode.durationMs)
+
+            // Countdown ticker — updates remaining time every second for UI display
+            startCountdownTicker()
+
+            Logger.d("TTSManager", "Sleep timer set: ${mode.label}")
+        } else if (mode == SleepTimerMode.END_OF_CHAPTER) {
+            Logger.d("TTSManager", "Sleep timer: will stop at end of chapter")
+        }
+    }
+
+    /**
+     * Cancel the sleep timer and reset to NONE.
+     */
+    fun cancelSleepTimer() {
+        cancelSleepTimerInternal()
+        _sleepTimerMode.value = SleepTimerMode.NONE
+        _sleepTimerRemainingMs.value = 0L
+        Logger.d("TTSManager", "Sleep timer cancelled")
+    }
+
+    private fun cancelSleepTimerInternal() {
+        sleepTimerRunnable?.let { handler.removeCallbacks(it) }
+        sleepTimerRunnable = null
+        sleepTimerCountdownRunnable?.let { handler.removeCallbacks(it) }
+        sleepTimerCountdownRunnable = null
+        sleepTimerEndTimeMs = 0L
+    }
+
+    private fun startCountdownTicker() {
+        sleepTimerCountdownRunnable = object : Runnable {
+            override fun run() {
+                val remaining = sleepTimerEndTimeMs - System.currentTimeMillis()
+                if (remaining > 0) {
+                    _sleepTimerRemainingMs.value = remaining
+                    handler.postDelayed(this, 1000L)
+                } else {
+                    _sleepTimerRemainingMs.value = 0L
+                }
+            }
+        }
+        handler.post(sleepTimerCountdownRunnable!!)
     }
 
     // ── Voice selection ──────────────────────────────────────────

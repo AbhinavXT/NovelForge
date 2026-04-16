@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.abhinavxt.novelreader.data.NovelRepository
+import com.abhinavxt.novelreader.data.ReadingStatsTracker
 import com.abhinavxt.novelreader.data.model.Novel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,26 +23,42 @@ data class ContinueReadingData(
     val lastReadAt: Long = 0L
 )
 
+/**
+ * Reading activity data for the home screen streak card.
+ */
+data class ReadingActivityData(
+    val currentStreak: Int = 0,
+    val longestStreak: Int = 0,
+    val todayMinutes: Int = 0,
+    val todayWords: Int = 0,
+    val todayChapters: Int = 0,
+    val last7DaysActive: List<Boolean> = List(7) { false }  // index 0 = 6 days ago, index 6 = today
+)
+
 class HomeViewModel(
-    private val repository: NovelRepository
+    private val repository: NovelRepository,
+    private val statsTracker: ReadingStatsTracker? = null
 ) : ViewModel() {
 
     private val _libraryNovels = MutableStateFlow<List<Novel>>(emptyList())
     val libraryNovels: StateFlow<List<Novel>> = _libraryNovels.asStateFlow()
 
-    // Changed: Now a list of all novels with reading progress
     private val _continueReadingList = MutableStateFlow<List<ContinueReadingData>>(emptyList())
     val continueReadingList: StateFlow<List<ContinueReadingData>> = _continueReadingList.asStateFlow()
 
-    // Keep single continueReading for backward compatibility (most recent)
     private val _continueReading = MutableStateFlow<ContinueReadingData?>(null)
     val continueReading: StateFlow<ContinueReadingData?> = _continueReading.asStateFlow()
 
     private val _totalChaptersRead = MutableStateFlow(0)
     val totalChaptersRead: StateFlow<Int> = _totalChaptersRead.asStateFlow()
 
+    /** Reading activity data for the streak card */
+    private val _readingActivity = MutableStateFlow(ReadingActivityData())
+    val readingActivity: StateFlow<ReadingActivityData> = _readingActivity.asStateFlow()
+
     init {
         loadHomeData()
+        loadReadingActivity()
     }
 
     private fun loadHomeData() {
@@ -100,52 +117,53 @@ class HomeViewModel(
         }
     }
 
+    /**
+     * Load streak, today's reading stats, and 7-day activity for the home card.
+     */
+    private fun loadReadingActivity() {
+        val tracker = statsTracker ?: return
+        viewModelScope.launch {
+            try {
+                val overall = tracker.getOverallStats()
+                val today = tracker.getStatsForToday()
+                val dailyWords = tracker.getDailyWordCounts(days = 7)
+
+                _readingActivity.value = ReadingActivityData(
+                    currentStreak = overall.currentStreak,
+                    longestStreak = overall.longestStreak,
+                    todayMinutes = (today.readingTimeMs / 60_000).toInt(),
+                    todayWords = today.wordsRead,
+                    todayChapters = today.chaptersCompleted,
+                    // Each day: true if any words were read
+                    last7DaysActive = dailyWords.map { it.second > 0 }
+                )
+            } catch (_: Exception) { }
+        }
+    }
+
     fun refresh() {
         viewModelScope.launch {
             _totalChaptersRead.value = repository.getTotalChaptersRead()
             loadAllContinueReading()
         }
+        loadReadingActivity()
     }
 
     companion object {
-        fun provideFactory(repository: NovelRepository): ViewModelProvider.Factory {
+        fun provideFactory(
+            repository: NovelRepository,
+            statsTracker: ReadingStatsTracker? = null
+        ): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return HomeViewModel(repository) as T
+                    return HomeViewModel(repository, statsTracker) as T
                 }
             }
         }
 
         private fun constructNovelUrl(novelId: String): String {
-            return when {
-                novelId.startsWith("rr_") -> {
-                    "https://www.royalroad.com/fiction/${novelId.removePrefix("rr_")}"
-                }
-                novelId.startsWith("rnf_") -> {
-                    "https://readnovelfull.com/${novelId.removePrefix("rnf_")}.html"
-                }
-                novelId.startsWith("fwn_") -> {
-                    "https://freewebnovel.com/novel/${novelId.removePrefix("fwn_")}"
-                }
-                novelId.startsWith("lr_") -> {
-                    "https://libread.com/libread/${novelId.removePrefix("lr_")}"
-                }
-                novelId.startsWith("nfn_") -> {
-                    "https://novelfull.net/${novelId.removePrefix("nfn_")}.html"
-                }
-                novelId.startsWith("pr_") -> {
-                    val slug = novelId.removePrefix("pr_").replace("~", "/")
-                    "https://pawread.com/$slug"
-                }
-                novelId.startsWith("pt_") -> {
-                    "https://primodialtranslation.com/series/${novelId.removePrefix("pt_")}/"
-                }
-                novelId.startsWith("local_") -> {
-                    "local://$novelId"
-                }
-                else -> ""
-            }
+            return com.abhinavxt.novelreader.data.source.SourceManager.constructNovelUrl(novelId)
         }
     }
 }

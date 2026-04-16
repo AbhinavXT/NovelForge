@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -43,6 +44,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -65,6 +67,7 @@ import com.abhinavxt.novelreader.ui.viewmodel.LibrarySort
 import com.abhinavxt.novelreader.ui.viewmodel.LibraryViewModel
 import java.io.File
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
     repository: NovelRepository,
@@ -78,6 +81,7 @@ fun LibraryScreen(
     val currentFilter by viewModel.currentFilter.collectAsState()
     val currentSort by viewModel.currentSort.collectAsState()
     val novelsWithUpdates by viewModel.novelsWithUpdates.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
 
     // File picker launcher for EPUB files
     val epubPickerLauncher = rememberLauncherForActivityResult(
@@ -129,7 +133,9 @@ fun LibraryScreen(
             }
         }
     ) { paddingValues ->
-        Box(
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = { viewModel.refresh() },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)

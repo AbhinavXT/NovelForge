@@ -4,6 +4,8 @@ import com.abhinavxt.novelreader.data.database.ReadingStatDao
 import com.abhinavxt.novelreader.data.database.ReadingStatEvent
 import com.abhinavxt.novelreader.util.Logger
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.Calendar
 import java.util.TimeZone
@@ -15,67 +17,77 @@ import java.util.TimeZone
  *   - Call [startSession] when a chapter is opened
  *   - Call [endSession] when the user leaves or finishes a chapter
  *
- * The tracker records one [ReadingStatEvent] per completed session
- * with word count and time spent.
+ * Thread-safe via [Mutex]. Calling [startSession] automatically ends
+ * the previous session if one is active (prevents data loss on quick
+ * chapter switches).
  */
 class ReadingStatsTracker(private val dao: ReadingStatDao) {
 
-    // Active session tracking
-    private var sessionNovelId: String? = null
-    private var sessionChapterId: String? = null
-    private var sessionStartMs: Long = 0L
-    private var sessionWordCount: Int = 0
+    private data class Session(
+        val novelId: String,
+        val chapterId: String,
+        val startMs: Long,
+        val wordCount: Int
+    )
+
+    private val mutex = Mutex()
+    @Volatile private var activeSession: Session? = null
 
     /**
      * Start tracking a reading session for a chapter.
+     * Automatically ends any previous session first.
      */
-    fun startSession(novelId: String, chapterId: String, chapterContent: String) {
-        sessionNovelId = novelId
-        sessionChapterId = chapterId
-        sessionStartMs = System.currentTimeMillis()
-        sessionWordCount = chapterContent.split(Regex("\\s+")).count { it.isNotBlank() }
+    suspend fun startSession(novelId: String, chapterId: String, chapterContent: String) {
+        mutex.withLock {
+            // End previous session if active (#25 fix)
+            activeSession?.let { prev ->
+                recordSession(prev)
+            }
+            activeSession = Session(
+                novelId = novelId,
+                chapterId = chapterId,
+                startMs = System.currentTimeMillis(),
+                wordCount = chapterContent.split(Regex("\\s+")).count { it.isNotBlank() }
+            )
+        }
     }
 
     /**
      * End the current session and record a stat event.
-     * Only records if the session lasted at least 10 seconds
-     * (avoids logging accidental taps).
+     * Only records if the session lasted at least 10 seconds.
      */
     suspend fun endSession() {
-        val novelId = sessionNovelId ?: return
-        val chapterId = sessionChapterId ?: return
-        val elapsed = System.currentTimeMillis() - sessionStartMs
+        mutex.withLock {
+            val session = activeSession ?: return@withLock
+            recordSession(session)
+            activeSession = null
+        }
+    }
+
+    /**
+     * Record a session to the database. Called inside mutex lock.
+     */
+    private suspend fun recordSession(session: Session) {
+        val elapsed = System.currentTimeMillis() - session.startMs
 
         // Minimum 10 seconds to count as reading
-        if (elapsed < 10_000) {
-            clearSession()
-            return
-        }
+        if (elapsed < 10_000) return
 
         withContext(Dispatchers.IO) {
             try {
                 dao.insertEvent(
                     ReadingStatEvent(
-                        novelId = novelId,
-                        chapterId = chapterId,
-                        wordsRead = sessionWordCount,
+                        novelId = session.novelId,
+                        chapterId = session.chapterId,
+                        wordsRead = session.wordCount,
                         readingTimeMs = elapsed
                     )
                 )
-                Logger.d("StatsTracker", "Recorded: ${sessionWordCount}w, ${elapsed / 1000}s for $chapterId")
+                Logger.d("StatsTracker", "Recorded: ${session.wordCount}w, ${elapsed / 1000}s for ${session.chapterId}")
             } catch (e: Exception) {
                 Logger.e("StatsTracker", "Failed to record stat", e)
             }
         }
-
-        clearSession()
-    }
-
-    private fun clearSession() {
-        sessionNovelId = null
-        sessionChapterId = null
-        sessionStartMs = 0L
-        sessionWordCount = 0
     }
 
     // ── Dashboard queries ────────────────────────────────────────
@@ -105,9 +117,15 @@ class ReadingStatsTracker(private val dao: ReadingStatDao) {
         val totalWords = dao.getTotalWordsRead()
         val totalTime = dao.getTotalReadingTimeMs()
         val totalChapters = dao.getTotalChaptersCompleted()
-        val activeDays = dao.getActiveDaysMs()
 
-        val (current, longest) = calculateStreaks(activeDays)
+        // Bucket raw timestamps into local-timezone days
+        val rawTimestamps = dao.getAllCompletedTimestamps()
+        val activeDaysDesc = rawTimestamps
+            .map { floorToLocalMidnight(it) }
+            .distinct()
+            .sortedDescending()
+
+        val (current, longest) = calculateStreaks(activeDaysDesc)
 
         OverallStats(
             totalWordsRead = totalWords,
@@ -137,6 +155,43 @@ class ReadingStatsTracker(private val dao: ReadingStatDao) {
     }
 
     /**
+     * Calculate the user's average reading speed in words-per-minute.
+     *
+     * Uses all recorded reading sessions. Returns 250 WPM (average adult
+     * reading speed) if not enough data has been collected yet (< 1 minute
+     * of tracked reading).
+     *
+     * Clamped to 50–1500 WPM to filter out outliers (e.g., user left the
+     * screen open without reading, or skipped through very quickly).
+     */
+    suspend fun getUserWPM(): Int = withContext(Dispatchers.IO) {
+        val totalWords = dao.getTotalWordsRead()
+        val totalTimeMs = dao.getTotalReadingTimeMs()
+        val totalMinutes = totalTimeMs / 60_000.0
+
+        if (totalMinutes < 1.0) {
+            DEFAULT_WPM // Not enough data yet
+        } else {
+            (totalWords / totalMinutes).toInt().coerceIn(50, 1500)
+        }
+    }
+
+    /**
+     * Estimate how many minutes it would take this user to read [wordCount] words.
+     * Returns null if wordCount is 0.
+     */
+    suspend fun estimateMinutes(wordCount: Int): Int? {
+        if (wordCount <= 0) return null
+        val wpm = getUserWPM()
+        return ((wordCount.toDouble() / wpm) + 0.5).toInt().coerceAtLeast(1)
+    }
+
+    companion object {
+        /** Default reading speed before we have enough data. Average adult = ~250 WPM. */
+        const val DEFAULT_WPM = 250
+    }
+
+    /**
      * Get daily word counts for the last [days] days (for a bar chart).
      * Returns a list of pairs: (dayLabel, wordsRead).
      */
@@ -156,7 +211,7 @@ class ReadingStatsTracker(private val dao: ReadingStatDao) {
             cal.add(Calendar.DAY_OF_YEAR, 1)
             val end = cal.timeInMillis
 
-            val label = if (i == 0) "Today" else if (i == 1) "Yday" else {
+            val label = run {
                 cal.timeInMillis = start
                 val month = cal.get(Calendar.MONTH) + 1
                 val day = cal.get(Calendar.DAY_OF_MONTH)
@@ -216,13 +271,18 @@ class ReadingStatsTracker(private val dao: ReadingStatDao) {
         return currentStreak to longestStreak
     }
 
-    private fun todayMidnightMs(): Long {
+    private fun floorToLocalMidnight(timestampMs: Long): Long {
         val cal = Calendar.getInstance(TimeZone.getDefault())
+        cal.timeInMillis = timestampMs
         cal.set(Calendar.HOUR_OF_DAY, 0)
         cal.set(Calendar.MINUTE, 0)
         cal.set(Calendar.SECOND, 0)
         cal.set(Calendar.MILLISECOND, 0)
         return cal.timeInMillis
+    }
+
+    private fun todayMidnightMs(): Long {
+        return floorToLocalMidnight(System.currentTimeMillis())
     }
 
     private fun todayRange(): Pair<Long, Long> {

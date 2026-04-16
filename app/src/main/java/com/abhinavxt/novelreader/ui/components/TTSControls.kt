@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +21,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.TimerOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -40,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.abhinavxt.novelreader.data.TTSState
+import com.abhinavxt.novelreader.data.SleepTimerMode
 
 @Composable
 fun TTSControls(
@@ -47,16 +51,20 @@ fun TTSControls(
     currentSentence: Int,
     totalSentences: Int,
     speed: Float,
+    sleepTimerMode: SleepTimerMode = SleepTimerMode.NONE,
+    sleepTimerRemainingMs: Long = 0L,
     onPlay: () -> Unit,
     onPause: () -> Unit,
     onStop: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
     onSpeedChange: (Float) -> Unit,
+    onSleepTimerChange: (SleepTimerMode) -> Unit = {},
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showSpeedSlider by remember { mutableStateOf(false) }
+    var showSleepMenu by remember { mutableStateOf(false) }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -70,7 +78,7 @@ fun TTSControls(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // Header with close button
+            // Header with settings, sleep timer, and close
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -81,7 +89,58 @@ fun TTSControls(
                     style = MaterialTheme.typography.titleMedium
                 )
 
-                Row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Sleep timer button
+                    Box {
+                        IconButton(onClick = { showSleepMenu = !showSleepMenu }) {
+                            Icon(
+                                imageVector = if (sleepTimerMode != SleepTimerMode.NONE)
+                                    Icons.Default.Timer
+                                else
+                                    Icons.Default.TimerOff,
+                                contentDescription = "Sleep timer",
+                                tint = if (sleepTimerMode != SleepTimerMode.NONE)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        // Sleep timer dropdown menu
+                        DropdownMenu(
+                            expanded = showSleepMenu,
+                            onDismissRequest = { showSleepMenu = false }
+                        ) {
+                            SleepTimerMode.entries.forEach { mode ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = mode.label,
+                                            color = if (mode == sleepTimerMode)
+                                                MaterialTheme.colorScheme.primary
+                                            else
+                                                MaterialTheme.colorScheme.onSurface
+                                        )
+                                    },
+                                    onClick = {
+                                        onSleepTimerChange(mode)
+                                        showSleepMenu = false
+                                    },
+                                    leadingIcon = if (mode == sleepTimerMode) {
+                                        {
+                                            Icon(
+                                                Icons.Default.Timer,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    } else null
+                                )
+                            }
+                        }
+                    }
+
                     IconButton(onClick = { showSpeedSlider = !showSpeedSlider }) {
                         Icon(
                             imageVector = Icons.Default.Settings,
@@ -96,6 +155,29 @@ fun TTSControls(
                         )
                     }
                 }
+            }
+
+            // Sleep timer status — shown when timer is active
+            if (sleepTimerMode != SleepTimerMode.NONE) {
+                val statusText = if (sleepTimerMode == SleepTimerMode.END_OF_CHAPTER) {
+                    "⏱ Stopping at end of chapter"
+                } else if (sleepTimerRemainingMs > 0) {
+                    val mins = (sleepTimerRemainingMs / 60_000).toInt()
+                    val secs = ((sleepTimerRemainingMs % 60_000) / 1000).toInt()
+                    "⏱ Sleep in ${mins}:${String.format("%02d", secs)}"
+                } else {
+                    "⏱ ${sleepTimerMode.label}"
+                }
+
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp),
+                    textAlign = TextAlign.Center
+                )
             }
 
             // Progress

@@ -1,9 +1,13 @@
 package com.abhinavxt.novelreader.ui.screens
 
+import androidx.compose.animation.core.EaseOutCubic
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,10 +16,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -23,69 +30,108 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
 import com.abhinavxt.novelreader.data.NovelRepository
 import com.abhinavxt.novelreader.data.model.Novel
+import com.abhinavxt.novelreader.ui.components.NovelCover
 import com.abhinavxt.novelreader.ui.viewmodel.ContinueReadingData
 import com.abhinavxt.novelreader.ui.viewmodel.HomeViewModel
+import com.abhinavxt.novelreader.ui.viewmodel.ReadingActivityData
+import java.util.Calendar
 
 @Composable
 fun HomeScreen(
     repository: NovelRepository,
+    readingStatsTracker: com.abhinavxt.novelreader.data.ReadingStatsTracker? = null,
     onBrowseClick: () -> Unit,
     onNovelClick: (novelId: String) -> Unit,
     onContinueReading: (novelId: String, chapterId: String, chapterUrl: String, novelUrl: String) -> Unit = { novelId, _, _, _ -> onNovelClick(novelId) },
     viewModel: HomeViewModel = viewModel(
-        factory = HomeViewModel.provideFactory(repository)
+        factory = HomeViewModel.provideFactory(repository, readingStatsTracker)
     )
 ) {
     val libraryNovels by viewModel.libraryNovels.collectAsState()
     val continueReadingList by viewModel.continueReadingList.collectAsState()
+    val readingActivity by viewModel.readingActivity.collectAsState()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+            .padding(top = 16.dp)
     ) {
-        // Header
+        // ── Greeting header ─────────────────────────────────────
+        val greeting = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
+            in 0..11 -> "Good morning"
+            in 12..16 -> "Good afternoon"
+            else -> "Good evening"
+        }
         Text(
-            text = "Novel Reader",
+            text = greeting,
             style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+        Text(
+            text = if (libraryNovels.isNotEmpty()) {
+                val count = libraryNovels.size
+                "$count ${if (count == 1) "novel" else "novels"} in your library"
+            } else "Start building your library",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.outline,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        // ── Reading activity — compact inline ─────────────────
+        // Minimal single-line display: streak + today's stats.
+        // No card, no flame emoji — just clean info text.
+        if (readingActivity.currentStreak > 0 || readingActivity.todayMinutes > 0) {
+            val parts = mutableListOf<String>()
+            if (readingActivity.currentStreak > 0) {
+                parts.add("${readingActivity.currentStreak}-day streak")
+            }
+            if (readingActivity.todayMinutes > 0) {
+                parts.add("${readingActivity.todayMinutes} min today")
+            }
+            if (readingActivity.todayChapters > 0) {
+                parts.add("${readingActivity.todayChapters} ch today")
+            }
+            Text(
+                text = parts.joinToString(" · "),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+            )
+        }
 
-        // Continue Reading Section - now shows ALL novels with progress
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // ── Continue Reading — horizontal scroll ────────────────
         if (continueReadingList.isNotEmpty()) {
             Text(
                 text = "Continue Reading",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
+                modifier = Modifier.padding(horizontal = 16.dp)
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Show all novels with reading progress
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp)
             ) {
-                continueReadingList.forEach { data ->
+                items(
+                    items = continueReadingList,
+                    key = { it.novel.id }
+                ) { data ->
                     ContinueReadingCard(
                         data = data,
                         onClick = {
@@ -103,136 +149,130 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
 
-        // Library Section
+        // ── Library grid ────────────────────────────────────────
         if (libraryNovels.isNotEmpty()) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = "Your Library",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
+                    style = MaterialTheme.typography.titleMedium
                 )
                 Text(
                     text = "${libraryNovels.size} novels",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            val columns = 3
-            libraryNovels.chunked(columns).forEach { rowNovels ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    rowNovels.forEach { novel ->
-                        NovelCard(
-                            novel = novel,
-                            onClick = { onNovelClick(novel.id) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    // Fill empty slots in the last row to keep alignment
-                    repeat(columns - rowNovels.size) {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
+            // Adaptive grid: 3 columns on phone, more on tablet
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 100.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                items(
+                    items = libraryNovels,
+                    key = { it.id }
+                ) { novel ->
+                    LibraryNovelItem(
+                        novel = novel,
+                        onClick = { onNovelClick(novel.id) }
+                    )
                 }
-                Spacer(modifier = Modifier.height(12.dp))
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-        }
-
-        // Empty State / Browse Section
-        if (libraryNovels.isEmpty()) {
-            EmptyLibraryCard(onBrowseClick = onBrowseClick)
         } else {
-            // Browse more button
-            Button(
-                onClick = onBrowseClick,
-                modifier = Modifier.fillMaxWidth()
+            // ── Empty state ─────────────────────────────────────
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Browse More Novels")
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(32.dp)
+                ) {
+                    Text(
+                        text = "📚",
+                        fontSize = 56.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Your library awaits",
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Browse novels or import an EPUB to get started",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Button(onClick = onBrowseClick) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Browse Novels")
+                    }
+                }
             }
         }
     }
 }
 
+// ── Continue Reading card ────────────────────────────────────────
+// Compact card for horizontal scroll — cover + title + progress
 @Composable
 private fun ContinueReadingCard(
     data: ContinueReadingData,
     onClick: () -> Unit
 ) {
-    val context = LocalContext.current
-
     Card(
         modifier = Modifier
-            .fillMaxWidth()
+            .width(260.dp)
             .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
+                .padding(10.dp)
         ) {
-            // Cover - handle both URL and local file path
-            val imageModel = remember(data.novel.coverUrl) {
-                when {
-                    data.novel.coverUrl == null -> null
-                    data.novel.coverUrl.startsWith("/") -> {
-                        // Local file path
-                        java.io.File(data.novel.coverUrl)
-                    }
-                    else -> {
-                        // URL
-                        data.novel.coverUrl
-                    }
-                }
-            }
+            // Cover with progress overlay
+            val progress = if (data.totalChapters > 0)
+                data.currentChapter.toFloat() / data.totalChapters.toFloat()
+            else 0f
 
-            if (imageModel != null) {
-                AsyncImage(
-                    model = imageModel,
-                    contentDescription = "Cover of ${data.novel.title}",
-                    modifier = Modifier.size(60.dp, 80.dp),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Surface(
-                    modifier = Modifier.size(60.dp, 80.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.Book,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-            }
+            NovelCover(
+                coverUrl = data.novel.coverUrl,
+                width = 56.dp,
+                height = 78.dp,
+                progress = progress
+            )
 
             Spacer(modifier = Modifier.width(12.dp))
 
             Column(
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
                     text = data.novel.title,
                     style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
 
@@ -246,23 +286,24 @@ private fun ContinueReadingCard(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                // Progress bar
-                val progress = if (data.totalChapters > 0) {
-                    data.currentChapter.toFloat() / data.totalChapters.toFloat()
-                } else 0f
-
+                // Animated progress bar
+                val animatedProgress by animateFloatAsState(
+                    targetValue = progress,
+                    animationSpec = tween(durationMillis = 800, easing = EaseOutCubic),
+                    label = "continueReadingProgress"
+                )
                 LinearProgressIndicator(
-                    progress = { progress },
+                    progress = { animatedProgress },
                     modifier = Modifier.fillMaxWidth(),
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(3.dp))
 
                 Text(
-                    text = "${data.currentChapter} / ${data.totalChapters} chapters",
+                    text = "${data.currentChapter} / ${data.totalChapters}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
@@ -271,118 +312,29 @@ private fun ContinueReadingCard(
     }
 }
 
+// ── Library grid item ────────────────────────────────────────────
+// Cover with title underneath — uses NovelCover for consistency
 @Composable
-private fun NovelCard(
+private fun LibraryNovelItem(
     novel: Novel,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    onClick: () -> Unit
 ) {
-    // Handle both URL and local file path for cover
-    val imageModel = remember(novel.coverUrl) {
-        when {
-            novel.coverUrl == null -> null
-            novel.coverUrl.startsWith("/") -> {
-                // Local file path
-                java.io.File(novel.coverUrl)
-            }
-            else -> {
-                // URL
-                novel.coverUrl
-            }
-        }
-    }
-
-    Card(
-        modifier = modifier
-            .clickable(onClick = onClick)
+    Column(
+        modifier = Modifier.clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column {
-            if (imageModel != null) {
-                AsyncImage(
-                    model = imageModel,
-                    contentDescription = "Cover of ${novel.title}",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(140.dp),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(140.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.Book,
-                            contentDescription = null,
-                            modifier = Modifier.size(32.dp)
-                        )
-                    }
-                }
-            }
-
-            Text(
-                text = novel.title,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(8.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun EmptyLibraryCard(
-    onBrowseClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        NovelCover(
+            coverUrl = novel.coverUrl,
+            width = 100.dp,
+            height = 140.dp
         )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                imageVector = Icons.Default.Book,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.outline
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text(
-                text = "Your library is empty",
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "Browse novels and add them to your library to see them here",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.outline
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Button(onClick = onBrowseClick) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Browse Novels")
-            }
-        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = novel.title,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }

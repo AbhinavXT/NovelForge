@@ -7,7 +7,6 @@ import com.abhinavxt.novelreader.data.database.BookmarkEntity
 import com.abhinavxt.novelreader.data.database.NovelEntity
 import com.abhinavxt.novelreader.data.database.PronunciationEntry
 import com.abhinavxt.novelreader.data.database.ReadingProgressEntity
-import com.abhinavxt.novelreader.data.database.ReaderSettingsEntity
 import com.abhinavxt.novelreader.util.Logger
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -29,7 +28,8 @@ data class BackupData(
     val readerSettings: ReaderSettingsBackup?,
     val ttsSettings: TTSSettingsBackup?,
     val bookmarks: List<BookmarkBackup>? = null,
-    val pronunciationEntries: List<PronunciationBackup>? = null
+    val pronunciationEntries: List<PronunciationBackup>? = null,
+    val readingStats: List<ReadingStatBackup>? = null
 ) {
     companion object {
         const val BACKUP_VERSION = 2
@@ -104,6 +104,14 @@ data class PronunciationBackup(
     val replacement: String
 )
 
+data class ReadingStatBackup(
+    val novelId: String,
+    val chapterId: String,
+    val wordsRead: Int,
+    val readingTimeMs: Long,
+    val completedAt: Long
+)
+
 /**
  * Result of a backup/restore operation
  */
@@ -118,7 +126,8 @@ sealed class BackupResult {
 class BackupManager(
     private val context: Context,
     private val repository: NovelRepository,
-    var pronunciationManager: PronunciationManager? = null
+    var pronunciationManager: PronunciationManager? = null,
+    var readingStatsTracker: ReadingStatsTracker? = null
 ) {
     private val gson: Gson = GsonBuilder()
         .setPrettyPrinting()
@@ -232,6 +241,17 @@ class BackupManager(
                 PronunciationBackup(word = entry.word, replacement = entry.replacement)
             }
 
+            // Reading stats
+            val readingStatBackups = readingStatsTracker?.getAllForBackup()?.map { event ->
+                ReadingStatBackup(
+                    novelId = event.novelId,
+                    chapterId = event.chapterId,
+                    wordsRead = event.wordsRead,
+                    readingTimeMs = event.readingTimeMs,
+                    completedAt = event.completedAt
+                )
+            }
+
             // Create backup object
             val backup = BackupData(
                 novels = novelBackups,
@@ -240,7 +260,8 @@ class BackupManager(
                 readerSettings = settingsBackup,
                 ttsSettings = ttsBackup,
                 bookmarks = bookmarkBackups,
-                pronunciationEntries = pronunciationBackups
+                pronunciationEntries = pronunciationBackups,
+                readingStats = readingStatBackups
             )
 
             // Write to file
@@ -255,12 +276,14 @@ class BackupManager(
 
             val bookmarkCount = bookmarkBackups.size
             val pronunciationCount = pronunciationBackups?.size ?: 0
+            val statsCount = readingStatBackups?.size ?: 0
 
             BackupResult.Success(
                 "Backup created successfully!\n" +
                         "${novels.size} novels, ${chapters.filter { it.isDownloaded }.size} downloaded chapters" +
                         (if (bookmarkCount > 0) ", $bookmarkCount bookmarks" else "") +
-                        (if (pronunciationCount > 0) ", $pronunciationCount pronunciations" else "")
+                        (if (pronunciationCount > 0) ", $pronunciationCount pronunciations" else "") +
+                        (if (statsCount > 0) ", $statsCount reading sessions" else "")
             )
         } catch (e: Exception) {
             Logger.e("BackupManager", "Backup failed", e)
@@ -404,6 +427,25 @@ class BackupManager(
                 }
             }
 
+            // Restore reading stats
+            var statsRestored = 0
+            backup.readingStats?.forEach { stat ->
+                try {
+                    readingStatsTracker?.insertForRestore(
+                        com.abhinavxt.novelreader.data.database.ReadingStatEvent(
+                            novelId = stat.novelId,
+                            chapterId = stat.chapterId,
+                            wordsRead = stat.wordsRead,
+                            readingTimeMs = stat.readingTimeMs,
+                            completedAt = stat.completedAt
+                        )
+                    )
+                    statsRestored++
+                } catch (e: Exception) {
+                    Logger.w("BackupManager", "Failed to restore reading stat: ${e.message}")
+                }
+            }
+
             Logger.d("BackupManager", "Restore completed successfully")
 
             BackupResult.Success(
@@ -411,7 +453,8 @@ class BackupManager(
                         "$novelsRestored novels, $chaptersRestored chapters" +
                         (if (downloadedRestored > 0) ", $downloadedRestored downloaded" else "") +
                         (if (bookmarksRestored > 0) ", $bookmarksRestored bookmarks" else "") +
-                        (if (pronunciationsRestored > 0) ", $pronunciationsRestored pronunciations" else "")
+                        (if (pronunciationsRestored > 0) ", $pronunciationsRestored pronunciations" else "") +
+                        (if (statsRestored > 0) ", $statsRestored reading sessions" else "")
             )
         } catch (e: com.google.gson.JsonSyntaxException) {
             Logger.e("BackupManager", "Invalid backup file format", e)
@@ -445,6 +488,7 @@ class BackupManager(
                 downloadedChapterCount = downloadedChapters,
                 bookmarkCount = backup.bookmarks?.size ?: 0,
                 pronunciationCount = backup.pronunciationEntries?.size ?: 0,
+                readingStatsCount = backup.readingStats?.size ?: 0,
                 createdAt = createdDate,
                 version = backup.version,
                 sizeBytes = totalSize.toLong()
@@ -465,6 +509,7 @@ data class BackupInfo(
     val downloadedChapterCount: Int,
     val bookmarkCount: Int = 0,
     val pronunciationCount: Int = 0,
+    val readingStatsCount: Int = 0,
     val createdAt: String,
     val version: Int,
     val sizeBytes: Long

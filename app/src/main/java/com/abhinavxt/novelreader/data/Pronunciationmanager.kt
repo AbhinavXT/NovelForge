@@ -24,6 +24,10 @@ class PronunciationManager(private val dao: PronunciationDao) {
     private val _entries = MutableStateFlow<List<PronunciationEntry>>(emptyList())
     val entries: StateFlow<List<PronunciationEntry>> = _entries.asStateFlow()
 
+    // Pre-compiled patterns (#26) — rebuilt when cache changes
+    @Volatile
+    private var compiledPatterns: List<Pair<Regex, String>> = emptyList()
+
     // Flow for UI observation
     fun getAllEntries(): Flow<List<PronunciationEntry>> = dao.getAllEntries()
 
@@ -32,25 +36,41 @@ class PronunciationManager(private val dao: PronunciationDao) {
      */
     suspend fun loadCache() {
         withContext(Dispatchers.IO) {
-            _entries.value = dao.getAllEntriesOnce()
-            Logger.d("PronunciationMgr", "Loaded ${_entries.value.size} pronunciation entries")
+            val entries = dao.getAllEntriesOnce()
+            _entries.value = entries
+            rebuildPatterns(entries)
+            Logger.d("PronunciationMgr", "Loaded ${entries.size} pronunciation entries")
+        }
+    }
+
+    /**
+     * Pre-compile regex patterns from entries.
+     * Uses Unicode-aware word boundaries (#27) instead of \b
+     * so accented names (Naëlith) and CJK names match correctly.
+     */
+    private fun rebuildPatterns(entries: List<PronunciationEntry>) {
+        compiledPatterns = entries.map { entry ->
+            val escaped = Regex.escape(entry.word)
+            // Unicode-aware boundaries: match at start/end of string, whitespace, or punctuation
+            val pattern = Regex(
+                "(?<=^|[\\s\\p{Punct}])$escaped(?=$|[\\s\\p{Punct}])",
+                RegexOption.IGNORE_CASE
+            )
+            pattern to entry.replacement
         }
     }
 
     /**
      * Apply all pronunciation replacements to the given text.
-     * Case-insensitive whole-word matching so "Xiulan" matches
-     * "xiulan" and "XIULAN" but not "Xiulander".
+     * Uses pre-compiled patterns — no regex compilation per call.
      */
     fun applyReplacements(text: String): String {
-        val cached = _entries.value
-        if (cached.isEmpty()) return text
+        val patterns = compiledPatterns
+        if (patterns.isEmpty()) return text
 
         var result = text
-        for (entry in cached) {
-            // Word-boundary regex for case-insensitive whole-word match
-            val pattern = Regex("\\b${Regex.escape(entry.word)}\\b", RegexOption.IGNORE_CASE)
-            result = pattern.replace(result, entry.replacement)
+        for ((pattern, replacement) in patterns) {
+            result = pattern.replace(result, replacement)
         }
         return result
     }
@@ -93,7 +113,9 @@ class PronunciationManager(private val dao: PronunciationDao) {
 
     private suspend fun refreshCache() {
         withContext(Dispatchers.IO) {
-            _entries.value = dao.getAllEntriesOnce()
+            val entries = dao.getAllEntriesOnce()
+            _entries.value = entries
+            rebuildPatterns(entries)
         }
     }
 

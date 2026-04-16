@@ -15,10 +15,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Bookmark
@@ -48,6 +51,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -77,6 +81,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import com.abhinavxt.novelreader.data.tts.M4BAudiobookBuilder
+import com.abhinavxt.novelreader.ui.components.NovelCover
+import androidx.compose.ui.platform.LocalContext
 import com.abhinavxt.novelreader.AppConfig
 import com.abhinavxt.novelreader.data.DownloadManager
 import com.abhinavxt.novelreader.data.DownloadStatus
@@ -102,16 +113,19 @@ fun NovelDetailScreen(
     repository: NovelRepository,
     downloadManager: DownloadManager,
     ttsManager: com.abhinavxt.novelreader.data.TTSManager,
+    readingStatsTracker: com.abhinavxt.novelreader.data.ReadingStatsTracker? = null,
     onBackClick: () -> Unit,
     onChapterClick: (chapterId: String, chapterUrl: String) -> Unit,
     viewModel: NovelDetailViewModel = viewModel(
         factory = NovelDetailViewModel.provideFactory(
             novelId, novelUrl, repository, ttsManager,
-            androidx.compose.ui.platform.LocalContext.current.applicationContext
+            androidx.compose.ui.platform.LocalContext.current.applicationContext,
+            readingStatsTracker
         )
     )
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val estimatedTimeToFinish by viewModel.estimatedTimeToFinish.collectAsState()
     val downloadState by downloadManager.novelDownloadState.collectAsState()
     val downloadingChapters by viewModel.downloadingChapters.collectAsState()
     val activeDownloads by downloadManager.activeDownloads.collectAsState()
@@ -125,9 +139,13 @@ fun NovelDetailScreen(
     }
     val bookmarks by viewModel.bookmarks.collectAsState()
     val bookmarkCount by viewModel.bookmarkCount.collectAsState()
+    val highlights by viewModel.highlights.collectAsState()
+    val highlightCount by viewModel.highlightCount.collectAsState()
+    val newChapterCount by viewModel.newChapterCount.collectAsState()
     val exportState by viewModel.exportState.collectAsState()
     val exportingChapters by viewModel.exportingChapters.collectAsState()
     val audioExportedChapters by viewModel.audioExportedChapters.collectAsState()
+    val m4bBuildState by viewModel.m4bBuildState.collectAsState()
     val availableVoices by ttsManager.availableVoices.collectAsState()
     val currentVoice by ttsManager.currentVoice.collectAsState()
     val currentReadingChapterId by viewModel.currentReadingChapterId.collectAsState()
@@ -156,7 +174,7 @@ fun NovelDetailScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
                     .padding(start = 4.dp, end = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -233,6 +251,12 @@ fun NovelDetailScreen(
                     exportState = exportState,
                     bookmarks = bookmarks,
                     bookmarkCount = bookmarkCount,
+                    highlights = highlights,
+                    highlightCount = highlightCount,
+                    newChapterCount = newChapterCount,
+                    onMarkUpdateSeen = { viewModel.markUpdateSeen() },
+                    onDeleteHighlight = { id -> viewModel.deleteHighlight(id) },
+                    onUpdateHighlightNote = { id, note -> viewModel.updateHighlightNote(id, note) },
                     onToggleLibrary = { viewModel.toggleLibrary() },
                     onChapterClick = onChapterClick,
                     onDownloadChapter = { chapter -> viewModel.downloadChapter(chapter) },
@@ -274,6 +298,11 @@ fun NovelDetailScreen(
                     },
                     onShowModelDownload = { showModelDownloadDialog = true },
                     currentReadingChapterId = currentReadingChapterId,
+                    estimatedTimeToFinish = estimatedTimeToFinish,
+                    m4bBuildState = m4bBuildState,
+                    onGenerateM4B = { viewModel.generateM4BAudiobook() },
+                    onCancelM4B = { viewModel.cancelM4BBuild() },
+                    onResetM4B = { viewModel.resetM4BState() },
                     modifier = Modifier.padding(paddingValues)
                 )
             }
@@ -305,6 +334,12 @@ private fun NovelDetailContent(
     exportState: com.abhinavxt.novelreader.data.tts.AudioExporter.ExportState,
     bookmarks: List<BookmarkEntity>,
     bookmarkCount: Int,
+    highlights: List<com.abhinavxt.novelreader.data.database.HighlightEntity> = emptyList(),
+    highlightCount: Int = 0,
+    newChapterCount: Int = 0,
+    onMarkUpdateSeen: () -> Unit = {},
+    onDeleteHighlight: (Long) -> Unit = {},
+    onUpdateHighlightNote: (Long, String?) -> Unit = { _, _ -> },
     onToggleLibrary: () -> Unit,
     onChapterClick: (chapterId: String, chapterUrl: String) -> Unit,
     onDownloadChapter: (Chapter) -> Unit,
@@ -322,6 +357,11 @@ private fun NovelDetailContent(
     onBookmarkClick: (BookmarkEntity) -> Unit,
     onShowModelDownload: () -> Unit,
     currentReadingChapterId: String? = null,
+    estimatedTimeToFinish: String? = null,
+    m4bBuildState: M4BAudiobookBuilder.BuildState = M4BAudiobookBuilder.BuildState.Idle,
+    onGenerateM4B: () -> Unit = {},
+    onCancelM4B: () -> Unit = {},
+    onResetM4B: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -385,6 +425,7 @@ private fun NovelDetailContent(
                 isInLibrary = isInLibrary,
                 isLocalNovel = isLocalNovel,
                 downloadState = downloadState,
+                estimatedTimeToFinish = estimatedTimeToFinish,
                 onToggleLibrary = onToggleLibrary,
                 onStartReading = {
                     novel.chapters.firstOrNull()?.let { chapter ->
@@ -393,6 +434,52 @@ private fun NovelDetailContent(
                 },
                 onDownloadAll = onDownloadAll
             )
+        }
+
+        // ── NEW: Update changelog banner ────────────────────────
+        // Shows when UpdateCheckerWorker found new chapters since
+        // the user last viewed this novel. Auto-dismisses after 5 seconds.
+        if (newChapterCount > 0) {
+            item {
+                LaunchedEffect(Unit) {
+                    kotlinx.coroutines.delay(5000)
+                    onMarkUpdateSeen()
+                }
+
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "$newChapterCount new chapter${if (newChapterCount > 1) "s" else ""} available!",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = "Since you last checked",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         item {
@@ -563,6 +650,90 @@ private fun NovelDetailContent(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+
+                // M4B Audiobook generation — appears when all chapters are exported
+                val allChaptersExported = audioExportedChapters.size == novel.chapters.size
+                        && novel.chapters.isNotEmpty()
+                if (allChaptersExported) {
+                    item {
+                        OutlinedButton(
+                            onClick = {
+                                when (m4bBuildState) {
+                                    is M4BAudiobookBuilder.BuildState.Building -> onCancelM4B()
+                                    is M4BAudiobookBuilder.BuildState.Complete -> onResetM4B()
+                                    is M4BAudiobookBuilder.BuildState.Error -> {
+                                        onResetM4B()
+                                        onGenerateM4B()
+                                    }
+                                    else -> onGenerateM4B()
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.GraphicEq,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            when (m4bBuildState) {
+                                is M4BAudiobookBuilder.BuildState.Idle ->
+                                    Text("Generate M4B Audiobook")
+                                is M4BAudiobookBuilder.BuildState.Building -> {
+                                    val s = m4bBuildState as M4BAudiobookBuilder.BuildState.Building
+                                    Text("${s.phase} ${s.currentChapter}/${s.totalChapters} — Tap to Cancel")
+                                }
+                                is M4BAudiobookBuilder.BuildState.Complete ->
+                                    Text("Audiobook ready! Tap to reset")
+                                is M4BAudiobookBuilder.BuildState.Error -> {
+                                    val s = m4bBuildState as M4BAudiobookBuilder.BuildState.Error
+                                    Text("Error — Tap to retry")
+                                }
+                            }
+                        }
+
+                        // Progress indicator during build
+                        if (m4bBuildState is M4BAudiobookBuilder.BuildState.Building) {
+                            val buildState = m4bBuildState as M4BAudiobookBuilder.BuildState.Building
+                            LinearProgressIndicator(
+                                progress = { buildState.progress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp)
+                            )
+                            Text(
+                                text = buildState.phase,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        // Show file path on completion
+                        if (m4bBuildState is M4BAudiobookBuilder.BuildState.Complete) {
+                            val completeState = m4bBuildState as M4BAudiobookBuilder.BuildState.Complete
+                            Text(
+                                text = "Saved: ${completeState.filePath}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        // Show error message
+                        if (m4bBuildState is M4BAudiobookBuilder.BuildState.Error) {
+                            val errorState = m4bBuildState as M4BAudiobookBuilder.BuildState.Error
+                            Text(
+                                text = errorState.message,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                            )
                         }
                     }
                 }
@@ -765,7 +936,7 @@ private fun ChapterSearchBar(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        placeholder = { Text("Search chapters or enter number...") },
+        placeholder = { Text("Search chapters or enter number") },
         leadingIcon = {
             Icon(
                 imageVector = Icons.Default.Search,
@@ -796,11 +967,12 @@ private fun NovelHeader(
     isInLibrary: Boolean,
     isLocalNovel: Boolean,
     downloadState: NovelDownloadState?,
+    estimatedTimeToFinish: String? = null,
     onToggleLibrary: () -> Unit,
     onStartReading: () -> Unit,
     onDownloadAll: () -> Unit
 ) {
-    // Handle both URL and local file path for cover
+    // Resolve cover URL vs local file path
     val imageModel = remember(novel.coverUrl) {
         when {
             novel.coverUrl == null -> null
@@ -809,91 +981,189 @@ private fun NovelHeader(
         }
     }
 
-    Row(
+    android.util.Log.d("NovelDetail", "NovelHeader: title=${novel.title}, coverUrl=${novel.coverUrl}, imageModel=$imageModel")
+
+    val surfaceColor = MaterialTheme.colorScheme.surface
+
+    // ── Cinematic header: blurred backdrop + gradient scrim + cover ──
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp)
+            .heightIn(min = 280.dp)
     ) {
-        // Cover image
+        // Layer 1: Blurred cover as atmospheric backdrop
         if (imageModel != null) {
+            val referer = if (novel.coverUrl != null && !novel.coverUrl.startsWith("/")) {
+                try {
+                    val uri = android.net.Uri.parse(novel.coverUrl)
+                    "${uri.scheme}://${uri.host}"
+                } catch (_: Exception) { null }
+            } else null
+
+            android.util.Log.d("NovelDetail", "Backdrop: coverUrl=${novel.coverUrl}, referer=$referer, imageModel=$imageModel")
+
+            val backdropRequest = ImageRequest.Builder(LocalContext.current)
+                .data(imageModel)
+                .crossfade(400)
+                .listener(
+                    onStart = { android.util.Log.d("NovelDetail", "Backdrop Coil START: ${novel.coverUrl}") },
+                    onSuccess = { _, _ -> android.util.Log.d("NovelDetail", "Backdrop Coil SUCCESS: ${novel.coverUrl}") },
+                    onError = { _, result -> android.util.Log.e("NovelDetail", "Backdrop Coil ERROR: ${novel.coverUrl} — ${result.throwable}") }
+                )
+            if (referer != null) {
+                backdropRequest.addHeader("Referer", referer)
+            }
             AsyncImage(
-                model = imageModel,
-                contentDescription = "Cover of ${novel.title}",
-                modifier = Modifier.size(120.dp, 160.dp),
-                contentScale = ContentScale.Crop
+                model = backdropRequest.build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                alpha = 0.35f,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(260.dp)
+                    .blur(25.dp)
             )
         } else {
-            Surface(
-                modifier = Modifier.size(120.dp, 160.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = MaterialTheme.shapes.medium
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.Book,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.outline
+            // Gradient fallback when no cover exists
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(260.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                                surfaceColor
+                            )
+                        )
                     )
-                }
-            }
+            )
         }
 
-        Spacer(modifier = Modifier.width(16.dp))
+        // Layer 2: Gradient scrim — fades backdrop into surface color
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(260.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            surfaceColor.copy(alpha = 0.6f),
+                            surfaceColor
+                        ),
+                        startY = 0f,
+                        endY = Float.POSITIVE_INFINITY
+                    )
+                )
+        )
 
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = novel.title,
-                style = MaterialTheme.typography.titleLarge
-            )
+        // Layer 3: Actual content — cover + info overlaid on backdrop
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 60.dp, start = 16.dp, end = 16.dp, bottom = 16.dp)
+        ) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                // Cover image with rounded corners and shadow
+                NovelCover(
+                    coverUrl = novel.coverUrl,
+                    width = 110.dp,
+                    height = 160.dp
+                )
 
-            Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.width(16.dp))
 
-            Text(
-                text = novel.author,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.outline
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Status badge row
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (isLocalNovel) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        shape = MaterialTheme.shapes.small
-                    ) {
-                        Text(
-                            text = "Local",
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    }
-                }
-
-                Surface(
-                    color = if (novel.status.equals("Completed", ignoreCase = true))
-                        MaterialTheme.colorScheme.primaryContainer
-                    else
-                        MaterialTheme.colorScheme.secondaryContainer,
-                    shape = MaterialTheme.shapes.small
+                // Title, author, status badges
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(top = 24.dp)
                 ) {
                     Text(
-                        text = novel.status,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        text = novel.title,
+                        style = MaterialTheme.typography.titleLarge,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
                     )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = novel.author,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Status badges
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isLocalNovel) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "Local",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+
+                        Surface(
+                            color = if (novel.status.equals("Completed", ignoreCase = true))
+                                MaterialTheme.colorScheme.primaryContainer
+                            else
+                                MaterialTheme.colorScheme.secondaryContainer,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = novel.status,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+
+                        // Chapter count badge
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "${novel.chapters.size} ch",
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        // Reading time estimate badge — shows "~12 hrs" based on user WPM
+                        if (estimatedTimeToFinish != null) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = estimatedTimeToFinish,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Library and Read buttons
+            // ── Action buttons ──────────────────────────────────
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -919,13 +1189,14 @@ private fun NovelHeader(
                 Button(
                     onClick = onStartReading,
                     enabled = novel.chapters.isNotEmpty(),
-                    modifier = if (isLocalNovel || !AppConfig.ONLINE_SOURCES_ENABLED) Modifier.fillMaxWidth() else Modifier.weight(1f)
+                    modifier = if (isLocalNovel || !AppConfig.ONLINE_SOURCES_ENABLED)
+                        Modifier.fillMaxWidth() else Modifier.weight(1f)
                 ) {
                     Text("Read")
                 }
             }
 
-            // Download button - only for online novels when sources enabled
+            // Download button — only for online novels
             if (!isLocalNovel && AppConfig.ONLINE_SOURCES_ENABLED) {
                 Spacer(modifier = Modifier.height(8.dp))
 

@@ -6,11 +6,9 @@ import com.abhinavxt.novelreader.data.model.NovelPreview
 import com.abhinavxt.novelreader.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
-import java.util.concurrent.TimeUnit
 
 /**
  * NovelFull.net — uses the "AllNovel" HTML structure from QuickNovel.
@@ -27,11 +25,7 @@ class NovelFullNetSource : Source {
     private val mobileUserAgent =
         "Mozilla/5.0 (Linux; Android 13; SM-A205U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Mobile Safari/537.36"
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .build()
+    private val client = SourceManager.sharedClient
 
     private suspend fun fetchDocument(url: String): Document? {
         return withContext(Dispatchers.IO) {

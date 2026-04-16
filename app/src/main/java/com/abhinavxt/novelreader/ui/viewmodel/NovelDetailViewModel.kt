@@ -5,12 +5,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.abhinavxt.novelreader.AppConfig
+import com.abhinavxt.novelreader.NovelReaderApplication
 import com.abhinavxt.novelreader.data.NovelRepository
+import com.abhinavxt.novelreader.data.ReadingStatsTracker
 import com.abhinavxt.novelreader.data.TTSManager
 import com.abhinavxt.novelreader.data.database.BookmarkEntity
 import com.abhinavxt.novelreader.data.model.Chapter
 import com.abhinavxt.novelreader.data.model.Novel
 import com.abhinavxt.novelreader.data.tts.AudioExporter
+import com.abhinavxt.novelreader.data.tts.M4BAudiobookBuilder
 import com.abhinavxt.novelreader.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,11 +39,23 @@ class NovelDetailViewModel(
     private val novelUrl: String,
     private val repository: NovelRepository,
     private val ttsManager: TTSManager,
-    context: Context
+    context: Context,
+    private val statsTracker: ReadingStatsTracker? = null
 ) : ViewModel() {
+
+    // Store application context for M4B builder access
+    private val appContext = context.applicationContext
 
     private val _uiState = MutableStateFlow<NovelDetailUiState>(NovelDetailUiState.Loading)
     val uiState: StateFlow<NovelDetailUiState> = _uiState.asStateFlow()
+
+    /**
+     * Estimated total hours to finish the novel, based on user's WPM and
+     * remaining unread chapters. Null = not yet calculated or not enough data.
+     * Format: "~12 hrs" or "~45 min" for shorter novels.
+     */
+    private val _estimatedTimeToFinish = MutableStateFlow<String?>(null)
+    val estimatedTimeToFinish: StateFlow<String?> = _estimatedTimeToFinish.asStateFlow()
 
     // Track chapters currently being downloaded
     private val _downloadingChapters = MutableStateFlow<Set<String>>(emptySet())
@@ -51,7 +66,7 @@ class NovelDetailViewModel(
 
     // ============ AUDIO EXPORT STATE ============
 
-    val audioExporter: AudioExporter = AudioExporter(context, ttsManager)
+    val audioExporter: AudioExporter = AudioExporter(appContext, ttsManager)
     val exportState: StateFlow<AudioExporter.ExportState> = audioExporter.exportState
     val exportingChapters: StateFlow<Set<String>> = audioExporter.exportingChapters
 
@@ -69,16 +84,40 @@ class NovelDetailViewModel(
     private val _bookmarkCount = MutableStateFlow(0)
     val bookmarkCount: StateFlow<Int> = _bookmarkCount.asStateFlow()
 
+    // ============ HIGHLIGHT STATE ============
+
+    // All highlights for this novel — for an "All Highlights" tab/screen
+    private val _highlights = MutableStateFlow<List<com.abhinavxt.novelreader.data.database.HighlightEntity>>(emptyList())
+    val highlights: StateFlow<List<com.abhinavxt.novelreader.data.database.HighlightEntity>> = _highlights.asStateFlow()
+
+    // Highlight count for the tab badge
+    private val _highlightCount = MutableStateFlow(0)
+    val highlightCount: StateFlow<Int> = _highlightCount.asStateFlow()
+
     // ============ READING PROGRESS ============
 
     // Current chapter the user is reading (for auto-scroll)
     private val _currentReadingChapterId = MutableStateFlow<String?>(null)
     val currentReadingChapterId: StateFlow<String?> = _currentReadingChapterId.asStateFlow()
 
+    // ============ UPDATE CHANGELOG ============
+
+    /**
+     * Number of new chapters since the user last viewed the detail screen.
+     * Driven by the delta between NovelEntity.totalChapters and
+     * NovelEntity.previousTotalChapters. The UpdateCheckerWorker bumps
+     * totalChapters when it finds new chapters; previousTotalChapters
+     * stays at the old value until markUpdateSeen() is called.
+     */
+    private val _newChapterCount = MutableStateFlow(0)
+    val newChapterCount: StateFlow<Int> = _newChapterCount.asStateFlow()
+
     init {
         loadNovel()
         loadBookmarks()
+        loadHighlights()
         loadReadingProgress()
+        loadNewChapterCount()
         observeVoiceChanges()
     }
 
@@ -114,6 +153,7 @@ class NovelDetailViewModel(
                 isInLibrary = true,
                 isLocalNovel = true
             )
+            calculateEstimatedTime(novelWithChapters)
             refreshAudioExportStatus()
         } else {
             _uiState.value = NovelDetailUiState.Error("Local novel not found")
@@ -137,6 +177,7 @@ class NovelDetailViewModel(
                 isInLibrary = isInLibrary,
                 isLocalNovel = false
             )
+            calculateEstimatedTime(novelWithDownloadStatus)
             refreshAudioExportStatus()
         } else {
             _uiState.value = NovelDetailUiState.Error("Failed to load novel")
@@ -260,6 +301,40 @@ class NovelDetailViewModel(
         }
     }
 
+    // ============ UPDATE CHANGELOG METHODS ============
+
+    /**
+     * Check how many new chapters have appeared since the user last
+     * viewed this novel's detail screen. Uses the delta between
+     * totalChapters and previousTotalChapters in NovelEntity.
+     */
+    private fun loadNewChapterCount() {
+        viewModelScope.launch {
+            try {
+                _newChapterCount.value = repository.getNewChapterCount(novelId)
+            } catch (e: Exception) {
+                Logger.w("NovelDetailVM", "Failed to load new chapter count: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Mark the novel's update as "seen" — resets the badge by setting
+     * previousTotalChapters = totalChapters in the database.
+     * Called automatically after the user has viewed the detail screen
+     * for a few seconds, or manually when they tap the badge.
+     */
+    fun markUpdateSeen() {
+        viewModelScope.launch {
+            try {
+                repository.markUpdateSeen(novelId)
+                _newChapterCount.value = 0
+            } catch (e: Exception) {
+                Logger.w("NovelDetailVM", "Failed to mark update seen: ${e.message}")
+            }
+        }
+    }
+
     // ============ BOOKMARK METHODS ============
 
     /**
@@ -288,6 +363,47 @@ class NovelDetailViewModel(
                 .collect {
                     refreshAudioExportStatus()
                 }
+        }
+    }
+
+    /**
+     * Observe highlights for this novel as a Flow.
+     * Powers the "All Highlights" screen accessible from the detail screen.
+     */
+    private fun loadHighlights() {
+        viewModelScope.launch {
+            repository.getHighlightsForNovel(novelId).collect { highlightList ->
+                _highlights.value = highlightList
+                _highlightCount.value = highlightList.size
+            }
+        }
+    }
+
+    /**
+     * Delete a single highlight. The Flow collection in loadHighlights()
+     * will automatically update the UI.
+     */
+    fun deleteHighlight(highlightId: Long) {
+        viewModelScope.launch {
+            try {
+                repository.deleteHighlight(highlightId)
+                Logger.d("Highlight $highlightId deleted")
+            } catch (e: Exception) {
+                Logger.e("Failed to delete highlight", e)
+            }
+        }
+    }
+
+    /**
+     * Update the note/annotation on a highlight.
+     */
+    fun updateHighlightNote(highlightId: Long, note: String?) {
+        viewModelScope.launch {
+            try {
+                repository.updateHighlightNote(highlightId, note)
+            } catch (e: Exception) {
+                Logger.e("Failed to update highlight note", e)
+            }
         }
     }
 
@@ -493,18 +609,93 @@ class NovelDetailViewModel(
         audioExporter.cancel()
     }
 
+    // ── Reading time estimate ───────────────────────────────────
+
+    /**
+     * Calculate estimated time to finish the novel based on:
+     *  - User's WPM from ReadingStatsTracker (defaults to 250 if no data)
+     *  - Current reading progress (which chapter they're on)
+     *  - Average web novel chapter length (~2200 words)
+     *
+     * Result is formatted as "~45 min" or "~12 hrs".
+     */
+    private fun calculateEstimatedTime(novel: Novel) {
+        viewModelScope.launch {
+            try {
+                val wpm = statsTracker?.getUserWPM() ?: ReadingStatsTracker.DEFAULT_WPM
+                val progress = repository.getReadingProgress(novelId)
+                val currentChapter = progress?.currentChapterNumber ?: 0
+                val remainingChapters = (novel.chapters.size - currentChapter).coerceAtLeast(0)
+
+                if (remainingChapters == 0) {
+                    _estimatedTimeToFinish.value = null
+                    return@launch
+                }
+
+                // Average web novel chapter ≈ 2200 words (Royal Road/Wuxia average)
+                val avgWordsPerChapter = 2200
+                val estimatedWords = remainingChapters * avgWordsPerChapter
+                val estimatedMinutes = (estimatedWords.toDouble() / wpm).toInt()
+
+                _estimatedTimeToFinish.value = when {
+                    estimatedMinutes < 1 -> null
+                    estimatedMinutes < 60 -> "~${estimatedMinutes} min"
+                    else -> {
+                        val hours = estimatedMinutes / 60
+                        val mins = estimatedMinutes % 60
+                        if (mins > 15) "~${hours}.${(mins * 10 / 60)} hrs"
+                        else "~$hours hrs"
+                    }
+                }
+            } catch (e: Exception) {
+                Logger.e("NovelDetailVM", "Failed to estimate reading time", e)
+                _estimatedTimeToFinish.value = null
+            }
+        }
+    }
+
+    // ── M4B Audiobook generation ───────────────────────────────
+
+    /** Observe M4B build progress from the UI */
+    val m4bBuildState: StateFlow<M4BAudiobookBuilder.BuildState>
+        get() = (appContext as NovelReaderApplication).m4bBuilder.state
+
+    /**
+     * Generate a chaptered M4B audiobook from exported WAV files.
+     * Requires all chapters to be exported as WAV first.
+     */
+    fun generateM4BAudiobook() {
+        val currentState = _uiState.value
+        if (currentState !is NovelDetailUiState.Success) return
+
+        val voiceName = ttsManager.currentVoice.value?.displayName
+        (appContext as NovelReaderApplication).m4bBuilder.launch(
+            novelTitle = currentState.novel.title,
+            voiceFilter = voiceName
+        )
+    }
+
+    fun cancelM4BBuild() {
+        (appContext as NovelReaderApplication).m4bBuilder.cancel()
+    }
+
+    fun resetM4BState() {
+        (appContext as NovelReaderApplication).m4bBuilder.reset()
+    }
+
     companion object {
         fun provideFactory(
             novelId: String,
             novelUrl: String,
             repository: NovelRepository,
             ttsManager: TTSManager,
-            context: Context
+            context: Context,
+            statsTracker: ReadingStatsTracker? = null
         ): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return NovelDetailViewModel(novelId, novelUrl, repository, ttsManager, context) as T
+                    return NovelDetailViewModel(novelId, novelUrl, repository, ttsManager, context, statsTracker) as T
                 }
             }
         }

@@ -83,6 +83,7 @@ fun SettingsScreen(
     themePreferences: ThemePreferences,
     onNavigateToPronunciation: () -> Unit = {},
     onNavigateToReadingStats: () -> Unit = {},
+    onNavigateToChangelog: () -> Unit = {},
     viewModel: SettingsViewModel = viewModel(
         factory = SettingsViewModel.Factory(backupManager, themePreferences)
     )
@@ -664,72 +665,52 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Novel Reader v1.6.0",
+                text = "Novel Reader v1.7.0",
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium
             )
             Text(
-                text = "Read web novels offline with multi-engine neural TTS, audio export, and bookmarks.",
+                text = "Read web novels offline with neural TTS, highlights, audio export, and bookmarks.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            // Changelog navigation card — tapping opens the full version history screen
             Card(
+                onClick = onNavigateToChangelog,
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                 )
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = "What's New in v1.6.0",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "• Pronunciation dictionary for TTS name corrections\n" +
-                                "• Reading stats dashboard with streaks and daily charts\n" +
-                                "• Chapter update checker with auto-download\n" +
-                                "• Offline filter and download/export range picker\n" +
-                                "• Library sorting (last read, title, chapters, added)\n" +
-                                "• Update badges on library cards\n" +
-                                "• Bookmarks and pronunciations included in backup\n" +
-                                "• 6 new reader themes (Nord, Mocha, Dracula, AMOLED, Gruvbox, Catppuccin)\n" +
-                                "• Primordial Translation source added",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Changelog",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Version history and release notes",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Text(
-                text = "Features",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Medium
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "• 7 novel sources + EPUB import\n" +
-                        "• On-device neural TTS (Piper, Kokoro, KittenTTS)\n" +
-                        "• Google TTS with 67+ voices across 24 languages\n" +
-                        "• Pronunciation dictionary for character names\n" +
-                        "• Per-chapter audio export with range selection\n" +
-                        "• Built-in audio player with speed control\n" +
-                        "• Reading stats, streaks, and daily tracking\n" +
-                        "• Bookmarks with notes and passage snippets\n" +
-                        "• 14 reader themes including Nord, Mocha, Dracula\n" +
-                        "• Scheduled chapter update checker\n" +
-                        "• Dictionary lookup (6 languages)\n" +
-                        "• Backup and restore with full data",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 
@@ -936,6 +917,9 @@ private fun RestoreConfirmDialog(
                         }
                         if (info.pronunciationCount > 0) {
                             InfoRow("Pronunciations", "${info.pronunciationCount}")
+                        }
+                        if (info.readingStatsCount > 0) {
+                            InfoRow("Reading Sessions", "${info.readingStatsCount}")
                         }
                         InfoRow("Created", info.createdAt)
                         InfoRow("Size", info.sizeFormatted)

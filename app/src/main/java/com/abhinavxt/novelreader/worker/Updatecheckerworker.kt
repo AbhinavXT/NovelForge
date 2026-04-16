@@ -3,7 +3,9 @@ package com.abhinavxt.novelreader.worker
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -42,6 +44,8 @@ class UpdateCheckerWorker(
         try {
             Logger.d(TAG, "Starting update check...")
 
+            // #21: Access DB through Application singleton instead of creating new instance
+            val app = context.applicationContext as com.abhinavxt.novelreader.NovelReaderApplication
             val db = AppDatabase.getDatabase(context)
             val novelDao = db.novelDao()
             val chapterDao = db.chapterDao()
@@ -50,77 +54,88 @@ class UpdateCheckerWorker(
             val autoDownload = prefs.getBoolean(PREF_AUTO_DOWNLOAD, false)
 
             val novels = novelDao.getAllNovelsOnce()
-            val updatedNovels = mutableListOf<Triple<String, String, Int>>() // id, title, new chapter count
+                .filter { !it.id.startsWith("local_") }
+            val updatedNovels = mutableListOf<Triple<String, String, Int>>()
 
-            for (novel in novels) {
-                // Skip local/EPUB novels
-                if (novel.id.startsWith("local_")) continue
+            // #23: Group by source to throttle per-host
+            val novelsBySource = novels.groupBy { novel ->
+                novel.id.substringBefore("_")
+            }
 
-                val source = SourceManager.getSourceFromNovelId(novel.id) ?: continue
+            for ((sourcePrefix, sourceNovels) in novelsBySource) {
+                var requestCount = 0
 
-                try {
-                    // Build the novel URL from the ID
-                    val novelUrl = buildNovelUrl(novel.id) ?: continue
+                for (novel in sourceNovels) {
+                    val source = SourceManager.getSourceFromNovelId(novel.id) ?: continue
 
-                    val freshNovel = source.getNovelDetails(novelUrl) ?: continue
-                    val existingMax = chapterDao.getMaxChapterNumber(novel.id) ?: 0
+                    try {
+                        // Per-source throttle: 2 seconds between requests to same host
+                        if (requestCount > 0) {
+                            kotlinx.coroutines.delay(2000)
+                        }
+                        requestCount++
 
-                    val newChapters = freshNovel.chapters.filter { it.number > existingMax }
-                    if (newChapters.isEmpty()) continue
+                        val novelUrl = SourceManager.constructNovelUrl(novel.id)
+                        if (novelUrl.isBlank() || novelUrl.startsWith("local://")) continue
 
-                    // Insert new chapter entries into DB
-                    val newEntities = newChapters.map { ch ->
-                        ChapterEntity(
-                            id = ch.id,
-                            novelId = novel.id,
-                            number = ch.number,
-                            title = ch.title,
-                            url = ch.url,
-                            isDownloaded = false
+                        val freshNovel = source.getNovelDetails(novelUrl) ?: continue
+                        val existingMax = chapterDao.getMaxChapterNumber(novel.id) ?: 0
+
+                        val newChapters = freshNovel.chapters.filter { it.number > existingMax }
+                        if (newChapters.isEmpty()) continue
+
+                        val newEntities = newChapters.map { ch ->
+                            ChapterEntity(
+                                id = ch.id,
+                                novelId = novel.id,
+                                number = ch.number,
+                                title = ch.title,
+                                url = ch.url,
+                                isDownloaded = false
+                            )
+                        }
+                        chapterDao.insertChapters(newEntities)
+
+                        novelDao.updateNovel(
+                            novel.copy(
+                                totalChapters = freshNovel.chapters.size,
+                                lastUpdatedAt = System.currentTimeMillis()
+                            )
                         )
-                    }
-                    chapterDao.insertChapters(newEntities)
 
-                    // Update novel's totalChapters and lastUpdatedAt
-                    novelDao.updateNovel(
-                        novel.copy(
-                            totalChapters = freshNovel.chapters.size,
-                            lastUpdatedAt = System.currentTimeMillis()
-                        )
-                    )
+                        updatedNovels.add(Triple(novel.id, novel.title, newChapters.size))
+                        Logger.d(TAG, "${novel.title}: ${newChapters.size} new chapters")
 
-                    updatedNovels.add(Triple(novel.id, novel.title, newChapters.size))
-                    Logger.d(TAG, "${novel.title}: ${newChapters.size} new chapters")
-
-                    // Auto-download if enabled
-                    if (autoDownload) {
-                        for (ch in newChapters) {
-                            try {
-                                val content = source.getChapterContent(ch.url)
-                                if (content != null) {
-                                    chapterDao.markChapterDownloaded(
-                                        chapterId = ch.id,
-                                        content = content,
-                                        downloadedAt = System.currentTimeMillis()
-                                    )
+                        // Auto-download if enabled
+                        if (autoDownload) {
+                            for (ch in newChapters) {
+                                try {
+                                    kotlinx.coroutines.delay(2000) // Throttle downloads too
+                                    val content = source.getChapterContent(ch.url)
+                                    if (content != null) {
+                                        chapterDao.markChapterDownloaded(
+                                            chapterId = ch.id,
+                                            content = content,
+                                            downloadedAt = System.currentTimeMillis()
+                                        )
+                                    }
+                                } catch (e: Exception) {
+                                    Logger.e(TAG, "Auto-download failed for ${ch.title}", e)
                                 }
-                                // Small delay to be polite to servers
-                                kotlinx.coroutines.delay(1000)
-                            } catch (e: Exception) {
-                                Logger.e(TAG, "Auto-download failed for ${ch.title}", e)
                             }
                         }
+                    } catch (e: Exception) {
+                        Logger.e(TAG, "Failed checking ${novel.title}", e)
                     }
-                } catch (e: Exception) {
-                    Logger.e(TAG, "Failed checking ${novel.title}", e)
                 }
             }
 
             // Send notification if there are updates
             if (updatedNovels.isNotEmpty()) {
                 sendUpdateNotification(
-                    updatedNovels.map { it.second to it.third },
-                    autoDownload
+                    updates = updatedNovels.map { it.second to it.third },
+                    novelIds = updatedNovels.map { it.first },
+                    autoDownloaded = autoDownload
                 )
 
                 // Store updated novel IDs for badge display in library
@@ -138,30 +153,9 @@ class UpdateCheckerWorker(
         }
     }
 
-    private fun buildNovelUrl(novelId: String): String? {
-        return when {
-            novelId.startsWith("rr_") ->
-                "https://www.royalroad.com/fiction/${novelId.removePrefix("rr_")}"
-            novelId.startsWith("rnf_") ->
-                "https://readnovelfull.com/${novelId.removePrefix("rnf_")}.html"
-            novelId.startsWith("fwn_") ->
-                "https://freewebnovel.com/novel/${novelId.removePrefix("fwn_")}"
-            novelId.startsWith("lr_") ->
-                "https://libread.com/libread/${novelId.removePrefix("lr_")}"
-            novelId.startsWith("nfn_") ->
-                "https://novelfull.net/${novelId.removePrefix("nfn_")}.html"
-            novelId.startsWith("pr_") -> {
-                val slug = novelId.removePrefix("pr_").replace("~", "/")
-                "https://pawread.com/$slug"
-            }
-            novelId.startsWith("pt_") ->
-                "https://primodialtranslation.com/series/${novelId.removePrefix("pt_")}/"
-            else -> null
-        }
-    }
-
     private fun sendUpdateNotification(
         updates: List<Pair<String, Int>>,
+        novelIds: List<String>,
         autoDownloaded: Boolean
     ) {
         createNotificationChannel()
@@ -187,12 +181,26 @@ class UpdateCheckerWorker(
             updates.joinToString("\n") { "${it.first} — ${it.second} new" }
         }
 
+        // Deep-link: tapping the notification opens the novel detail screen
+        // Single novel → opens that novel. Multiple → opens library.
+        val intent = Intent(context, com.abhinavxt.novelreader.MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            if (novelIds.size == 1) {
+                putExtra(EXTRA_NAVIGATE_NOVEL, novelIds[0])
+            }
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .build()
 
@@ -224,6 +232,7 @@ class UpdateCheckerWorker(
         const val PREF_INTERVAL_HOURS = "update_checker_interval"
         const val PREF_AUTO_DOWNLOAD = "update_checker_auto_download"
         const val PREF_UPDATED_NOVEL_IDS = "updated_novel_ids"
+        const val EXTRA_NAVIGATE_NOVEL = "navigate_to_novel"
 
         /**
          * Schedule or cancel the periodic update checker.

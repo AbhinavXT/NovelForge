@@ -20,7 +20,12 @@ data class StatsUiState(
     val todayWords: Int = 0,
     val todayTimeMs: Long = 0,
     val todayChapters: Int = 0,
-    val dailyWordCounts: List<Pair<String, Int>> = emptyList()
+    val dailyWordCounts: List<Pair<String, Int>> = emptyList(),
+
+    // ── New fields ──────────────────────────────────────────────
+    val userWPM: Int = 250,             // User's calculated words-per-minute
+    val avgChapterTimeMs: Long = 0,     // Average time spent per chapter
+    val booksEquivalent: Float = 0f     // Total words ÷ 80,000 (avg novel length)
 )
 
 class ReadingStatsViewModel(
@@ -42,6 +47,15 @@ class ReadingStatsViewModel(
             val overall = tracker.getOverallStats()
             val today = tracker.getStatsForToday()
             val daily = tracker.getDailyWordCounts(14)
+            val wpm = tracker.getUserWPM()
+
+            // Average time per chapter — avoid divide by zero
+            val avgChapterMs = if (overall.totalChapters > 0) {
+                overall.totalReadingTimeMs / overall.totalChapters
+            } else 0L
+
+            // Books equivalent: average novel is ~80,000 words
+            val booksEq = overall.totalWordsRead / 80_000f
 
             _uiState.value = StatsUiState(
                 isLoading = false,
@@ -53,7 +67,10 @@ class ReadingStatsViewModel(
                 todayWords = today.wordsRead,
                 todayTimeMs = today.readingTimeMs,
                 todayChapters = today.chaptersCompleted,
-                dailyWordCounts = daily
+                dailyWordCounts = daily,
+                userWPM = wpm,
+                avgChapterTimeMs = avgChapterMs,
+                booksEquivalent = booksEq
             )
         }
     }
