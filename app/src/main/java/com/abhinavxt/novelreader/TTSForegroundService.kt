@@ -16,6 +16,7 @@ import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import com.abhinavxt.novelreader.MainActivity
 import com.abhinavxt.novelreader.R
+import com.abhinavxt.novelreader.data.tts.AudioFocusHelper
 import com.abhinavxt.novelreader.util.Logger
 
 /**
@@ -25,6 +26,7 @@ import com.abhinavxt.novelreader.util.Logger
  *  - Novel title, chapter name, sentence progress
  *  - Previous / Pause / Next media controls
  *  - Hardware media button support (earphones, Bluetooth, lock screen)
+ *  - Audio focus coordination with calls, assistant, other media
  */
 class TTSForegroundService : Service() {
 
@@ -123,6 +125,12 @@ class TTSForegroundService : Service() {
     private val binder = LocalBinder()
     private var mediaSession: MediaSession? = null
 
+    // ── NEW: audio focus coordinator ────────────────────────────
+    // Lazy-initialized because TTSManager comes from the Application,
+    // which isn't available in the constructor. Initialized on first
+    // use from onStartCommand / onCreate.
+    private var audioFocusHelper: AudioFocusHelper? = null
+
     inner class LocalBinder : Binder() {
         fun getService(): TTSForegroundService = this@TTSForegroundService
     }
@@ -131,6 +139,21 @@ class TTSForegroundService : Service() {
         super.onCreate()
         createNotificationChannel()
         setupMediaSession()
+        setupAudioFocus()
+    }
+
+    /**
+     * Initialize the audio focus helper. Pulls TTSManager from the
+     * Application singleton — safe here because onCreate runs after
+     * Application.onCreate.
+     */
+    private fun setupAudioFocus() {
+        val ttsManager = getTtsManager()
+        if (ttsManager != null) {
+            audioFocusHelper = AudioFocusHelper(this, ttsManager)
+        } else {
+            Logger.w(TAG, "TTSManager not available; audio focus disabled")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -139,6 +162,8 @@ class TTSForegroundService : Service() {
         when (intent?.action) {
             ACTION_STOP -> {
                 ttsManager?.stop()
+                // User-initiated stop. Release focus entirely — we're done.
+                audioFocusHelper?.abandon()
                 updatePlaybackState(PlaybackState.STATE_STOPPED)
                 stopSelf()
                 return START_NOT_STICKY
@@ -146,11 +171,20 @@ class TTSForegroundService : Service() {
             ACTION_TOGGLE -> {
                 if (ttsManager != null) {
                     if (ttsManager.isPlaying()) {
+                        // User-initiated pause. Release focus so other apps
+                        // can have it while we're paused. If/when the user
+                        // resumes, we re-request.
                         ttsManager.pause()
+                        audioFocusHelper?.abandon()
                         updatePlaybackState(PlaybackState.STATE_PAUSED)
                         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                         nm.notify(NOTIFICATION_ID, buildNotification(this, lastTitle, "Paused", false))
                     } else {
+                        // User-initiated resume. Re-request focus — if we
+                        // can't get it (rare), we still proceed because
+                        // denying playback on tap would be worse UX than
+                        // playing over whatever's happening.
+                        audioFocusHelper?.request()
                         ttsManager.resume()
                         updatePlaybackState(PlaybackState.STATE_PLAYING)
                         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -174,12 +208,23 @@ class TTSForegroundService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification(this, title, "Starting...", true))
         updatePlaybackState(PlaybackState.STATE_PLAYING)
 
+        // Initial focus request on playback start. If TTSManager wasn't
+        // available when setupAudioFocus ran, try again now.
+        if (audioFocusHelper == null) setupAudioFocus()
+        audioFocusHelper?.request()
+
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onDestroy() {
+        // Release audio focus — if service dies while we hold focus,
+        // the system thinks NovelForge is still a contender and won't
+        // give full focus to the next app cleanly.
+        audioFocusHelper?.abandon()
+        audioFocusHelper = null
+
         mediaSession?.apply {
             isActive = false
             release()
@@ -200,6 +245,9 @@ class TTSForegroundService : Service() {
             setCallback(object : MediaSession.Callback() {
                 override fun onPlay() {
                     Logger.d(TAG, "MediaSession: onPlay")
+                    // Media-button play is user-initiated, same flow as
+                    // the notification toggle button.
+                    audioFocusHelper?.request()
                     getTtsManager()?.resume()
                     updatePlaybackState(PlaybackState.STATE_PLAYING)
                     refreshNotification(true)
@@ -208,6 +256,7 @@ class TTSForegroundService : Service() {
                 override fun onPause() {
                     Logger.d(TAG, "MediaSession: onPause")
                     getTtsManager()?.pause()
+                    audioFocusHelper?.abandon()
                     updatePlaybackState(PlaybackState.STATE_PAUSED)
                     refreshNotification(false)
                 }
@@ -215,6 +264,7 @@ class TTSForegroundService : Service() {
                 override fun onStop() {
                     Logger.d(TAG, "MediaSession: onStop")
                     getTtsManager()?.stop()
+                    audioFocusHelper?.abandon()
                     updatePlaybackState(PlaybackState.STATE_STOPPED)
                     stopSelf()
                 }

@@ -1,6 +1,7 @@
 package com.abhinavxt.novelreader
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -20,6 +21,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.ActivityCompat
@@ -28,7 +32,6 @@ import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.abhinavxt.novelreader.AppConfig
 import com.abhinavxt.novelreader.data.BackupManager
 import com.abhinavxt.novelreader.data.ChapterPrefetcher
 import com.abhinavxt.novelreader.data.DownloadManager
@@ -37,36 +40,66 @@ import com.abhinavxt.novelreader.data.PronunciationManager
 import com.abhinavxt.novelreader.data.ReadingStatsTracker
 import com.abhinavxt.novelreader.data.TTSManager
 import com.abhinavxt.novelreader.data.ThemePreferences
+import com.abhinavxt.novelreader.data.UpdateChecker
+import com.abhinavxt.novelreader.data.source.NovelUrlResolver
 import com.abhinavxt.novelreader.ui.NavigationHost
 import com.abhinavxt.novelreader.ui.Screen
+import com.abhinavxt.novelreader.ui.components.UpdateAvailableDialog
+import com.abhinavxt.novelreader.ui.components.openUpdateUrlInBrowser
 import com.abhinavxt.novelreader.ui.theme.NovelReaderTheme
 import com.abhinavxt.novelreader.ui.viewmodel.AudioPlayerViewModel
 import com.abhinavxt.novelreader.util.Logger
+import com.abhinavxt.novelreader.util.NetworkMonitor
+import com.abhinavxt.novelreader.widget.ContinueReadingWidget
 
 class MainActivity : ComponentActivity() {
 
-    // ── Volume key navigation ───────────────────────────────────
-    // Track whether the reader screen is active so we only intercept
-    // volume keys when the user is actually reading. This is set by
-    // the Compose UI via the callback below.
+    // ── Volume key navigation state ─────────────────────────────
+    //
+    // Two separate flags because they gate different things:
+    //
+    //   isReaderScreenActive: are we on the reader route right now?
+    //     Set/cleared by the Compose route-change effect.
+    //
+    //   volumeKeyNavEnabled: has the user turned ON volume-key
+    //     scrolling in reader settings? Set by the ReaderScreen
+    //     composable whenever settings change.
+    //
+    // We intercept volume keys ONLY when BOTH are true. If the user
+    // has disabled volume-key nav, we fall through to super.onKeyDown
+    // so the system volume UI works as normal.
+    //
+    // @Volatile because these are read from the onKeyDown UI thread
+    // and written from Compose's main-thread LaunchedEffect — both
+    // are the main thread but @Volatile is the conservative, correct
+    // annotation for "written by A, read by B, no synchronization."
     @Volatile
     private var isReaderScreenActive = false
+
+    @Volatile
+    private var volumeKeyNavEnabled = false
 
     /** Called by NovelReaderApp composable when reader route changes. */
     fun setReaderActive(active: Boolean) {
         isReaderScreenActive = active
     }
 
+    /** Called by the Reader composable whenever the volume-nav setting changes. */
+    fun setVolumeKeyNavEnabled(enabled: Boolean) {
+        volumeKeyNavEnabled = enabled
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        // Only intercept volume keys when the reader screen is active.
-        // The ReaderScreen composable decides whether to act on the event
-        // based on its own volumeKeyNavigation setting — the Activity
-        // just forwards every volume key press unconditionally.
-        if (isReaderScreenActive) {
+        // Intercept volume keys ONLY when (a) we're on the reader screen
+        // AND (b) the user has enabled volume-key scrolling. Otherwise,
+        // fall through to system default (volume bar appears, volume
+        // changes). This fixes the bug where disabling the setting
+        // silently swallowed volume presses.
+        if (isReaderScreenActive && volumeKeyNavEnabled) {
             when (keyCode) {
                 KeyEvent.KEYCODE_VOLUME_UP -> {
                     (application as NovelReaderApplication).emitVolumeKey(VolumeKeyEvent.UP)
-                    return true  // Consume — prevents system volume UI from showing
+                    return true  // Consume — prevents system volume UI
                 }
                 KeyEvent.KEYCODE_VOLUME_DOWN -> {
                     (application as NovelReaderApplication).emitVolumeKey(VolumeKeyEvent.DOWN)
@@ -77,10 +110,22 @@ class MainActivity : ComponentActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        // Must also intercept KEYUP when we intercepted KEYDOWN, otherwise
+        // the system receives an unmatched KEYUP and on some OEMs plays
+        // the volume click sound or flashes the volume bar briefly.
+        if (isReaderScreenActive && volumeKeyNavEnabled) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_VOLUME_UP,
+                KeyEvent.KEYCODE_VOLUME_DOWN -> return true
+            }
+        }
+        return super.onKeyUp(keyCode, event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Request notification permission for Android 13+
         requestNotificationPermission()
 
         val app = application as NovelReaderApplication
@@ -91,9 +136,10 @@ class MainActivity : ComponentActivity() {
         val themePreferences = app.themePreferences
         val pronunciationManager = app.pronunciationManager
         val readingStatsTracker = app.readingStatsTracker
+        val updateChecker = app.updateChecker
+        val networkMonitor = app.networkMonitor
 
         setContent {
-            // Observe theme settings as Compose state
             val themeMode by themePreferences.themeMode.collectAsState()
             val colorScheme by themePreferences.colorScheme.collectAsState()
 
@@ -113,7 +159,9 @@ class MainActivity : ComponentActivity() {
                         themePreferences = themePreferences,
                         pronunciationManager = pronunciationManager,
                         readingStatsTracker = readingStatsTracker,
-                        chapterPrefetcher = app.chapterPrefetcher
+                        chapterPrefetcher = app.chapterPrefetcher,
+                        updateChecker = updateChecker,
+                        networkMonitor = networkMonitor
                     )
                 }
             }
@@ -130,7 +178,6 @@ class MainActivity : ComponentActivity() {
             ) {
                 permissions.add(Manifest.permission.POST_NOTIFICATIONS)
             }
-            // Needed to scan Music/NovelReader/ for exported audio files
             if (ContextCompat.checkSelfPermission(
                     this,
                     Manifest.permission.READ_MEDIA_AUDIO
@@ -155,6 +202,34 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    /**
+     * If the Activity was launched via ACTION_SEND with a URL in the
+     * extras, return that URL. Null for any other launch path.
+     */
+    private fun extractSharedUrl(intent: Intent?): String? {
+        if (intent?.action != Intent.ACTION_SEND) return null
+        if (intent.type != "text/plain") return null
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return null
+        return NovelUrlResolver.extractFirstUrl(text)
+    }
+
+    /**
+     * Public version callable from Compose. Reads the Activity's current
+     * intent (set at launch or updated by onNewIntent).
+     */
+    fun extractSharedUrlForNav(): String? = extractSharedUrl(intent)
+
+    /**
+     * Called by Android when a new Intent is delivered to an already-running
+     * Activity. Happens when the user shares a URL into NovelForge while
+     * the app is already in the foreground/background — and also when the
+     * continue-reading widget is tapped while the app is already open.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
 }
 
 @Composable
@@ -166,13 +241,32 @@ fun NovelReaderApp(
     themePreferences: ThemePreferences,
     pronunciationManager: PronunciationManager,
     readingStatsTracker: ReadingStatsTracker,
-    chapterPrefetcher: ChapterPrefetcher
+    chapterPrefetcher: ChapterPrefetcher,
+    updateChecker: UpdateChecker,
+    networkMonitor: NetworkMonitor
 ) {
     val navController = rememberNavController()
 
-    // Deep-link: if the app was opened from an update notification,
-    // navigate to the novel's detail screen automatically
     val context = LocalContext.current
+
+    // ── Observe reader settings to gate volume-key interception ───
+    //
+    // Without this, MainActivity's onKeyDown swallows volume keys
+    // unconditionally when on the reader screen, which breaks the
+    // system volume bar when the user has volume-key nav disabled.
+    //
+    // We pull just the boolean we need from the settings Flow and
+    // push it to the Activity. The Flow updates live, so toggling
+    // the setting in Quick Settings takes effect immediately.
+    val readerSettings by repository.getReaderSettingsFlow()
+        .collectAsState(initial = com.abhinavxt.novelreader.data.model.ReaderSettings())
+
+    LaunchedEffect(readerSettings.volumeKeyNavigation) {
+        val activity = context as? MainActivity
+        activity?.setVolumeKeyNavEnabled(readerSettings.volumeKeyNavigation)
+    }
+
+    // ── Deep-link 1: update-checker notification ────────────────
     LaunchedEffect(Unit) {
         val activity = context as? ComponentActivity
         activity?.intent?.getStringExtra(
@@ -180,10 +274,42 @@ fun NovelReaderApp(
         )?.let { novelId ->
             val url = com.abhinavxt.novelreader.data.source.SourceManager.constructNovelUrl(novelId)
             navController.navigate(Screen.Detail.createRoute(novelId, url))
-            // Clear the extra so it doesn't re-navigate on config change
             activity.intent.removeExtra(
                 com.abhinavxt.novelreader.worker.UpdateCheckerWorker.EXTRA_NAVIGATE_NOVEL
             )
+        }
+    }
+
+    // ── Deep-link 2: share-to-app URL target ────────────────────
+    LaunchedEffect(Unit) {
+        val activity = context as? MainActivity ?: return@LaunchedEffect
+        val sharedUrl = activity.extractSharedUrlForNav() ?: return@LaunchedEffect
+        navController.navigate(Screen.ImportFromUrl.createRoute(sharedUrl))
+        activity.intent?.replaceExtras(android.os.Bundle())
+        activity.intent?.action = Intent.ACTION_MAIN
+    }
+
+    // ── Deep-link 3: continue-reading widget tap ────────────────
+    LaunchedEffect(Unit) {
+        val activity = context as? ComponentActivity ?: return@LaunchedEffect
+        val intent = activity.intent ?: return@LaunchedEffect
+
+        val novelId = intent.getStringExtra(ContinueReadingWidget.EXTRA_NOVEL_ID)
+        val novelUrl = intent.getStringExtra(ContinueReadingWidget.EXTRA_NOVEL_URL)
+        val chapterId = intent.getStringExtra(ContinueReadingWidget.EXTRA_CHAPTER_ID)
+        val chapterUrl = intent.getStringExtra(ContinueReadingWidget.EXTRA_CHAPTER_URL)
+
+        if (novelId != null && chapterId != null &&
+            novelUrl != null && chapterUrl != null
+        ) {
+            navController.navigate(Screen.Detail.createRoute(novelId, novelUrl))
+            navController.navigate(
+                Screen.Reader.createRoute(novelId, chapterId, chapterUrl, novelUrl)
+            )
+            intent.removeExtra(ContinueReadingWidget.EXTRA_NOVEL_ID)
+            intent.removeExtra(ContinueReadingWidget.EXTRA_NOVEL_URL)
+            intent.removeExtra(ContinueReadingWidget.EXTRA_CHAPTER_ID)
+            intent.removeExtra(ContinueReadingWidget.EXTRA_CHAPTER_URL)
         }
     }
 
@@ -192,8 +318,6 @@ fun NovelReaderApp(
     val currentDestination = navBackStackEntry?.destination
     val currentRoute = currentDestination?.route
 
-    // Tell the Activity whether the reader is active so it knows
-    // to intercept volume keys in onKeyDown
     LaunchedEffect(currentRoute) {
         val activity = context as? MainActivity
         val isOnReader = currentRoute?.startsWith("reader/") == true
@@ -220,10 +344,38 @@ fun NovelReaderApp(
         currentRoute == screen.route
     }
 
-//    val context = LocalContext.current
     val audioPlayerViewModel: AudioPlayerViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
         factory = AudioPlayerViewModel.provideFactory(context)
     )
+
+    val updateStatus by updateChecker.status.collectAsState()
+    var showUpdateDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(updateStatus) {
+        val s = updateStatus
+        if (s is UpdateChecker.Status.Available &&
+            !updateChecker.isDismissed(s.info.latestVersion)
+        ) {
+            showUpdateDialog = true
+        }
+    }
+
+    if (showUpdateDialog) {
+        val s = updateStatus
+        if (s is UpdateChecker.Status.Available) {
+            UpdateAvailableDialog(
+                info = s.info,
+                onDismiss = {
+                    updateChecker.dismiss(s.info.latestVersion)
+                    showUpdateDialog = false
+                },
+                onUpdate = {
+                    openUpdateUrlInBrowser(context, s.info.downloadUrl)
+                    showUpdateDialog = false
+                }
+            )
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -266,6 +418,8 @@ fun NovelReaderApp(
                 readingStatsTracker = readingStatsTracker,
                 chapterPrefetcher = chapterPrefetcher,
                 audioPlayerViewModel = audioPlayerViewModel,
+                updateChecker = updateChecker,
+                networkMonitor = networkMonitor,
                 modifier = Modifier.padding(innerPadding)
             )
         }

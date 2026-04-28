@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">NovelReader</string>
+    <string name="continue_reading_widget_label">NovelForge</string>
+    <string name="continue_reading_widget_description">Continue where you left off</string>
 </resources>

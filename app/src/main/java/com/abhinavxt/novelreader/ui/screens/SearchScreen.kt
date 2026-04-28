@@ -43,13 +43,16 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.abhinavxt.novelreader.data.NovelRepository
 import com.abhinavxt.novelreader.data.model.NovelPreview
+import com.abhinavxt.novelreader.ui.components.OfflineBanner
 import com.abhinavxt.novelreader.ui.viewmodel.SearchUiState
 import com.abhinavxt.novelreader.ui.viewmodel.SearchViewModel
+import com.abhinavxt.novelreader.util.NetworkMonitor
 
 @Composable
 fun SearchScreen(
     repository: NovelRepository,
     onNovelClick: (NovelPreview) -> Unit,
+    networkMonitor: NetworkMonitor,
     viewModel: SearchViewModel = viewModel(
         factory = SearchViewModel.provideFactory(repository)
     )
@@ -60,152 +63,163 @@ fun SearchScreen(
     val selectedSource by viewModel.selectedSource.collectAsState()
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        // Source selection chips
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
+    // ── Outer column ──
+    // No horizontal padding so the OfflineBanner spans full-width.
+    // The original 16dp horizontal padding moves to the inner column
+    // that wraps the search/results content.
+    Column(modifier = Modifier.fillMaxSize()) {
+        // ★ Offline banner — full width, slides in/out with network state.
+        OfflineBanner(monitor = networkMonitor)
+
+        // Inner column: original content with the horizontal + vertical
+        // padding that used to be on the root Column.
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
         ) {
-            items(viewModel.availableSources) { source ->
-                FilterChip(
-                    selected = selectedSource.id == source.id,
-                    onClick = { viewModel.selectSource(source) },
-                    label = { Text(source.name) }
-                )
+            // Source selection chips
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(viewModel.availableSources) { source ->
+                    FilterChip(
+                        selected = selectedSource.id == source.id,
+                        onClick = { viewModel.selectSource(source) },
+                        label = { Text(source.name) }
+                    )
+                }
             }
-        }
 
-        Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-        // Search bar
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { viewModel.onSearchQueryChange(it) },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = {
-                Text(
-                    "Search on ${selectedSource.name}...",
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search"
-                )
-            },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { viewModel.onSearchQueryChange("") }) {
-                        Icon(
-                            imageVector = Icons.Default.Clear,
-                            contentDescription = "Clear"
-                        )
-                    }
-                }
-            },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(
-                onSearch = {
-                    viewModel.searchNow()
-                    keyboardController?.hide()
-                }
-            )
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Content based on state
-        when (val state = uiState) {
-            is SearchUiState.Initial -> {
-                if (popularNovels.isNotEmpty()) {
+            // Search bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { viewModel.onSearchQueryChange(it) },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = {
                     Text(
-                        text = "Popular on ${selectedSource.name}",
-                        style = MaterialTheme.typography.titleMedium
+                        "Search on ${selectedSource.name}...",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    NovelList(
-                        novels = popularNovels,
-                        onNovelClick = onNovelClick
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search"
                     )
-                } else {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Loading popular novels...")
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.onSearchQueryChange("") }) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Clear"
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(
+                    onSearch = {
+                        viewModel.searchNow()
+                        keyboardController?.hide()
+                    }
+                )
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Content based on state
+            when (val state = uiState) {
+                is SearchUiState.Initial -> {
+                    if (popularNovels.isNotEmpty()) {
+                        Text(
+                            text = "Popular on ${selectedSource.name}",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        NovelList(
+                            novels = popularNovels,
+                            onNovelClick = onNovelClick
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator()
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Loading popular novels...")
+                            }
                         }
                     }
                 }
-            }
 
-            is SearchUiState.Loading -> {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
+                is SearchUiState.Loading -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
                 }
-            }
 
-            is SearchUiState.Success -> {
-                if (state.novels.isEmpty()) {
+                is SearchUiState.Success -> {
+                    if (state.novels.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "No novels found",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Try a different search term",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = "${state.novels.size} results",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        NovelList(
+                            novels = state.novels,
+                            onNovelClick = onNovelClick
+                        )
+                    }
+                }
+
+                is SearchUiState.Error -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                text = "No novels found",
-                                style = MaterialTheme.typography.titleMedium
+                                text = "Error",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.error
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Try a different search term",
+                                text = state.message,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.outline
                             )
                         }
-                    }
-                } else {
-                    Text(
-                        text = "${state.novels.size} results",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    NovelList(
-                        novels = state.novels,
-                        onNovelClick = onNovelClick
-                    )
-                }
-            }
-
-            is SearchUiState.Error -> {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "Error",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = state.message,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.outline
-                        )
                     }
                 }
             }
@@ -231,7 +245,6 @@ private fun NovelList(
                 onClick = { onNovelClick(novel) }
             )
         }
-
     }
 }
 

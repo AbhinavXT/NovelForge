@@ -29,10 +29,15 @@ import java.net.URLEncoder
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryMusic
 import com.abhinavxt.novelreader.data.BackupManager
+import com.abhinavxt.novelreader.data.ChapterPrefetcher
 import com.abhinavxt.novelreader.data.PronunciationManager
 import com.abhinavxt.novelreader.data.ReadingStatsTracker
 import com.abhinavxt.novelreader.data.TTSManager
+import com.abhinavxt.novelreader.data.UpdateChecker
+import com.abhinavxt.novelreader.data.source.SourceManager
 import com.abhinavxt.novelreader.ui.viewmodel.AudioPlayerViewModel
+import com.abhinavxt.novelreader.util.NetworkMonitor
+
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     object Home : Screen("home", "Home", Icons.Default.Home)
@@ -115,10 +120,23 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
         title = "Changelog",
         icon = Icons.Default.MenuBook
     )
+
+    object ImportFromUrl : Screen(
+        route = "import_from_url/{url}",
+        title = "Add Novel",
+        icon = Icons.Default.MenuBook
+    ) {
+        fun createRoute(url: String): String {
+            // URL must be URL-encoded because the raw URL contains ':/' etc.
+            // Route-arg encoding is standard for any user-supplied strings.
+            val encoded = URLEncoder.encode(url, "UTF-8")
+            return "import_from_url/$encoded"
+        }
+    }
 }
 
 private fun constructNovelUrl(novelId: String): String {
-    return com.abhinavxt.novelreader.data.source.SourceManager.constructNovelUrl(novelId)
+    return SourceManager.constructNovelUrl(novelId)
 }
 
 @Composable
@@ -131,8 +149,10 @@ fun NavigationHost(
     themePreferences: ThemePreferences,
     pronunciationManager: PronunciationManager,
     readingStatsTracker: ReadingStatsTracker,
-    chapterPrefetcher: com.abhinavxt.novelreader.data.ChapterPrefetcher,
+    chapterPrefetcher: ChapterPrefetcher,
     audioPlayerViewModel: AudioPlayerViewModel,
+    updateChecker: UpdateChecker,
+    networkMonitor: NetworkMonitor,
     modifier: Modifier = Modifier
 ) {
     val startRoute = if (AppConfig.ONLINE_SOURCES_ENABLED) Screen.Home.route else Screen.Library.route
@@ -200,7 +220,8 @@ fun NavigationHost(
                                 novelUrl = novelUrl
                             )
                         )
-                    }
+                    },
+                    networkMonitor = networkMonitor
                 )
             }
 
@@ -210,7 +231,8 @@ fun NavigationHost(
                     onNovelClick = { novelPreview ->
                         val url = constructNovelUrl(novelPreview.id)
                         navController.navigate(Screen.Detail.createRoute(novelPreview.id, url))
-                    }
+                    },
+                    networkMonitor = networkMonitor
                 )
             }
 
@@ -222,7 +244,8 @@ fun NavigationHost(
                     onNovelClick = { novelId ->
                         val url = constructNovelUrl(novelId)
                         navController.navigate(Screen.Detail.createRoute(novelId, url))
-                    }
+                    },
+                    networkMonitor = networkMonitor
                 )
             }
         }
@@ -233,7 +256,8 @@ fun NavigationHost(
                 onNovelClick = { novelId ->
                     val url = constructNovelUrl(novelId)
                     navController.navigate(Screen.Detail.createRoute(novelId, url))
-                }
+                },
+                networkMonitor = networkMonitor
             )
         }
 
@@ -249,7 +273,8 @@ fun NavigationHost(
                 },
                 onNavigateToChangelog = {
                     navController.navigate(Screen.Changelog.route)
-                }
+                },
+                updateChecker = updateChecker,
             )
         }
 
@@ -294,6 +319,7 @@ fun NavigationHost(
                 downloadManager = downloadManager,
                 ttsManager = ttsManager,
                 readingStatsTracker = readingStatsTracker,
+                networkMonitor = networkMonitor,
                 onBackClick = { navController.popBackStack() },
                 onChapterClick = { chapterId, chapterUrl ->
                     navController.navigate(
@@ -396,6 +422,32 @@ fun NavigationHost(
                 novelFolderName = folderName,
                 chapterFilePath = filePath,
                 onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.ImportFromUrl.route,
+            arguments = listOf(
+                navArgument("url") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val url = URLDecoder.decode(
+                backStackEntry.arguments?.getString("url") ?: "",
+                "UTF-8"
+            )
+            ImportFromUrlScreen(
+                sharedUrl = url,
+                repository = repository,
+                networkMonitor = networkMonitor,
+                onBackClick = { navController.popBackStack() },
+                onOpenNovel = { novelId, novelUrl ->
+                    // Replace the import screen with the detail screen so
+                    // the user doesn't see ImportFromUrl again if they hit
+                    // back from the reader.
+                    navController.navigate(Screen.Detail.createRoute(novelId, novelUrl)) {
+                        popUpTo(Screen.ImportFromUrl.route) { inclusive = true }
+                    }
+                }
             )
         }
     }

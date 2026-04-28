@@ -92,6 +92,7 @@ import com.abhinavxt.novelreader.AppConfig
 import com.abhinavxt.novelreader.data.DownloadManager
 import com.abhinavxt.novelreader.data.DownloadStatus
 import com.abhinavxt.novelreader.ui.components.ModelDownloadDialog
+import com.abhinavxt.novelreader.ui.components.OfflineBanner
 import com.abhinavxt.novelreader.data.NovelDownloadState
 import com.abhinavxt.novelreader.data.NovelRepository
 import com.abhinavxt.novelreader.data.database.BookmarkEntity
@@ -99,6 +100,7 @@ import com.abhinavxt.novelreader.data.model.Chapter
 import com.abhinavxt.novelreader.data.model.Novel
 import com.abhinavxt.novelreader.ui.viewmodel.NovelDetailUiState
 import com.abhinavxt.novelreader.ui.viewmodel.NovelDetailViewModel
+import com.abhinavxt.novelreader.util.NetworkMonitor
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -114,6 +116,7 @@ fun NovelDetailScreen(
     downloadManager: DownloadManager,
     ttsManager: com.abhinavxt.novelreader.data.TTSManager,
     readingStatsTracker: com.abhinavxt.novelreader.data.ReadingStatsTracker? = null,
+    networkMonitor: NetworkMonitor,
     onBackClick: () -> Unit,
     onChapterClick: (chapterId: String, chapterUrl: String) -> Unit,
     viewModel: NovelDetailViewModel = viewModel(
@@ -171,6 +174,9 @@ fun NovelDetailScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
+            // Top bar stays clean — back button + title only. The offline
+            // banner does NOT belong inside this row; it renders as a
+            // full-width bar directly below the top bar instead.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -201,110 +207,121 @@ fun NovelDetailScreen(
             }
         }
     ) { paddingValues ->
-        when (val state = uiState) {
-            is NovelDetailUiState.Loading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator()
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Loading novel details...")
-                    }
-                }
-            }
+        // ── Outer Column ──
+        // Wraps the banner + state switch so we apply paddingValues here
+        // exactly once. The three branches below (Loading / Error / Success)
+        // must NOT re-apply paddingValues or we'd double-pad.
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            // ★ Offline banner — full-width, sits right under the top bar,
+            //   slides in/out as connectivity changes.
+            OfflineBanner(monitor = networkMonitor)
 
-            is NovelDetailUiState.Error -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "Error",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = state.message,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                    }
-                }
-            }
-
-            is NovelDetailUiState.Success -> {
-                NovelDetailContent(
-                    novel = state.novel,
-                    isInLibrary = state.isInLibrary,
-                    isLocalNovel = state.isLocalNovel,
-                    downloadState = downloadState,
-                    downloadingChapters = allDownloadingChapters,
-                    exportingChapters = exportingChapters,
-                    audioExportedChapters = audioExportedChapters,
-                    exportState = exportState,
-                    bookmarks = bookmarks,
-                    bookmarkCount = bookmarkCount,
-                    highlights = highlights,
-                    highlightCount = highlightCount,
-                    newChapterCount = newChapterCount,
-                    onMarkUpdateSeen = { viewModel.markUpdateSeen() },
-                    onDeleteHighlight = { id -> viewModel.deleteHighlight(id) },
-                    onUpdateHighlightNote = { id, note -> viewModel.updateHighlightNote(id, note) },
-                    onToggleLibrary = { viewModel.toggleLibrary() },
-                    onChapterClick = onChapterClick,
-                    onDownloadChapter = { chapter -> viewModel.downloadChapter(chapter) },
-                    onExportChapterAudio = { chapter -> viewModel.exportChapterAudio(chapter) },
-                    onExportAllAudio = { viewModel.exportAllChaptersAudio() },
-                    onExportRangeAudio = { from, to ->
-                        viewModel.exportChapterRangeAudio(from, to)
-                    },
-                    onCancelExport = { viewModel.cancelAudioExport() },
-                    availableVoices = availableVoices,
-                    currentVoice = currentVoice,
-                    onVoiceSelected = { voice -> ttsManager.setVoice(voice) },
-                    onDownloadAll = {
-                        scope.launch {
-                            downloadManager.downloadAllChapters(
-                                novelId = novelId,
-                                chapters = state.novel.chapters
-                            )
-                            viewModel.refreshDownloadStatus()
+            when (val state = uiState) {
+                is NovelDetailUiState.Loading -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),  // NOTE: no .padding(paddingValues)
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator()
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Loading novel details...")
                         }
-                    },
-                    onDownloadRange = { from, to ->
-                        scope.launch {
-                            val chaptersInRange = state.novel.chapters.filter {
-                                it.number in from..to && !it.isDownloaded
+                    }
+                }
+
+                is NovelDetailUiState.Error -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),  // NOTE: no .padding(paddingValues)
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "Error",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = state.message,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
+                }
+
+                is NovelDetailUiState.Success -> {
+                    NovelDetailContent(
+                        novel = state.novel,
+                        isInLibrary = state.isInLibrary,
+                        isLocalNovel = state.isLocalNovel,
+                        downloadState = downloadState,
+                        downloadingChapters = allDownloadingChapters,
+                        exportingChapters = exportingChapters,
+                        audioExportedChapters = audioExportedChapters,
+                        exportState = exportState,
+                        bookmarks = bookmarks,
+                        bookmarkCount = bookmarkCount,
+                        highlights = highlights,
+                        highlightCount = highlightCount,
+                        newChapterCount = newChapterCount,
+                        onMarkUpdateSeen = { viewModel.markUpdateSeen() },
+                        onDeleteHighlight = { id -> viewModel.deleteHighlight(id) },
+                        onUpdateHighlightNote = { id, note -> viewModel.updateHighlightNote(id, note) },
+                        onToggleLibrary = { viewModel.toggleLibrary() },
+                        onChapterClick = onChapterClick,
+                        onDownloadChapter = { chapter -> viewModel.downloadChapter(chapter) },
+                        onExportChapterAudio = { chapter -> viewModel.exportChapterAudio(chapter) },
+                        onExportAllAudio = { viewModel.exportAllChaptersAudio() },
+                        onExportRangeAudio = { from, to ->
+                            viewModel.exportChapterRangeAudio(from, to)
+                        },
+                        onCancelExport = { viewModel.cancelAudioExport() },
+                        availableVoices = availableVoices,
+                        currentVoice = currentVoice,
+                        onVoiceSelected = { voice -> ttsManager.setVoice(voice) },
+                        onDownloadAll = {
+                            scope.launch {
+                                downloadManager.downloadAllChapters(
+                                    novelId = novelId,
+                                    chapters = state.novel.chapters
+                                )
+                                viewModel.refreshDownloadStatus()
                             }
-                            downloadManager.downloadAllChapters(
-                                novelId = novelId,
-                                chapters = chaptersInRange
-                            )
-                            viewModel.refreshDownloadStatus()
-                        }
-                    },
-                    onDeleteBookmark = { bookmarkId -> viewModel.deleteBookmark(bookmarkId) },
-                    onUpdateBookmarkNote = { id, note -> viewModel.updateBookmarkNote(id, note) },
-                    onBookmarkClick = { bookmark ->
-                        // Navigate to the bookmarked chapter using the stored URL
-                        onChapterClick(bookmark.chapterId, bookmark.chapterUrl)
-                    },
-                    onShowModelDownload = { showModelDownloadDialog = true },
-                    currentReadingChapterId = currentReadingChapterId,
-                    estimatedTimeToFinish = estimatedTimeToFinish,
-                    m4bBuildState = m4bBuildState,
-                    onGenerateM4B = { viewModel.generateM4BAudiobook() },
-                    onCancelM4B = { viewModel.cancelM4BBuild() },
-                    onResetM4B = { viewModel.resetM4BState() },
-                    modifier = Modifier.padding(paddingValues)
-                )
+                        },
+                        onDownloadRange = { from, to ->
+                            scope.launch {
+                                val chaptersInRange = state.novel.chapters.filter {
+                                    it.number in from..to && !it.isDownloaded
+                                }
+                                downloadManager.downloadAllChapters(
+                                    novelId = novelId,
+                                    chapters = chaptersInRange
+                                )
+                                viewModel.refreshDownloadStatus()
+                            }
+                        },
+                        onDeleteBookmark = { bookmarkId -> viewModel.deleteBookmark(bookmarkId) },
+                        onUpdateBookmarkNote = { id, note -> viewModel.updateBookmarkNote(id, note) },
+                        onBookmarkClick = { bookmark ->
+                            // Navigate to the bookmarked chapter using the stored URL
+                            onChapterClick(bookmark.chapterId, bookmark.chapterUrl)
+                        },
+                        onShowModelDownload = { showModelDownloadDialog = true },
+                        currentReadingChapterId = currentReadingChapterId,
+                        estimatedTimeToFinish = estimatedTimeToFinish,
+                        m4bBuildState = m4bBuildState,
+                        onGenerateM4B = { viewModel.generateM4BAudiobook() },
+                        onCancelM4B = { viewModel.cancelM4BBuild() },
+                        onResetM4B = { viewModel.resetM4BState() }
+                        // NOTE: no `modifier = Modifier.padding(paddingValues)` here
+                        // either — the outer Column already handled it.
+                    )
+                }
             }
         }
     }

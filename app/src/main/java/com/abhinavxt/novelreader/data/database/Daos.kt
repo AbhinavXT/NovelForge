@@ -290,6 +290,23 @@ interface ReadingStatDao {
     @Query("SELECT * FROM reading_stats WHERE completedAt >= :sinceMs ORDER BY completedAt ASC")
     suspend fun getEventsSince(sinceMs: Long): List<ReadingStatEvent>
 
+    // Recent sessions — latest N sessions for the activity feed
+    @Query("SELECT * FROM reading_stats ORDER BY completedAt DESC LIMIT :limit")
+    suspend fun getRecentEvents(limit: Int = 20): List<ReadingStatEvent>
+
+    // Longest single reading session in ms
+    @Query("SELECT COALESCE(MAX(readingTimeMs), 0) FROM reading_stats")
+    suspend fun getLongestSessionMs(): Long
+
+    // Most words read in a single session
+    @Query("SELECT COALESCE(MAX(wordsRead), 0) FROM reading_stats")
+    suspend fun getMostWordsInSession(): Int
+
+    // Total distinct novels read
+    @Query("SELECT COUNT(DISTINCT novelId) FROM reading_stats")
+    suspend fun getDistinctNovelsRead(): Int
+
+    // Daily reading time in ms for a given day range — already defined above as getReadingTimeMsForDay
     // For backup
     @Query("SELECT * FROM reading_stats")
     suspend fun getAllEventsOnce(): List<ReadingStatEvent>

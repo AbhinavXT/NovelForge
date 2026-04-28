@@ -24,7 +24,17 @@ import com.abhinavxt.novelreader.ui.screens.NovelDownloadInfo
 import com.abhinavxt.novelreader.util.Logger
 import kotlinx.coroutines.flow.first
 
-class NovelRepository(private val database: AppDatabase) {
+/**
+ * [onProgressSaved] is an optional callback fired after every
+ * saveReadingProgress(). The widget subsystem wires this up to refresh
+ * the continue-reading widget cache. It's a plain lambda (not a DI thing)
+ * to keep the repository free of Android/widget dependencies. Null in
+ * tests; the Application sets a real callback at construction time.
+ */
+class NovelRepository(
+    private val database: AppDatabase,
+    private val onProgressSaved: (suspend (novelId: String) -> Unit)? = null
+) {
 
     private val novelDao = database.novelDao()
     private val chapterDao = database.chapterDao()
@@ -95,6 +105,14 @@ class NovelRepository(private val database: AppDatabase) {
             bookmarkDao.deleteBookmarksForNovel(novelId)
             highlightDao.deleteHighlightsForNovel(novelId)  // Clean up highlights too
         }
+        // Widget hook — if the removed novel was the widget's novel, the
+        // callback will clear the widget. If not, it re-picks the most
+        // recent progress. Either way, widget stays consistent.
+        try {
+            onProgressSaved?.invoke(novelId)
+        } catch (e: Exception) {
+            Logger.e("NovelRepository", "widget hook (remove) failed", e)
+        }
     }
 
     suspend fun getNovelById(novelId: String): Novel? {
@@ -108,6 +126,14 @@ class NovelRepository(private val database: AppDatabase) {
         return chapterDao.getChaptersForNovel(novelId).map { entities ->
             entities.map { it.toDomainModel() }
         }
+    }
+
+    /**
+     * One-shot chapter fetch — used by the widget's rebuild path, which
+     * runs in a short-lived coroutine and doesn't want to collect a flow.
+     */
+    suspend fun getChaptersOnce(novelId: String): List<Chapter> {
+        return chapterDao.getChaptersForNovelOnce(novelId).map { it.toDomainModel() }
     }
 
     suspend fun downloadChapter(novelId: String, chapterId: String, chapterUrl: String): Boolean {
@@ -163,6 +189,15 @@ class NovelRepository(private val database: AppDatabase) {
                 lastReadAt = System.currentTimeMillis()
             )
         )
+
+        // Widget hook — refresh the continue-reading widget cache.
+        // Wrapped in try/catch so widget failures never break chapter
+        // reading (the most critical user flow in the app).
+        try {
+            onProgressSaved?.invoke(novelId)
+        } catch (e: Exception) {
+            Logger.e("NovelRepository", "widget hook (save) failed", e)
+        }
     }
 
     suspend fun getReadingProgress(novelId: String): ReadingProgressEntity? {

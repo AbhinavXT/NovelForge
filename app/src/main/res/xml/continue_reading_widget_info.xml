@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Widget provider info for the continue-reading widget.
+
+  Place at: app/src/main/res/xml/continue_reading_widget_info.xml
+
+  Key fields:
+    minWidth/minHeight        — minimum size when placed. 2x1 cell minimum.
+    targetCellWidth/Height    — Android 12+ precise sizing. 2 cells wide,
+                                 1 cell tall at minimum.
+    resizeMode                — user can drag to resize horizontally AND
+                                 vertically. We support 2x1 → 4x2.
+    widgetCategory            — home_screen only (not keyguard — lockscreen
+                                 widgets on Android 4.2+ are deprecated
+                                 anyway and we don't want credentials-free
+                                 access to reading state).
+    updatePeriodMillis        — we use 0 here because Android's minimum
+                                 auto-refresh is 30 minutes anyway, and we
+                                 push updates explicitly when state changes.
+                                 Setting it > 0 would cost battery with no
+                                 benefit.
+    previewLayout (API 31+)   — a static XML layout shown in the widget
+                                 picker. We use a simple text layout so we
+                                 don't need to ship a real preview image.
+    initialLayout             — fallback for pre-API-31 devices. Glance
+                                 replaces this immediately on first render.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="140dp"
+    android:minHeight="70dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="1"
+    android:maxResizeWidth="300dp"
+    android:maxResizeHeight="200dp"
+    android:minResizeWidth="140dp"
+    android:minResizeHeight="70dp"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:updatePeriodMillis="0"
+    android:previewLayout="@layout/continue_reading_widget_preview"
+    android:initialLayout="@layout/continue_reading_widget_preview"
+        android:description="@string/continue_reading_widget_description" />

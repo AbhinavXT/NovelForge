@@ -298,4 +298,188 @@ class ReadingStatsTracker(private val dao: ReadingStatDao) {
     suspend fun insertForRestore(event: ReadingStatEvent) {
         withContext(Dispatchers.IO) { dao.insertEventReplace(event) }
     }
+
+    // ── Strava-like features ────────────────────────────────────
+
+    /**
+     * Recent reading sessions for the activity feed.
+     * Returns the last [limit] sessions ordered most recent first.
+     */
+    suspend fun getRecentSessions(limit: Int = 15): List<ReadingStatEvent> =
+        withContext(Dispatchers.IO) {
+            dao.getRecentEvents(limit)
+        }
+
+    /**
+     * Personal records — best single-day word count, longest session,
+     * most words in one session, distinct novels read.
+     */
+    data class PersonalRecords(
+        val longestSessionMs: Long,
+        val mostWordsInSession: Int,
+        val bestDayWords: Int,
+        val bestDayDate: String,
+        val distinctNovelsRead: Int
+    )
+
+    suspend fun getPersonalRecords(): PersonalRecords = withContext(Dispatchers.IO) {
+        val longestSession = dao.getLongestSessionMs()
+        val mostWords = dao.getMostWordsInSession()
+        val distinctNovels = dao.getDistinctNovelsRead()
+
+        // Find the day with the most words read (scan last 365 days)
+        val cal = Calendar.getInstance()
+        var bestWords = 0
+        var bestDate = ""
+        for (i in 0 until 365) {
+            cal.timeInMillis = System.currentTimeMillis()
+            cal.add(Calendar.DAY_OF_YEAR, -i)
+            cal.set(Calendar.HOUR_OF_DAY, 0)
+            cal.set(Calendar.MINUTE, 0)
+            cal.set(Calendar.SECOND, 0)
+            cal.set(Calendar.MILLISECOND, 0)
+            val start = cal.timeInMillis
+            val end = start + 86_400_000L
+            val dayWords = dao.getWordsReadForDay(start, end)
+            if (dayWords > bestWords) {
+                bestWords = dayWords
+                val month = cal.get(Calendar.MONTH) + 1
+                val day = cal.get(Calendar.DAY_OF_MONTH)
+                bestDate = "$month/$day"
+            }
+            // Early exit: if we've gone 30 days with no data at all, stop scanning
+            if (i > 30 && bestWords == 0) break
+        }
+
+        PersonalRecords(
+            longestSessionMs = longestSession,
+            mostWordsInSession = mostWords,
+            bestDayWords = bestWords,
+            bestDayDate = bestDate,
+            distinctNovelsRead = distinctNovels
+        )
+    }
+
+    /**
+     * Weekly comparison: this week's stats vs last week.
+     */
+    data class WeeklyComparison(
+        val thisWeekWords: Int,
+        val lastWeekWords: Int,
+        val thisWeekTimeMs: Long,
+        val lastWeekTimeMs: Long,
+        val thisWeekChapters: Int,
+        val lastWeekChapters: Int,
+        val thisWeekDaysActive: Int,
+        val lastWeekDaysActive: Int
+    )
+
+    suspend fun getWeeklyComparison(): WeeklyComparison = withContext(Dispatchers.IO) {
+        val cal = Calendar.getInstance()
+
+        // This week: Monday 00:00 to now
+        cal.timeInMillis = System.currentTimeMillis()
+        cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+        cal.set(Calendar.HOUR_OF_DAY, 0)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        // If today is Sunday, Calendar rolls to next Monday, fix it
+        if (cal.timeInMillis > System.currentTimeMillis()) {
+            cal.add(Calendar.WEEK_OF_YEAR, -1)
+        }
+        val thisWeekStart = cal.timeInMillis
+        val thisWeekEnd = System.currentTimeMillis()
+
+        // Last week: previous Monday to this Monday
+        val lastWeekStart = thisWeekStart - 7 * 86_400_000L
+        val lastWeekEnd = thisWeekStart
+
+        val twWords = dao.getWordsReadForDay(thisWeekStart, thisWeekEnd)
+        val lwWords = dao.getWordsReadForDay(lastWeekStart, lastWeekEnd)
+        val twTime = dao.getReadingTimeMsForDay(thisWeekStart, thisWeekEnd)
+        val lwTime = dao.getReadingTimeMsForDay(lastWeekStart, lastWeekEnd)
+        val twChapters = dao.getChaptersCompletedForDay(thisWeekStart, thisWeekEnd)
+        val lwChapters = dao.getChaptersCompletedForDay(lastWeekStart, lastWeekEnd)
+
+        // Count active days this week vs last week
+        var twDays = 0
+        var lwDays = 0
+        for (d in 0 until 7) {
+            val dayStart = thisWeekStart + d * 86_400_000L
+            val dayEnd = dayStart + 86_400_000L
+            if (dayEnd <= thisWeekEnd && dao.getChaptersCompletedForDay(dayStart, dayEnd) > 0) twDays++
+
+            val lwDayStart = lastWeekStart + d * 86_400_000L
+            val lwDayEnd = lwDayStart + 86_400_000L
+            if (dao.getChaptersCompletedForDay(lwDayStart, lwDayEnd) > 0) lwDays++
+        }
+        // Also count today
+        val todayStart = floorToLocalMidnight(System.currentTimeMillis())
+        if (dao.getChaptersCompletedForDay(todayStart, todayStart + 86_400_000L) > 0) twDays++
+
+        WeeklyComparison(
+            thisWeekWords = twWords, lastWeekWords = lwWords,
+            thisWeekTimeMs = twTime, lastWeekTimeMs = lwTime,
+            thisWeekChapters = twChapters, lastWeekChapters = lwChapters,
+            thisWeekDaysActive = twDays, lastWeekDaysActive = lwDays
+        )
+    }
+
+    /**
+     * Heatmap data for the last [weeks] weeks.
+     * Returns a list of (dayOffsetFromToday, readingTimeMinutes) pairs.
+     * Index 0 = today, index 1 = yesterday, etc.
+     */
+    suspend fun getHeatmapData(weeks: Int = 12): List<Int> = withContext(Dispatchers.IO) {
+        val days = weeks * 7
+        val result = mutableListOf<Int>()
+        val cal = Calendar.getInstance()
+
+        for (i in (days - 1) downTo 0) {
+            cal.timeInMillis = System.currentTimeMillis()
+            cal.add(Calendar.DAY_OF_YEAR, -i)
+            cal.set(Calendar.HOUR_OF_DAY, 0)
+            cal.set(Calendar.MINUTE, 0)
+            cal.set(Calendar.SECOND, 0)
+            cal.set(Calendar.MILLISECOND, 0)
+            val start = cal.timeInMillis
+            val end = start + 86_400_000L
+            val minutes = (dao.getReadingTimeMsForDay(start, end) / 60_000).toInt()
+            result.add(minutes)
+        }
+        result
+    }
+
+    /**
+     * Daily reading TIME (minutes) for the last N days — for the time chart.
+     * Different from getDailyWordCounts which returns words.
+     */
+    suspend fun getDailyReadingTime(days: Int = 14): List<Pair<String, Int>> =
+        withContext(Dispatchers.IO) {
+            val cal = Calendar.getInstance()
+            val result = mutableListOf<Pair<String, Int>>()
+
+            for (i in (days - 1) downTo 0) {
+                cal.timeInMillis = System.currentTimeMillis()
+                cal.add(Calendar.DAY_OF_YEAR, -i)
+                cal.set(Calendar.HOUR_OF_DAY, 0)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+                val start = cal.timeInMillis
+                val end = start + 86_400_000L
+
+                val label = run {
+                    cal.timeInMillis = start
+                    val month = cal.get(Calendar.MONTH) + 1
+                    val day = cal.get(Calendar.DAY_OF_MONTH)
+                    "$month/$day"
+                }
+
+                val minutes = (dao.getReadingTimeMsForDay(start, end) / 60_000).toInt()
+                result.add(label to minutes)
+            }
+            result
+        }
 }

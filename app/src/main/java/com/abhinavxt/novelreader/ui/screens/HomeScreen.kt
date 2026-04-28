@@ -48,6 +48,8 @@ import com.abhinavxt.novelreader.ui.viewmodel.ContinueReadingData
 import com.abhinavxt.novelreader.ui.viewmodel.HomeViewModel
 import com.abhinavxt.novelreader.ui.viewmodel.ReadingActivityData
 import java.util.Calendar
+import com.abhinavxt.novelreader.ui.components.OfflineBanner
+import com.abhinavxt.novelreader.util.NetworkMonitor
 
 @Composable
 fun HomeScreen(
@@ -56,6 +58,7 @@ fun HomeScreen(
     onBrowseClick: () -> Unit,
     onNovelClick: (novelId: String) -> Unit,
     onContinueReading: (novelId: String, chapterId: String, chapterUrl: String, novelUrl: String) -> Unit = { novelId, _, _, _ -> onNovelClick(novelId) },
+    networkMonitor: NetworkMonitor,
     viewModel: HomeViewModel = viewModel(
         factory = HomeViewModel.provideFactory(repository, readingStatsTracker)
     )
@@ -69,6 +72,8 @@ fun HomeScreen(
             .fillMaxSize()
             .padding(top = 16.dp)
     ) {
+        OfflineBanner(monitor = networkMonitor)
+
         // ── Greeting header ─────────────────────────────────────
         val greeting = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
             in 0..11 -> "Good morning"

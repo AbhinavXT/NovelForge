@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Static fallback layout shown:
+    (a) in the widget picker as a preview
+    (b) on pre-API-31 devices briefly before Glance's first render lands
+
+  PLACE AT: app/src/main/res/layout/continue_reading_widget_preview.xml
+  (NOT res/xml/ — that was an earlier mistake. Android resolves
+  @layout/... references from res/layout/ only.)
+
+  Widgets do NOT have access to your app's Material theme attributes.
+  ?attr/colorPrimary and ?android:attr/textColorPrimary will fail at
+  resource-linking time because the widget's inflation context doesn't
+  know about them.
+
+  Use concrete colors only. Hex values chosen to look reasonable on both
+  light and dark launchers (dark card with muted purple accent).
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="12dp"
+    android:background="#1C1C1E">
+
+    <!-- Fake cover block — solid accent rectangle suggesting the widget's shape -->
+    <View
+        android:layout_width="56dp"
+        android:layout_height="80dp"
+        android:background="#6B46C1" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="12dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="CONTINUE READING"
+            android:textColor="#A78BFA"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="NovelForge"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginTop="4dp" />
+
+    </LinearLayout>
+
+</LinearLayout>

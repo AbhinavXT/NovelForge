@@ -9,6 +9,7 @@
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:name=".NovelReaderApplication"
@@ -30,6 +31,21 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- ── NEW: share target for URLs from supported sources ──
+                 Tells Android "NovelForge handles ACTION_SEND of plain-text
+                 content." Users who tap Share from a browser will see
+                 NovelForge in the chooser.
+
+                 We accept text/plain broadly rather than filtering by host —
+                 NovelUrlResolver does the actual match, and broad acceptance
+                 means users can share from any context (browser, Reddit app,
+                 Discord, messaging) without us rejecting valid content. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
         <!-- TTS Foreground Service -->
@@ -37,6 +53,33 @@
             android:name=".data.TTSForegroundService"
             android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
+
+        <!-- FileProvider for sharing cache files (share cards, exported dictionaries, etc.)
+             Authority matches the one used in StatsShareExporter by default.
+             exported=false + grantUriPermissions=true is the required pattern:
+             other apps can only access files we explicitly hand them a URI for,
+             and only for the lifetime of the granted permission. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths_share" />
+        </provider>
+
+        <receiver
+            android:name=".widget.ContinueReadingWidgetReceiver"
+            android:exported="true"
+            android:label="@string/continue_reading_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/continue_reading_widget_info" />
+        </receiver>
 
     </application>
 

@@ -75,6 +75,14 @@ import com.abhinavxt.novelreader.data.ThemePreferences
 import com.abhinavxt.novelreader.ui.theme.*
 import com.abhinavxt.novelreader.ui.viewmodel.BackupUiState
 import com.abhinavxt.novelreader.ui.viewmodel.SettingsViewModel
+import com.abhinavxt.novelreader.BuildConfig
+import com.abhinavxt.novelreader.data.UpdateChecker
+import com.abhinavxt.novelreader.ui.components.UpdateStatusRow
+import com.abhinavxt.novelreader.ui.components.openUpdateUrlInBrowser
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,6 +92,7 @@ fun SettingsScreen(
     onNavigateToPronunciation: () -> Unit = {},
     onNavigateToReadingStats: () -> Unit = {},
     onNavigateToChangelog: () -> Unit = {},
+    updateChecker: UpdateChecker,
     viewModel: SettingsViewModel = viewModel(
         factory = SettingsViewModel.Factory(backupManager, themePreferences)
     )
@@ -106,6 +115,23 @@ fun SettingsScreen(
     ) { uri ->
         uri?.let { viewModel.prepareRestore(it) }
     }
+
+    val updateStatus by updateChecker.status.collectAsState()
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    UpdateStatusRow(
+        status = updateStatus,
+        currentVersion = BuildConfig.VERSION_NAME,
+        onCheckNow = {
+            scope.launch {
+                updateChecker.check(force = true)
+            }
+        },
+        onOpenDownload = { url ->
+            openUpdateUrlInBrowser(context, url)
+        }
+    )
 
     Scaffold(
         topBar = {

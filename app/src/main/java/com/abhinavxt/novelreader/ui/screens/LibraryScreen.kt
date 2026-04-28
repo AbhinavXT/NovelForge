@@ -61,10 +61,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.abhinavxt.novelreader.data.NovelRepository
 import com.abhinavxt.novelreader.data.model.Novel
+import com.abhinavxt.novelreader.ui.components.OfflineBanner
 import com.abhinavxt.novelreader.ui.viewmodel.ImportState
 import com.abhinavxt.novelreader.ui.viewmodel.LibraryFilter
 import com.abhinavxt.novelreader.ui.viewmodel.LibrarySort
 import com.abhinavxt.novelreader.ui.viewmodel.LibraryViewModel
+import com.abhinavxt.novelreader.util.NetworkMonitor
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -72,6 +74,7 @@ import java.io.File
 fun LibraryScreen(
     repository: NovelRepository,
     onNovelClick: (String) -> Unit,
+    networkMonitor: NetworkMonitor,
     viewModel: LibraryViewModel = viewModel(
         factory = LibraryViewModel.provideFactory(repository, LocalContext.current)
     )
@@ -140,162 +143,185 @@ fun LibraryScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            // ── Outer column: NO horizontal padding, so OfflineBanner can
+            //    span full-width edge-to-edge. Holds two children: the
+            //    banner, and the inner padded content column. ──
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp)
+                modifier = Modifier.fillMaxSize()
             ) {
-                Spacer(modifier = Modifier.height(16.dp))
+                // ★ Offline banner — slides in/out with network state,
+                //   always sits at the very top of the Library content.
+                OfflineBanner(monitor = networkMonitor)
 
-                Text(
-                    text = "My Library",
-                    style = MaterialTheme.typography.headlineMedium
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Filter Chips
-                Row(
+                // ── Inner column: the original padded content block,
+                //    unchanged from before. Using .weight(1f) so the
+                //    LazyColumn inside can still fill remaining vertical
+                //    space when the banner is visible OR hidden. ──
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp)
                 ) {
-                    FilterChip(
-                        selected = currentFilter == LibraryFilter.ALL,
-                        onClick = { viewModel.setFilter(LibraryFilter.ALL) },
-                        label = { Text("All") },
-                        leadingIcon = if (currentFilter == LibraryFilter.ALL) {
-                            {
-                                Icon(
-                                    imageVector = Icons.Default.Book,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(FilterChipDefaults.IconSize)
-                                )
-                            }
-                        } else null
-                    )
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    FilterChip(
-                        selected = currentFilter == LibraryFilter.DOWNLOADED,
-                        onClick = { viewModel.setFilter(LibraryFilter.DOWNLOADED) },
-                        label = { Text("Downloaded") },
-                        leadingIcon = if (currentFilter == LibraryFilter.DOWNLOADED) {
-                            {
-                                Icon(
-                                    imageVector = Icons.Default.Download,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(FilterChipDefaults.IconSize)
-                                )
-                            }
-                        } else null
-                    )
-
-                    FilterChip(
-                        selected = currentFilter == LibraryFilter.READING,
-                        onClick = { viewModel.setFilter(LibraryFilter.READING) },
-                        label = { Text("Reading") },
-                        leadingIcon = if (currentFilter == LibraryFilter.READING) {
-                            {
-                                Icon(
-                                    imageVector = Icons.Default.MenuBook,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(FilterChipDefaults.IconSize)
-                                )
-                            }
-                        } else null
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Sort row
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
                     Text(
-                        text = "Sort:",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "My Library",
+                        style = MaterialTheme.typography.headlineMedium
                     )
-                    LibrarySort.values().forEach { sort ->
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Filter Chips
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         FilterChip(
-                            selected = currentSort == sort,
-                            onClick = { viewModel.setSort(sort) },
-                            label = { Text(sort.displayName, style = MaterialTheme.typography.labelSmall) },
-                            modifier = Modifier.height(28.dp)
+                            selected = currentFilter == LibraryFilter.ALL,
+                            onClick = { viewModel.setFilter(LibraryFilter.ALL) },
+                            label = { Text("All") },
+                            leadingIcon = if (currentFilter == LibraryFilter.ALL) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Default.Book,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(FilterChipDefaults.IconSize)
+                                    )
+                                }
+                            } else null
+                        )
+
+                        FilterChip(
+                            selected = currentFilter == LibraryFilter.DOWNLOADED,
+                            onClick = { viewModel.setFilter(LibraryFilter.DOWNLOADED) },
+                            label = { Text("Downloaded") },
+                            leadingIcon = if (currentFilter == LibraryFilter.DOWNLOADED) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Default.Download,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(FilterChipDefaults.IconSize)
+                                    )
+                                }
+                            } else null
+                        )
+
+                        FilterChip(
+                            selected = currentFilter == LibraryFilter.READING,
+                            onClick = { viewModel.setFilter(LibraryFilter.READING) },
+                            label = { Text("Reading") },
+                            leadingIcon = if (currentFilter == LibraryFilter.READING) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Default.MenuBook,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(FilterChipDefaults.IconSize)
+                                    )
+                                }
+                            } else null
                         )
                     }
-                }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                if (novels.isEmpty()) {
-                    // Empty state - varies by filter
-                    Box(
+                    // Sort row
+                    Row(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        when (currentFilter) {
-                            LibraryFilter.ALL -> {
-                                EmptyLibraryState(
-                                    onImportClick = {
-                                        epubPickerLauncher.launch(arrayOf("application/epub+zip"))
-                                    }
-                                )
-                            }
-                            LibraryFilter.DOWNLOADED -> {
-                                EmptyFilterState(
-                                    icon = Icons.Default.Download,
-                                    title = "No downloaded novels",
-                                    subtitle = "Download chapters from a novel to read offline"
-                                )
-                            }
-                            LibraryFilter.READING -> {
-                                EmptyFilterState(
-                                    icon = Icons.Default.MenuBook,
-                                    title = "No novels in progress",
-                                    subtitle = "Start reading a novel to see it here"
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    LazyColumn(
-                        contentPadding = PaddingValues(vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        items(
-                            items = novels,
-                            key = { it.id }
-                        ) { novel ->
-                            LibraryNovelItem(
-                                novel = novel,
-                                hasUpdate = novel.id in novelsWithUpdates,
-                                onClick = {
-                                    viewModel.clearUpdateBadge(novel.id)
-                                    onNovelClick(novel.id)
+                        Text(
+                            text = "Sort:",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        LibrarySort.values().forEach { sort ->
+                            FilterChip(
+                                selected = currentSort == sort,
+                                onClick = { viewModel.setSort(sort) },
+                                label = {
+                                    Text(
+                                        sort.displayName,
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
                                 },
-                                onRemove = { viewModel.removeFromLibrary(novel.id) }
+                                modifier = Modifier.height(28.dp)
                             )
                         }
+                    }
 
-                        // Bottom spacing for FAB
-                        item {
-                            Spacer(modifier = Modifier.height(72.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (novels.isEmpty()) {
+                        // Empty state — varies by filter
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            when (currentFilter) {
+                                LibraryFilter.ALL -> {
+                                    EmptyLibraryState(
+                                        onImportClick = {
+                                            epubPickerLauncher.launch(
+                                                arrayOf("application/epub+zip")
+                                            )
+                                        }
+                                    )
+                                }
+                                LibraryFilter.DOWNLOADED -> {
+                                    EmptyFilterState(
+                                        icon = Icons.Default.Download,
+                                        title = "No downloaded novels",
+                                        subtitle = "Download chapters from a novel to read offline"
+                                    )
+                                }
+                                LibraryFilter.READING -> {
+                                    EmptyFilterState(
+                                        icon = Icons.Default.MenuBook,
+                                        title = "No novels in progress",
+                                        subtitle = "Start reading a novel to see it here"
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            contentPadding = PaddingValues(vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            items(
+                                items = novels,
+                                key = { it.id }
+                            ) { novel ->
+                                LibraryNovelItem(
+                                    novel = novel,
+                                    hasUpdate = novel.id in novelsWithUpdates,
+                                    onClick = {
+                                        viewModel.clearUpdateBadge(novel.id)
+                                        onNovelClick(novel.id)
+                                    },
+                                    onRemove = { viewModel.removeFromLibrary(novel.id) }
+                                )
+                            }
+
+                            // Bottom spacing for FAB
+                            item {
+                                Spacer(modifier = Modifier.height(72.dp))
+                            }
                         }
                     }
                 }
             }
 
-            // Loading overlay when importing
+            // Loading overlay when importing — sits on top of everything
+            // in the PullToRefreshBox, including the banner.
             if (importState is ImportState.Importing) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -402,7 +428,7 @@ private fun LibraryNovelItem(
         when {
             novel.coverUrl == null -> null
             novel.coverUrl.startsWith("/") -> File(novel.coverUrl)  // Local file
-            else -> novel.coverUrl  // URL
+            else -> novel.coverUrl                                  // URL
         }
     }
 

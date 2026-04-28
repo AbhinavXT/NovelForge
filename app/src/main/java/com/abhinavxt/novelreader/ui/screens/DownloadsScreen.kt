@@ -46,7 +46,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.abhinavxt.novelreader.data.DownloadManager
 import com.abhinavxt.novelreader.data.NovelRepository
+import com.abhinavxt.novelreader.ui.components.OfflineBanner
 import com.abhinavxt.novelreader.ui.viewmodel.DownloadsViewModel
+import com.abhinavxt.novelreader.util.NetworkMonitor
 
 data class NovelDownloadInfo(
     val novelId: String,
@@ -64,6 +66,7 @@ fun DownloadsScreen(
     downloadManager: DownloadManager,
     onBackClick: () -> Unit,
     onNovelClick: (novelId: String) -> Unit,
+    networkMonitor: NetworkMonitor,
     viewModel: DownloadsViewModel = viewModel(
         factory = DownloadsViewModel.provideFactory(repository, downloadManager)
     )
@@ -89,93 +92,105 @@ fun DownloadsScreen(
             )
         }
     ) { paddingValues ->
+        // ── Outer column ──
+        // Applies Scaffold paddingValues once, holds banner + inner content.
+        // No horizontal padding here so the OfflineBanner can span full width.
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp)
         ) {
-            // Storage info
-            Card(
-                modifier = Modifier.fillMaxWidth()
+            // ★ Offline banner — edge-to-edge, below the top bar.
+            OfflineBanner(monitor = networkMonitor)
+
+            // Inner column: original content with its original 16dp padding
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // Storage info
+                Card(
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Storage,
-                        contentDescription = null,
-                        modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column {
-                        Text(
-                            text = "Storage Used",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            text = formatBytes(totalStorageUsed),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Downloaded novels list
-            if (isLoading) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-            } else if (downloadedNovels.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Storage,
                             contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.outline
+                            modifier = Modifier.size(32.dp),
+                            tint = MaterialTheme.colorScheme.primary
                         )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "No downloads yet",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Downloaded chapters will appear here",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.outline
-                        )
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column {
+                            Text(
+                                text = "Storage Used",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = formatBytes(totalStorageUsed),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
                     }
                 }
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(
-                        items = downloadedNovels,
-                        key = { it.novelId }
-                    ) { novelInfo ->
-                        DownloadedNovelItem(
-                            novelInfo = novelInfo,
-                            onClick = { onNovelClick(novelInfo.novelId) },
-                            onDeleteClick = { showDeleteDialog = novelInfo }
-                        )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Downloaded novels list
+                if (isLoading) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                } else if (downloadedNovels.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.Storage,
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.outline
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "No downloads yet",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Downloaded chapters will appear here",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(
+                            items = downloadedNovels,
+                            key = { it.novelId }
+                        ) { novelInfo ->
+                            DownloadedNovelItem(
+                                novelInfo = novelInfo,
+                                onClick = { onNovelClick(novelInfo.novelId) },
+                                onDeleteClick = { showDeleteDialog = novelInfo }
+                            )
+                        }
                     }
                 }
             }
@@ -188,7 +203,11 @@ fun DownloadsScreen(
             onDismissRequest = { showDeleteDialog = null },
             title = { Text("Delete Downloads?") },
             text = {
-                Text("Delete all ${novelInfo.downloadedChapters} downloaded chapters for \"${novelInfo.novelTitle}\"? This will free up ${formatBytes(novelInfo.sizeBytes)}.")
+                Text(
+                    "Delete all ${novelInfo.downloadedChapters} downloaded chapters " +
+                            "for \"${novelInfo.novelTitle}\"? This will free up " +
+                            "${formatBytes(novelInfo.sizeBytes)}."
+                )
             },
             confirmButton = {
                 TextButton(
