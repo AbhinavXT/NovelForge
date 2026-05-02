@@ -406,7 +406,8 @@ class NovelRepository(
             pageTransition = settings.pageTransition.name,
             horizontalMargin = settings.horizontalMargin,
             keepScreenOn = settings.keepScreenOn,
-            volumeKeyNavigation = settings.volumeKeyNavigation
+            volumeKeyNavigation = settings.volumeKeyNavigation,
+            autoScrollSpeed = settings.autoScrollSpeed,  // NEW
         )
         settingsDao.saveSettings(entity)
     }
@@ -480,7 +481,8 @@ class NovelRepository(
             },
             horizontalMargin = this.horizontalMargin.coerceIn(8, 40),
             keepScreenOn = this.keepScreenOn,
-            volumeKeyNavigation = this.volumeKeyNavigation
+            volumeKeyNavigation = this.volumeKeyNavigation,
+            autoScrollSpeed = this.autoScrollSpeed.coerceIn(20, 200),  // NEW
         )
     }
 

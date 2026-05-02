@@ -1,30 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Static fallback layout shown:
-    (a) in the widget picker as a preview
-    (b) on pre-API-31 devices briefly before Glance's first render lands
+  Static preview layout shown in the widget picker.
 
   PLACE AT: app/src/main/res/layout/continue_reading_widget_preview.xml
-  (NOT res/xml/ — that was an earlier mistake. Android resolves
-  @layout/... references from res/layout/ only.)
 
-  Widgets do NOT have access to your app's Material theme attributes.
-  ?attr/colorPrimary and ?android:attr/textColorPrimary will fail at
-  resource-linking time because the widget's inflation context doesn't
-  know about them.
+  ── Why no background and dark-on-launcher-surface colors ──
 
-  Use concrete colors only. Hex values chosen to look reasonable on both
-  light and dark launchers (dark card with muted purple accent).
+  The widget picker (and the picker on most launchers — Pixel, Nova,
+  Niagara, OneUI, etc.) wraps each preview in a container that paints
+  its own background — usually white or a light surface tint. Setting
+  android:background on our root gets overridden in the picker even
+  though it works fine once the widget is placed on the home screen.
+
+  Net effect of the OLD layout: we set #1C1C1E (dark) on the root, but
+  the picker forced white, which made our white "NovelForge" text and
+  light-purple kicker invisible. The launcher's "tile looks empty"
+  heuristic then overlaid "Problem loading widget" on top.
+
+  Fix: remove the root background entirely AND use colors that read on
+  both light and dark surfaces. Near-black title + saturated purple
+  kicker work on both.
+
+  Note: this layout is ONLY used by the picker. Once the widget is
+  placed, Glance's provideGlance takes over and renders the real
+  Compose UI with the dark theme.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:padding="12dp"
-    android:background="#1C1C1E">
+    android:padding="12dp">
 
-    <!-- Fake cover block — solid accent rectangle suggesting the widget's shape -->
+    <!-- Cover block — solid accent rectangle suggesting the widget's shape.
+         #6B46C1 is dark enough to read against any launcher tile colour. -->
     <View
         android:layout_width="56dp"
         android:layout_height="80dp"
@@ -37,19 +46,23 @@
         android:layout_marginStart="12dp"
         android:orientation="vertical">
 
+        <!-- Kicker. Uses the accent purple — same hue family as the cover
+             block, dark enough to read on white tiles. -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="CONTINUE READING"
-            android:textColor="#A78BFA"
+            android:textColor="#6B46C1"
             android:textSize="10sp"
             android:textStyle="bold" />
 
+        <!-- Title. Near-black instead of #FFFFFF — survives the picker's
+             forced light background. -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="NovelForge"
-            android:textColor="#FFFFFF"
+            android:textColor="#1C1C1E"
             android:textSize="14sp"
             android:textStyle="bold"
             android:layout_marginTop="4dp" />

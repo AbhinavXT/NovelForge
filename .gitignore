@@ -1,12 +1,84 @@
-*.iml
-.gradle
-/local.properties
-/.idea
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+# ─── Android build outputs ───────────────────────────────────
 *.apk
+*.aab
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+out/
+release/
+
+# ─── Gradle ──────────────────────────────────────────────────
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+local.properties
+
+# ─── Android Studio / IntelliJ ───────────────────────────────
+*.iml
+.idea/
+!.idea/icon.png
+!.idea/codeStyles
+!.idea/dictionaries
+!.idea/runConfigurations.xml
+captures/
+.navigation/
+
+# ─── Keystores and signing ───────────────────────────────────
+# Never commit signing keys. If you need a placeholder, name it
+# keystore.example.properties and document it in README.
 *.jks
-/.kotlin
+*.keystore
+keystore.properties
+signing.properties
+
+# ─── NDK / native ────────────────────────────────────────────
+.externalNativeBuild/
+.cxx/
+
+# ─── Logs and crash reports ──────────────────────────────────
+*.log
+hs_err_pid*
+
+# ─── Generated Compose / Hilt / Room ─────────────────────────
+# Most of these land under build/, but a few rogue caches escape
+*.kotlin_module
+generated/
+intermediates/
+
+# ─── Profiling and benchmarks ────────────────────────────────
+benchmark-results/
+profile-output/
+
+# ─── OS junk ─────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ─── Editors ─────────────────────────────────────────────────
+.vscode/
+*.swp
+*.swo
+*~
+.fleet/
+
+# ─── Dependency caches ───────────────────────────────────────
+node_modules/
+
+# ─── Project-specific ────────────────────────────────────────
+# The voice-model downloads from Sherpa-ONNX should never land in
+# the repo. Mark the cache directory explicitly.
+voice-models-cache/
+
+# Local environment overrides
+.env
+.env.local
+
+# Generated docs (if you ever add dokka)
+docs/api/

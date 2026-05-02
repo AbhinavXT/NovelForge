@@ -141,6 +141,11 @@ import com.abhinavxt.novelreader.data.ChapterPrefetcher
 import com.abhinavxt.novelreader.NovelReaderApplication
 import com.abhinavxt.novelreader.VolumeKeyEvent
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.abhinavxt.novelreader.util.AutoScrollController
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -516,6 +521,76 @@ private fun ReaderContent(
         }
     }
 
+    // ── Auto-scroll controller (teleprompter-style continuous drift) ──
+    // Standalone of TTS — auto-scroll is for hands-free *reading*. TTS
+    // already does its own current-paragraph-tracking scroll (see the
+    // LaunchedEffect at top of this composable). The two are mutually
+    // exclusive at the UI level (see TTS-mutex LaunchedEffect below).
+    val autoScrollScope = rememberCoroutineScope()
+    val autoScrollController = remember(listState) {
+        AutoScrollController(autoScrollScope, listState)
+    }
+    val autoScrollState by autoScrollController.state.collectAsState()
+    val isAutoScrollActive = autoScrollState != AutoScrollController.State.IDLE
+
+    // Sync speed from settings → controller. Settings is the source of
+    // truth; the controller reads from it. When the user adjusts the
+    // slider in QuickSettings, this LaunchedEffect picks up the change
+    // and the running scroll loop respects the new speed on its next
+    // frame (no restart needed — the loop reads speedPxPerSec.value
+    // every frame).
+    LaunchedEffect(settings.autoScrollSpeed) {
+        autoScrollController.setSpeed(settings.autoScrollSpeed.toFloat())
+    }
+
+    // TTS mutex: starting TTS while auto-scroll is active stops auto-
+    // scroll. Without this, both try to drive the screen and you get
+    // visual jitter as TTS auto-scrolls to the current paragraph
+    // while our loop is also drifting downward.
+    LaunchedEffect(ttsState) {
+        if (ttsState == TTSState.PLAYING && isAutoScrollActive) {
+            autoScrollController.stop()
+        }
+    }
+
+    // Lifecycle: pause auto-scroll when the screen goes into the
+    // background (user pressed home, screen turned off, etc).
+    // We pause rather than stop so resuming the app resumes the
+    // scroll where it left off.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, autoScrollController) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE &&
+                autoScrollState == AutoScrollController.State.ACTIVE
+            ) {
+                autoScrollController.pause()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Stop auto-scroll on screen exit. Without this, the coroutine
+    // scope persists for one frame after navigation and the loop
+    // can fire one final scrollBy on a recycled LazyListState.
+    DisposableEffect(autoScrollController) {
+        onDispose { autoScrollController.stop() }
+    }
+
+    // Chapter-end behavior. When the controller hits the bottom of the
+    // current chapter, it fires this callback. We advance (if possible)
+    // and tell the controller — which then gives the user a 2-second
+    // pause at the top of the new chapter before resuming the scroll
+    // loop. If we can't advance (last chapter), we just stop.
+    val onAutoScrollChapterEnd: () -> Unit = {
+        if (canGoNext) {
+            onNextChapter()
+            autoScrollController.onChapterAdvanced()
+        } else {
+            autoScrollController.stop()
+        }
+    }
+
     // ── Quick settings bottom sheet: reading mode, themes, fonts, etc. ──
     if (showAppearanceSheet) {
         QuickSettingsSheet(
@@ -543,6 +618,17 @@ private fun ReaderContent(
                     estimatedMinutesLeft = estimatedMinutesLeft,
                     onBackClick = onBackClick,
                     onTTSClick = onToggleTTSControls,
+                    isAutoScrollActive = isAutoScrollActive,
+                    onAutoScrollClick = {
+                        when (autoScrollState) {
+                            AutoScrollController.State.IDLE,
+                            AutoScrollController.State.CHAPTER_END ->
+                                autoScrollController.start(onAutoScrollChapterEnd)
+                            AutoScrollController.State.ACTIVE,
+                            AutoScrollController.State.PAUSED ->
+                                autoScrollController.stop()
+                        }
+                    },
                     backgroundColor = colors.background,
                     contentColor = colors.text
                 )
@@ -629,7 +715,6 @@ private fun ReaderContent(
                         )
                 )
             } else {
-                // ── Scroll mode (existing behavior) ─────────────
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
@@ -652,6 +737,27 @@ private fun ReaderContent(
                                     swipeOffset += dragAmount
                                 }
                             )
+                        }
+                        // ── Auto-scroll: tap-to-pause/resume ────────────
+                        // Only active while auto-scroll is running. When idle,
+                        // this pointerInput is a no-op and taps fall through
+                        // to text selection / native behavior. The `key` is
+                        // `isAutoScrollActive` so the gesture handler re-installs
+                        // when the state flips (otherwise the captured value
+                        // would go stale).
+                        //
+                        // NOTE: detectTapGestures consumes single taps. If you
+                        // want a tap on a *paragraph* to still behave as a tap
+                        // (e.g. for selection), the SelectionContainer inside
+                        // BookmarkableParagraph handles long-press → selection,
+                        // which fires on a different gesture path and isn't
+                        // affected by this tap detector.
+                        .pointerInput(isAutoScrollActive) {
+                            if (isAutoScrollActive) {
+                                detectTapGestures(
+                                    onTap = { autoScrollController.togglePause() }
+                                )
+                            }
                         }
                         .padding(horizontal = settings.horizontalMargin.dp, vertical = 8.dp)
                 ) {
@@ -1628,6 +1734,8 @@ private fun ReaderTopBar(
     estimatedMinutesLeft: Int? = null,
     onBackClick: () -> Unit,
     onTTSClick: () -> Unit,
+    isAutoScrollActive: Boolean = false,
+    onAutoScrollClick: () -> Unit = {},
     backgroundColor: Color,
     contentColor: Color
 ) {
@@ -1681,6 +1789,26 @@ private fun ReaderTopBar(
                     )
                 }
             }
+        }
+
+        // Auto-scroll toggle. Disabled while TTS is playing — they're
+        // mutually exclusive (see the TTS mutex LaunchedEffect in
+        // ReaderContent). When active, icon shows Pause; otherwise PlayArrow.
+        IconButton(
+            onClick = onAutoScrollClick,
+            enabled = ttsState != TTSState.PLAYING
+        ) {
+            Icon(
+                imageVector = if (isAutoScrollActive) Icons.Filled.Pause
+                else Icons.Filled.PlayArrow,
+                contentDescription = if (isAutoScrollActive)
+                    "Stop auto-scroll" else "Start auto-scroll",
+                tint = when {
+                    isAutoScrollActive -> MaterialTheme.colorScheme.primary
+                    ttsState == TTSState.PLAYING -> contentColor.copy(alpha = 0.3f)
+                    else -> contentColor
+                }
+            )
         }
 
         IconButton(onClick = onTTSClick) {

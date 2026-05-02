@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.FormatLineSpacing
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.ViewDay
 import androidx.compose.material.icons.filled.VolumeUp
@@ -98,6 +99,41 @@ fun QuickSettingsSheet(
                     }
                 )
                 SectionDivider()
+            }
+
+            // ── Section 1.5: Auto-Scroll Speed (scroll mode only) ──
+            // Only relevant for scroll mode — paged mode advances
+            // page-by-page on swipe, no continuous drift to control.
+            //
+            // Slider config:
+            //  - Range 20–200 px/sec matches AutoScrollController's
+            //    MIN_SPEED/MAX_SPEED clamps.
+            //  - 17 steps gives 18 stops at 10-px increments
+            //    (20, 30, 40, …, 190, 200) — granular enough to feel
+            //    smooth, coarse enough that the slider lands on round
+            //    numbers the user can recognise across sessions.
+            //  - `label` is the left-side text ("Speed"), `valueDisplay`
+            //    is the right-side number ("60 px/sec") — same shape
+            //    as the Line Spacing and Margins sliders below for
+            //    visual consistency.
+            if (settings.readingMode == ReadingMode.SCROLL) {
+                item {
+                    SectionHeader(title = "Auto-Scroll Speed")
+                    CompactSlider(
+                        icon = Icons.Default.Speed,
+                        label = "Speed",
+                        value = settings.autoScrollSpeed.toFloat(),
+                        valueDisplay = "${settings.autoScrollSpeed} px/sec",
+                        onValueChange = { speed ->
+                            onSettingsChanged(
+                                settings.copy(autoScrollSpeed = speed.toInt())
+                            )
+                        },
+                        valueRange = 20f..200f,
+                        steps = 17,
+                    )
+                    SectionDivider()
+                }
             }
 
             // ── Section 2: Typography Controls ──────────────────

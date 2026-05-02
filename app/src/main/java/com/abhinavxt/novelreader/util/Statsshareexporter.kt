@@ -11,8 +11,11 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.unit.Density
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -48,6 +51,25 @@ import java.io.FileOutputStream
  *
  * No WindowManager calls, no permissions, no token dependencies. The
  * only requirement is that we're called from an Activity context.
+ *
+ * ── Why we lock LocalDensity (the v2 fix) ──
+ *
+ * Compose converts dp → px and sp → px using the device's display
+ * density. The render canvas is fixed at 1080×1920 PIXELS, but the
+ * content was designed assuming a "standard" xxhdpi screen (density
+ * 3.0). On a device with density 3.5 or higher (common on flagship
+ * phones), `padding(horizontal = 56.dp)` alone consumes
+ * 56 × 3.5 × 2 = 392 px of horizontal space, leaving only ~688 px of
+ * content area on a 1080 px canvas — too narrow for the 112sp hero
+ * number "262K" + the "words" sidekick to fit on one line. The result
+ * was the hero wrapping onto two lines and the "words" label squeezed
+ * to a single character per line.
+ *
+ * The fix: override LocalDensity for the share content with a fixed
+ * density of 3.0 + fontScale 1.0. Now the rendered card is byte-for-
+ * byte identical regardless of which device the user is on, and the
+ * 1080×1920 canvas always has the same effective dp dimensions
+ * (360×640 dp). This is a standard pattern for offscreen rendering.
  */
 object StatsShareExporter {
 
@@ -56,6 +78,15 @@ object StatsShareExporter {
     // 9:16 story size — IG/WhatsApp stories are natively 1080x1920.
     private const val OUTPUT_WIDTH_PX = 1080
     private const val OUTPUT_HEIGHT_PX = 1920
+
+    // Locked density for rendering. Picked 3.0 because:
+    //  - Canvas is 1080x1920 px → at density 3.0 that's 360x640 dp,
+    //    which is the canonical xxhdpi phone size the share card was
+    //    designed against.
+    //  - fontScale 1.0 so users with system font scaling cranked up
+    //    don't see broken cards (text overflowing the canvas).
+    private const val RENDER_DENSITY = 3.0f
+    private const val RENDER_FONT_SCALE = 1.0f
 
     private const val FILE_PREFIX = "stats-share-"
 
@@ -153,7 +184,23 @@ object StatsShareExporter {
                 OUTPUT_WIDTH_PX,
                 OUTPUT_HEIGHT_PX
             )
-            setContent { content() }
+            setContent {
+                // ── THE KEY FIX ────────────────────────────────────────
+                // Override LocalDensity so dp/sp → px conversion uses a
+                // fixed scale rather than the device's actual density.
+                // Without this, a device with density 3.5 would render
+                // the same dp values 17% larger than a density-3.0 device,
+                // overflowing the 1080-px-wide canvas. With this, the
+                // share card renders identically on every device.
+                CompositionLocalProvider(
+                    LocalDensity provides Density(
+                        density = RENDER_DENSITY,
+                        fontScale = RENDER_FONT_SCALE
+                    )
+                ) {
+                    content()
+                }
+            }
         }
 
         hostContainer.addView(composeView)

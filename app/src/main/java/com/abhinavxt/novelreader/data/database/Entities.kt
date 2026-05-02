@@ -66,7 +66,10 @@ data class ReaderSettingsEntity(
     val pageTransition: String = "SLIDE",         // "SLIDE", "FADE", "CURL", "NONE"
     val horizontalMargin: Int = 16,               // dp, 8–40
     val keepScreenOn: Boolean = true,
-    val volumeKeyNavigation: Boolean = false
+    val volumeKeyNavigation: Boolean = false,
+
+    // ── NEW: auto-scroll speed (px/sec) ─────────────────────────
+    val autoScrollSpeed: Int = 60,
 )
 
 @Entity(tableName = "bookmarks")

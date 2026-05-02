@@ -97,4 +97,6 @@ data class ReaderSettings(
     val horizontalMargin: Int = 16,                      // dp — left/right content padding (8–40)
     val keepScreenOn: Boolean = true,                    // Prevent screen dimming while reading
     val volumeKeyNavigation: Boolean = false,            // Use volume keys for page/chapter nav
+
+    val autoScrollSpeed: Int = 60,
 )

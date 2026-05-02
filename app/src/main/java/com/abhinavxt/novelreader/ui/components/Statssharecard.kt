@@ -11,15 +11,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -33,342 +30,320 @@ import java.util.Locale
 import kotlin.math.max
 
 /**
- * Strava-style reading share card.
+ * Reading stats share card — serene redesign.
  *
- * Design inspiration (the Strava activity-detail share card):
- *  • Near-black base (#0F1115), not pure black — richer on JPEG/Story
- *    compression and on AMOLED
- *  • ONE accent color (orange for Strava; here: your theme's primary).
- *    Used sparingly — on the hero number only and on the sparkline bars.
- *  • Heavy weight contrast: hero is extreme-bold, labels are tracked
- *    uppercase 10-12sp with low opacity
- *  • Hairline dividers (1dp, 8% white) separate sections
- *  • Data row is 4 columns with thin vertical dividers — no boxes, no
- *    rings, no decorations. This is the Strava "stat strip" pattern.
- *  • A mini bar-chart sparkline stands in for Strava's route polyline —
- *    it's the visual signature that makes the card feel "active."
+ * ── Design direction ──
  *
- * Layout approach — NO Arrangement.SpaceBetween:
- *  The previous card used SpaceBetween across three vertical blocks,
- *  which can overflow the 1920px canvas when font metrics round up.
- *  This one uses absolute spacing (explicit Spacer heights) so vertical
- *  math is deterministic and fits within 1920 with ~80px of bottom slack.
+ * The previous version was a Strava-style card: high contrast, theme-
+ * derived accent, four metric strip + sparkline. Energetic. This version
+ * is the opposite vibe: a quiet reading-room card. The visual goals,
+ * roughly in priority order:
  *
- * Fixed render size: 1080x1920. Budgeted heights:
- *   top pad        64
- *   header block  ~180
- *   hero block    ~380
- *   divider+pad    56
- *   stat strip   ~130
- *   divider+pad    56
- *   sparkline    ~340
- *   divider+pad    56
- *   footer       ~90
- *   bottom slack  ~128
- *   TOTAL        ~1880  (fits 1920 with margin)
+ *  1. *Calm.* Generous whitespace. No boxed metric chips, no shouting
+ *     accent. Numbers float on the surface separated by hairlines.
+ *  2. *Hero is the only loud thing.* The total/weekly word count is
+ *     the one heavy element; everything else recedes.
+ *  3. *No iconography.* No fire-streak icon, no ascending bars, no
+ *     decorative chrome. Type and hairlines do all the work.
+ *  4. *Activity grid as the visual anchor.* The 14-day grid is the
+ *     only graphic on the card. Lower contrast than a typical heatmap —
+ *     accent maxes out at 70% alpha rather than full saturation.
+ *
+ * ── Why we hard-code the accent instead of using MaterialTheme ──
+ *
+ * The previous card used MaterialTheme.colorScheme.primary so different
+ * reader themes produced subtly different cards. That's fine for an
+ * energetic Strava look, but for "serene" we need to control the accent
+ * tightly — some of the app's 11 reader themes have saturated primaries
+ * (hot pink, neon green, etc.) that would scream on a near-black canvas
+ * no matter how we styled the layout. So we pin one slate-blue accent
+ * and use it everywhere. Cards look consistent across users on social
+ * feeds, which is also what most polished sharing surfaces (Strava,
+ * Spotify Wrapped, Letterboxd) do.
+ *
+ * ── Layout budget at 1080×1920 (locked density 3.0 → 360×640 dp) ──
+ *   top pad        96
+ *   header        ~70   (kicker + date, single row)
+ *   hairline+gap   80
+ *   hero block   ~360   (number + caption)
+ *   hairline+gap  100
+ *   stat row     ~140   (3 stats, no boxes)
+ *   hairline+gap  100
+ *   activity     ~340   (14 days as 7×2 grid + caption)
+ *   bottom pad   ~624   (a lot — that's the serenity)
+ *   wordmark      ~50   (anchored to bottom)
+ *
+ *   The deliberately-large bottom void is the design move. Most share
+ *   cards cram every pixel; this one breathes.
+ *
+ * ── Hardening (carried over from v2) ──
+ *
+ * Renderer locks LocalDensity (see StatsShareExporter). All Text that
+ * contributes to horizontal pressure has `maxLines = 1` + `softWrap =
+ * false` so over-long values truncate cleanly instead of wrapping into
+ * vertical character columns.
  */
 @Composable
 fun StatsShareCard(
     state: StatsUiState,
-    displayName: String = "",
+    @Suppress("UNUSED_PARAMETER") displayName: String = "",
     modifier: Modifier = Modifier
 ) {
-    // ONE accent. Derived from the app theme so different users get
-    // subtle variation but the overall look stays consistent.
-    val accent = MaterialTheme.colorScheme.primary
+    // ── Palette ──
+    // Background slightly darker than the previous #0F1115 — lifts
+    // content a fraction more on AMOLED and JPEG-compresses cleaner
+    // (less banding around hairlines).
+    val bg = Color(0xFF0B0D10)
 
-    // Light-on-dark colors. Fixed — the card doesn't mirror the user's
-    // app theme so cards look consistent across users on social feeds.
-    val bg = Color(0xFF0F1115)
+    // Text ramps. Five tiers of alpha, descending — every text element
+    // picks one of these. No ad-hoc alphas elsewhere in the file.
     val text = Color.White
-    val textDim = text.copy(alpha = 0.60f)
-    val textFaint = text.copy(alpha = 0.35f)
-    val divider = text.copy(alpha = 0.08f)
+    val textHigh = text.copy(alpha = 0.92f)   // hero number
+    val textMid = text.copy(alpha = 0.55f)    // captions, kicker
+    val textLow = text.copy(alpha = 0.32f)    // dates, axis labels
+    val textFaint = text.copy(alpha = 0.16f)  // wordmark, dim grid cells
+    val hairline = text.copy(alpha = 0.06f)   // dividers
 
-    val headerLabel = if (displayName.isNotBlank()) {
-        displayName.uppercase(Locale.US)
-    } else {
-        "NOVELFORGE"
-    }
-    val dateStamp = SimpleDateFormat("MMM d, yyyy", Locale.US).format(Date())
+    // Pinned accent — desaturated slate-blue. Reads calm on near-black,
+    // survives JPEG compression, doesn't fight any reader theme since
+    // it's not derived from one.
+    val accent = Color(0xFF7E8CA8)
+
+    // Header label. Kept as a constant — the displayName param is
+    // accepted for API compatibility with the existing call site but
+    // ignored, because user-name personalization fights the "consistent
+    // across users" goal stated above.
+    val headerLabel = "NOVELFORGE"
+    val dateStamp = SimpleDateFormat("MMMM yyyy", Locale.US)
+        .format(Date())
+        .uppercase(Locale.US)
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(bg)
+            // 56dp horizontal padding @ density 3.0 = 168 px each side.
+            // Inner content area = 1080 - 336 = 744 px. Comfortable for
+            // the 96sp hero number and three flat stats.
             .padding(horizontal = 56.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // ─── Top margin ───
-            Spacer(Modifier.height(72.dp))
 
-            // ─── HEADER: kicker + date ────────────────────────────────
-            // Kicker is tracked-uppercase 11sp — classic editorial style
-            // you see on every Strava/NYT/Apple share card. Immediately
-            // tells the viewer "this is a data card from a specific app."
+            // ─── Top void ───
+            // Larger top spacer than the previous version (96 vs 72).
+            // Pushing the kicker down makes the card feel less crowded.
+            Spacer(Modifier.height(96.dp))
+
+            // ─── HEADER: kicker + date, on the same baseline ───────────
+            // The previous card put these in a SpaceBetween row. Same
+            // here — but both are now drawn at the same low-emphasis
+            // weight (no accent color on the kicker). Identical visual
+            // weight on left and right reads as calm/symmetric;
+            // asymmetric weight reads as "branded".
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Left: "NOVELFORGE" or user's name, wide-tracked
                 Text(
                     text = headerLabel,
-                    color = accent,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 3.sp,
-                    style = MaterialTheme.typography.labelMedium
-                )
-                // Right: current date, same weight but dim
-                Text(
-                    text = dateStamp.uppercase(Locale.US),
-                    color = textFaint,
-                    fontSize = 12.sp,
+                    color = textMid,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
-                    letterSpacing = 2.sp,
-                    style = MaterialTheme.typography.labelMedium
+                    letterSpacing = 4.sp,
+                    maxLines = 1,
+                    softWrap = false
+                )
+                Text(
+                    text = dateStamp,
+                    color = textLow,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 3.sp,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
 
-            Spacer(Modifier.height(20.dp))
-
-            // Hairline under the header — the Strava-ish section marker.
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(divider)
-            )
-
+            Spacer(Modifier.height(40.dp))
+            Hairline(hairline)
             Spacer(Modifier.height(64.dp))
 
-            // ─── HEADLINE LABEL ───
-            // Small descriptor ABOVE the hero, not below. Lets the eye
-            // read "this week's reading" → see the giant number → feel
-            // the meaning. If the label goes below, the number reads as
-            // "a number" before you know what it measures.
-            Text(
-                text = "THIS WEEK'S READING",
-                color = textDim,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 3.sp,
-                style = MaterialTheme.typography.labelMedium
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // ─── HERO: "12,450 words" ─────────────────────────────────
-            // Reading words as the hero matches what users intuitively
-            // think of as their reading "output" — same role kilometers
-            // play on a Strava run card.
+            // ─── HERO: total words read ────────────────────────────────
+            // Switched the headline metric from "this week's words" to
+            // "total words read" — total reads as a quieter, longer-arc
+            // number. Weekly numbers are about momentum; cumulative
+            // numbers are about a relationship with reading. The latter
+            // fits the serene brief.
             //
-            // We keep the number on one line up to "99.9K" by using the
-            // K/M short forms. Even huge readers won't blow past the
-            // canvas horizontally.
-            val heroWords = max(state.thisWeekWords, state.todayWords)
-            val showingToday = state.thisWeekWords < state.todayWords
+            // We still fall back to today's count if the user has no
+            // total yet (brand-new user) so the hero never shows "0".
+            val heroWords = max(state.totalWordsRead, state.todayWords)
 
-            Row(
-                verticalAlignment = Alignment.Bottom
-            ) {
-                Text(
-                    text = formatNumberStrava(heroWords),
-                    color = text,
-                    fontSize = 112.sp,
-                    fontWeight = FontWeight.Black,
-                    lineHeight = 112.sp,
-                    letterSpacing = (-4).sp,   // tight tracking = confident, premium
-                    style = MaterialTheme.typography.displayLarge
-                )
-                Spacer(Modifier.width(16.dp))
-                // "words" sits on the baseline next to the big number.
-                // Smaller, colored in accent — the only other place the
-                // accent appears above the sparkline.
-                Text(
-                    text = "words",
-                    color = accent,
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    // Align to baseline with padding-bottom to match
-                    modifier = Modifier.padding(bottom = 16.dp),
-                    style = MaterialTheme.typography.headlineMedium
-                )
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            // Secondary context line — if we're showing today's number
-            // because it's bigger than the week, say so explicitly.
-            // Otherwise show the week range.
             Text(
-                text = if (showingToday) {
-                    "Today · ${state.todayChapters} chapters"
-                } else {
-                    "Past 7 days · ${state.thisWeekDaysActive}/7 days active"
-                },
-                color = textDim,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Normal,
-                style = MaterialTheme.typography.bodyLarge
-            )
-
-            Spacer(Modifier.height(48.dp))
-
-            // ─── STAT STRIP: 4 columns separated by hairlines ─────────
-            // This is THE Strava pattern — no rings, no cards, just
-            // 4 vertical stat columns with thin dividers between them.
-            // Each column: tiny label on top, big number below.
-            //
-            // Four stats chosen so every user sees most of them non-zero:
-            //   time · chapters · speed · streak
-            StatStrip(
-                items = listOf(
-                    StatItem("TIME", formatTimeStrava(state.thisWeekTimeMs)),
-                    StatItem("CHAPTERS", state.thisWeekChapters.toString()),
-                    StatItem("SPEED", "${state.userWPM} wpm"),
-                    StatItem(
-                        "STREAK",
-                        if (state.currentStreak > 0) {
-                            "${state.currentStreak}d"
-                        } else "—"
-                    )
-                ),
-                textColor = text,
-                labelColor = textDim,
-                dividerColor = divider
-            )
-
-            Spacer(Modifier.height(56.dp))
-
-            // ─── SPARKLINE: 14-day bar chart ───────────────────────────
-            // Strava's equivalent is the route polyline. Ours is a tiny
-            // bar chart of the last 14 days of reading. Same visual role:
-            // a "pulse" that makes the card feel alive and specific to
-            // this user's activity.
-            if (state.dailyWordCounts.isNotEmpty()) {
-                Text(
-                    text = "LAST 14 DAYS",
-                    color = textDim,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 3.sp,
-                    style = MaterialTheme.typography.labelSmall
-                )
-                Spacer(Modifier.height(16.dp))
-                Sparkline(
-                    data = state.dailyWordCounts.map { it.second },
-                    accent = accent,
-                    dimColor = text.copy(alpha = 0.12f),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(140.dp)
-                )
-                Spacer(Modifier.height(10.dp))
-                // X-axis anchors — first and last date labels only.
-                // A full axis would be cluttered; Strava does the same
-                // "start/end only" on its pace charts.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = state.dailyWordCounts.firstOrNull()?.first ?: "",
-                        color = textFaint,
-                        fontSize = 11.sp,
-                        letterSpacing = 1.sp,
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                    Text(
-                        text = state.dailyWordCounts.lastOrNull()?.first ?: "",
-                        color = textFaint,
-                        fontSize = 11.sp,
-                        letterSpacing = 1.sp,
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(56.dp))
-
-            // Hairline before the footer, matching the header's hairline
-            // — creates a clean "start" and "end" to the card.
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(divider)
+                text = formatNumber(heroWords),
+                color = textHigh,
+                fontSize = 96.sp,
+                lineHeight = 96.sp,
+                fontWeight = FontWeight.Light,   // light weight — calm hero
+                letterSpacing = (-3).sp,
+                maxLines = 1,
+                softWrap = false,
+                style = MaterialTheme.typography.displayLarge
             )
 
             Spacer(Modifier.height(20.dp))
 
-            // ─── FOOTER: all-time totals + attribution ─────────────────
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                // Left: all-time stats, one line, pipe-separated
-                Column {
-                    Text(
-                        text = "ALL TIME",
-                        color = textFaint,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = 2.sp,
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "${formatNumberStrava(state.totalWordsRead)} " +
-                                "words · ${state.totalChapters} chapters",
-                        color = text,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-                // Right: tiny app mark
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(accent),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "N",
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Black,
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                }
-            }
+            // Caption under the hero. Tracked uppercase, low contrast.
+            // "WORDS READ" instead of "TOTAL WORDS READ" — shorter,
+            // less prescriptive. The hero's size already implies "this
+            // is the big number".
+            Text(
+                text = "WORDS READ",
+                color = textMid,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 4.sp,
+                maxLines = 1,
+                softWrap = false
+            )
 
-            // No spacer here — we deliberately let the bottom pad be the
-            // natural "empty" area below the footer. This is ~128px of
-            // slack on a 1920px canvas, which is the safety margin that
-            // guarantees no cropping even if font metrics round up.
+            Spacer(Modifier.height(72.dp))
+            Hairline(hairline)
+            Spacer(Modifier.height(56.dp))
+
+            // ─── STAT ROW: three flat stats ────────────────────────────
+            // No boxes, no chips. Three columns separated by thin
+            // vertical hairlines. Number on top (28sp Light), label
+            // underneath (10sp tracked uppercase).
+            //
+            // Three stats chosen to span time horizons:
+            //   - WPM:       a *capability* (their reading speed)
+            //   - Streak:    a *current state* (today's habit)
+            //   - Chapters:  a *cumulative output* (lifetime work)
+            // No "best streak" because StatsUiState only carries
+            // currentStreak, and inventing fields is scope creep.
+            FlatStatRow(
+                items = listOf(
+                    FlatStat(
+                        label = "WPM",
+                        value = state.userWPM.toString()
+                    ),
+                    FlatStat(
+                        label = "STREAK",
+                        value = if (state.currentStreak > 0) {
+                            "${state.currentStreak}d"
+                        } else "—"
+                    ),
+                    FlatStat(
+                        label = "CHAPTERS",
+                        value = formatNumber(state.totalChapters)
+                    )
+                ),
+                valueColor = textHigh,
+                labelColor = textMid,
+                dividerColor = hairline
+            )
+
+            Spacer(Modifier.height(72.dp))
+            Hairline(hairline)
+            Spacer(Modifier.height(56.dp))
+
+            // ─── ACTIVITY GRID: 14 days as 7×2 cells ───────────────────
+            // The visual anchor of the card. Lume's design used a 7×2
+            // grid; we keep that shape. Intensity = today's value /
+            // max(any day in window), mapped to alpha 0.16 → 0.70 on
+            // the accent. Capping at 0.70 (instead of going to full
+            // saturation) is what makes this calm — heatmaps usually
+            // pop their hottest cells; ours stays muted.
+            //
+            // We render even when dailyWordCounts is empty (brand-new
+            // user) — the grid just shows 14 dim cells, which still
+            // reads as "this is where your reading will go".
+            Text(
+                text = "LAST 14 DAYS",
+                color = textMid,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 3.sp,
+                maxLines = 1,
+                softWrap = false
+            )
+            Spacer(Modifier.height(24.dp))
+
+            ActivityGrid(
+                values = state.dailyWordCounts.map { it.second },
+                accent = accent,
+                dimColor = textFaint,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(220.dp)
+            )
+
+            // ─── Bottom void + wordmark ────────────────────────────────
+            // weight(1f) gives the wordmark all remaining vertical space
+            // as breathing room — that's the serene move. Whatever space
+            // the rest of the card didn't use ends up as silence above
+            // the wordmark. On a 1920px canvas this typically lands at
+            // ~500-600px of empty space.
+            Spacer(Modifier.weight(1f))
+
+            // Wordmark at the bottom, very faint. Replaces the previous
+            // card's logo block + all-time totals row. Saying nothing
+            // is also a design choice.
+            Text(
+                text = "NOVELFORGE",
+                color = textFaint,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 6.sp,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 64.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
         }
     }
 }
 
-// ─── Stat-strip sub-composable ──────────────────────────────────────
-
-private data class StatItem(val label: String, val value: String)
+// ─── Hairline ────────────────────────────────────────────────────────
 
 /**
- * A horizontal row of stats with thin vertical dividers between them.
- * No background, no padding around each stat — pure data. This is the
- * visual anchor that says "this is a data card," lifted directly from
- * Strava's activity detail strip.
+ * 1dp horizontal divider. Pulled out as its own composable because the
+ * card uses three of them and inlining the Box+Modifier chain three
+ * times was noisy. Single-purpose, no parameters beyond color.
  */
 @Composable
-private fun StatStrip(
-    items: List<StatItem>,
-    textColor: Color,
+private fun Hairline(color: Color) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(color)
+    )
+}
+
+// ─── Flat stat row ───────────────────────────────────────────────────
+
+private data class FlatStat(val label: String, val value: String)
+
+/**
+ * Three-column flat stat row. Number on top (Light weight, 28sp),
+ * label below (Medium weight, 10sp tracked uppercase). Vertical
+ * hairlines between columns. No background, no padding, no chips.
+ *
+ * The previous card put labels above values — I flipped it because
+ * with a Light-weight value the number reads first, label second,
+ * which matches the natural eye-flow on a calm composition. With
+ * Bold values you want the label first as a "primer"; with Light
+ * values the number is already low-key enough.
+ */
+@Composable
+private fun FlatStatRow(
+    items: List<FlatStat>,
+    valueColor: Color,
     labelColor: Color,
     dividerColor: Color,
     modifier: Modifier = Modifier
@@ -378,37 +353,37 @@ private fun StatStrip(
         verticalAlignment = Alignment.Top
     ) {
         items.forEachIndexed { i, item ->
-            // Each stat gets equal width via weight(1f). Can't use
-            // Row(horizontalArrangement = SpaceEvenly) because we need
-            // the dividers to sit at specific offsets.
             Column(
                 modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.Start
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                Text(
+                    text = item.value,
+                    color = valueColor,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Light,
+                    letterSpacing = (-0.5).sp,
+                    maxLines = 1,
+                    softWrap = false
+                )
+                Spacer(Modifier.height(10.dp))
                 Text(
                     text = item.label,
                     color = labelColor,
                     fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 2.sp,
-                    style = MaterialTheme.typography.labelSmall
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = item.value,
-                    color = textColor,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.5).sp,
-                    style = MaterialTheme.typography.headlineMedium
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 3.sp,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
-            // Vertical divider between stats, but not after the last one.
             if (i != items.lastIndex) {
+                // Vertical hairline between columns. Height matches
+                // roughly the height of the value+spacer+label stack.
                 Box(
                     modifier = Modifier
                         .width(1.dp)
-                        .height(60.dp)
+                        .height(72.dp)
                         .background(dividerColor)
                 )
             }
@@ -416,90 +391,108 @@ private fun StatStrip(
     }
 }
 
-// ─── Sparkline ──────────────────────────────────────────────────────
+// ─── Activity grid ───────────────────────────────────────────────────
 
 /**
- * Simple bar sparkline — N evenly-spaced vertical bars, scaled to the
- * max value in the data set. Zero-days draw a very short "floor" bar
- * (2dp) so the chart doesn't have visual holes; this matches Strava's
- * pace chart which shows a faint tick for zero-effort days.
+ * 7×2 reading-activity grid. Each cell's alpha is a function of that
+ * day's word count divided by the max in the window. Cells are squares
+ * with rounded corners, separated by uniform gaps.
+ *
+ * Why 7×2 and not 14×1: a wide single row gets visually thin (~50px
+ * cells on a 744px content area) and reads more like a chart axis than
+ * a cohesive block. 7×2 lands cells at ~95×95 px each, big enough to
+ * register as deliberate squares.
+ *
+ * Intensity ramp:
+ *   value == 0          → flat dim alpha (just shows the cell exists)
+ *   value > 0           → lerp from 0.20 → 0.70 alpha on the accent
+ *
+ * Capping at 0.70 alpha (not 1.0) is the calm move. A typical heatmap
+ * goes full-saturation on max days — pretty but loud. Ours never lets
+ * any single cell scream.
  */
 @Composable
-private fun Sparkline(
-    data: List<Int>,
+private fun ActivityGrid(
+    values: List<Int>,
     accent: Color,
     dimColor: Color,
     modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier) {
-        if (data.isEmpty()) return@Canvas
+        val cols = 7
+        val rows = 2
+        val totalCells = cols * rows
 
-        val canvasWidth = size.width
-        val canvasHeight = size.height
-        val barCount = data.size
-        // Gap is ~30% of bar-slot width. Gives visual separation without
-        // making the chart look sparse.
-        val slotWidth = canvasWidth / barCount
-        val barWidth = slotWidth * 0.70f
-        val barGap = slotWidth * 0.30f
+        // Pad the input list to exactly 14 cells. If the user has fewer
+        // than 14 days of history, we render zeros for the missing days
+        // — same shape, same composition, never a partial grid.
+        val padded = (values + List(totalCells) { 0 }).take(totalCells)
 
-        val maxValue = data.max().coerceAtLeast(1)
-        val floor = 2.dp.toPx()  // minimum visible height for zero-days
+        // Cell math. Gap between cells is ~12% of cell width — wide
+        // enough to read as separate cells, narrow enough to hold the
+        // grid as a unit.
+        val gapRatio = 0.12f
+        val totalGapWidth = (cols - 1) * gapRatio
+        val cellSize = size.width / (cols + totalGapWidth)
+        val gap = cellSize * gapRatio
 
-        data.forEachIndexed { i, value ->
-            val normalized = value.toFloat() / maxValue
-            val barHeight = (canvasHeight * normalized).coerceAtLeast(floor)
-            val x = i * slotWidth + barGap / 2f
-            val y = canvasHeight - barHeight
+        // Vertical: rows fit inside size.height. Compute row spacing
+        // independently from horizontal so the grid doesn't squash
+        // into the wrong aspect ratio if height is different from
+        // (rows * cellSize + (rows-1) * gap).
+        val gridRenderHeight = rows * cellSize + (rows - 1) * gap
+        val verticalOffset = (size.height - gridRenderHeight) / 2f
+
+        // Find the max for normalization. coerceAtLeast(1) prevents
+        // divide-by-zero when every day is zero.
+        val maxValue = padded.max().coerceAtLeast(1)
+
+        padded.forEachIndexed { i, value ->
+            val col = i % cols
+            val row = i / cols
+
+            val x = col * (cellSize + gap)
+            val y = verticalOffset + row * (cellSize + gap)
+
+            // Color resolution. Zero days get the flat dim color; non-
+            // zero days get accent at an alpha lerped between 0.20 and
+            // 0.70 based on intensity. The 0.20 floor ensures even a
+            // tiny reading day is clearly distinguishable from a zero
+            // day — important for the "you read every day" feeling.
+            val cellColor = if (value == 0) {
+                dimColor
+            } else {
+                val intensity = value.toFloat() / maxValue
+                val alpha = 0.20f + intensity * 0.50f  // 0.20 → 0.70
+                accent.copy(alpha = alpha)
+            }
 
             drawRoundRect(
-                // Zero-value days get the dim color (they're just the floor
-                // tick). Everything else gets the accent.
-                color = if (value == 0) dimColor else accent,
+                color = cellColor,
                 topLeft = Offset(x, y),
-                size = Size(barWidth, barHeight),
+                size = Size(cellSize, cellSize),
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(
-                    barWidth / 4f, barWidth / 4f
+                    cellSize * 0.18f, cellSize * 0.18f
                 )
             )
         }
     }
 }
 
-// ─── Formatting (private — doesn't collide with stats screen helpers) ──
+// ─── Number formatting ──────────────────────────────────────────────
 
 /**
- * Strava-style number formatting: K/M with one decimal below 10K/10M,
- * no decimal above. "12.4K" reads well at 112sp; "12.4M" is rare but
- * we handle it anyway. Full digits below 1000 — "847" is more satisfying
- * than "0.8K" in the hero spot.
+ * K/M short-form for big numbers. Below 10K we keep one decimal
+ * ("4.2K") because losing the precision feels arbitrary at that scale.
+ * Above 10K we drop it ("42K") because the decimal becomes noise.
+ *
+ * Below 1000 we keep full digits. "847" reads more grounded than
+ * "0.8K" in the hero spot.
  */
-private fun formatNumberStrava(n: Int): String = when {
+private fun formatNumber(n: Int): String = when {
     n >= 10_000_000 -> "${n / 1_000_000}M"
     n >= 1_000_000 -> String.format(Locale.US, "%.1fM", n / 1_000_000.0)
     n >= 10_000 -> "${n / 1000}K"
     n >= 1_000 -> String.format(Locale.US, "%.1fK", n / 1_000.0)
     else -> n.toString()
-}
-
-/**
- * "2h 14m" / "45m" / "<1m" style. Same shape as your existing helper
- * but private here to avoid cross-file collision.
- */
-private fun formatTimeStrava(ms: Long): String {
-    val totalMin = ms / 60_000
-    return when {
-        totalMin < 1 -> "<1m"
-        totalMin < 60 -> "${totalMin}m"
-        totalMin < 1440 -> {
-            val h = totalMin / 60
-            val m = totalMin % 60
-            if (m > 0) "${h}h ${m}m" else "${h}h"
-        }
-        else -> {
-            val d = totalMin / 1440
-            val h = (totalMin % 1440) / 60
-            if (h > 0) "${d}d ${h}h" else "${d}d"
-        }
-    }
 }

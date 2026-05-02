@@ -178,13 +178,17 @@ private val changelogEntries = listOf(
         date = "Apr 2026",
         changes = listOf(
             "Horizontal paged reading mode with swipe + tap navigation",
+            "Auto-scroll mode — teleprompter-style continuous drift, tap to pause",
             "Quick settings bottom sheet (reading mode, fonts, themes, margins, transitions)",
             "Highlights & annotations — select text to highlight in 6 colors",
             "Page turn animations: slide, fade, page curl, none",
             "Volume key navigation for hands-free page turning",
             "New chapter update banner on novel detail screen",
+            "Redesigned reading-stats share card",
+            "Widget preview now renders correctly in the launcher picker",
             "Keep screen on toggle",
             "Configurable horizontal margins",
+            "Configurable auto-scroll speed (20–200 px/sec)",
             "Fullscreen mode with dedicated button",
             "Minimal streak display on home screen"
         )
