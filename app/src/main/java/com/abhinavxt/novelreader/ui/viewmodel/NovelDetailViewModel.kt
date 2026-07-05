@@ -165,9 +165,12 @@ class NovelDetailViewModel(
         val novel = repository.fetchNovelDetails(novelId, novelUrl)
 
         if (novel != null) {
+            // One query for all downloaded ids instead of one query per
+            // chapter — the old loop was N single-row DB hits for an
+            // N-chapter novel (2,000+ for long webnovels).
+            val downloadedIds = repository.getDownloadedChapterIds(novelId)
             val chaptersWithStatus = novel.chapters.map { chapter ->
-                val isDownloaded = repository.isChapterDownloaded(chapter.id)
-                chapter.copy(isDownloaded = isDownloaded)
+                chapter.copy(isDownloaded = chapter.id in downloadedIds)
             }
 
             val novelWithDownloadStatus = novel.copy(chapters = chaptersWithStatus)
@@ -245,9 +248,11 @@ class NovelDetailViewModel(
             if (currentState !is NovelDetailUiState.Success) return@launch
             if (currentState.isLocalNovel) return@launch
 
+            // Same one-query pattern as loadOnlineNovel — avoids N
+            // single-row lookups on every refresh.
+            val downloadedIds = repository.getDownloadedChapterIds(novelId)
             val updatedChapters = currentState.novel.chapters.map { chapter ->
-                val isDownloaded = repository.isChapterDownloaded(chapter.id)
-                chapter.copy(isDownloaded = isDownloaded)
+                chapter.copy(isDownloaded = chapter.id in downloadedIds)
             }
 
             _uiState.value = currentState.copy(

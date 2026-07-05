@@ -32,6 +32,40 @@ data class ChapterNav(
     val number: Int
 )
 
+/**
+ * A chapter appended after the anchor chapter in scroll mode
+ * (infinite-scroll "stitching"). The reader renders these below the
+ * anchor with a divider between chapters. Window capped at
+ * [ReaderViewModel.MAX_STITCHED] to bound memory.
+ */
+data class StitchedChapter(
+    val nav: ChapterNav,
+    val paragraphs: List<String>,
+    val content: String
+)
+
+/**
+ * What the reader should render after the last chapter in the window.
+ * LOADING_MORE  → slim spinner row; more chapters will stitch in.
+ * WINDOW_FULL   → classic end-of-chapter navigation (Next resets the window).
+ * FAILED        → stitch load failed (e.g. offline) — classic navigation.
+ * END_OF_BOOK   → classic navigation with Next disabled.
+ */
+enum class StitchTailState { LOADING_MORE, WINDOW_FULL, FAILED, END_OF_BOOK }
+
+/**
+ * Info about the chapter the user's viewport is currently inside —
+ * with stitching this can differ from the anchor chapter in uiState.
+ * Drives the top bar and the prev/next buttons.
+ */
+data class ActiveChapterInfo(
+    val chapterId: String,
+    val chapterNumber: Int,
+    val chapterTitle: String,
+    val canGoPrevious: Boolean,
+    val canGoNext: Boolean
+)
+
 // Complete chapter data for the reader
 data class ReaderChapterData(
     val novelId: String,
@@ -99,6 +133,29 @@ class ReaderViewModel(
 
     private val _userWPM = MutableStateFlow<Int?>(null)
     val userWPM: StateFlow<Int?> = _userWPM.asStateFlow()
+
+    // ============ INFINITE SCROLL (STITCHING) STATE ============
+
+    private val _stitchedChapters = MutableStateFlow<List<StitchedChapter>>(emptyList())
+    val stitchedChapters: StateFlow<List<StitchedChapter>> = _stitchedChapters.asStateFlow()
+
+    private val _stitchTail = MutableStateFlow(StitchTailState.END_OF_BOOK)
+    val stitchTail: StateFlow<StitchTailState> = _stitchTail.asStateFlow()
+
+    private val _activeChapterInfo = MutableStateFlow<ActiveChapterInfo?>(null)
+    val activeChapterInfo: StateFlow<ActiveChapterInfo?> = _activeChapterInfo.asStateFlow()
+
+    private var anchorChapterId: String = initialChapterId
+    private var activeChapterNumber: Int = 0
+    private var activeChapterTitle: String = ""
+    private var stitchLoading = false
+    private var lastStitchFailed = false
+
+    // Highlights Flow collector for the active chapter. Cancelled and
+    // relaunched on every chapter change — without this, each chapter
+    // switch leaked a collector and stale chapters kept overwriting
+    // _chapterHighlights (pre-existing bug, more visible with stitching).
+    private var highlightsJob: kotlinx.coroutines.Job? = null
 
     private val _bookmarkSavedEvent = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.BUFFERED)
     val bookmarkSavedEvent = _bookmarkSavedEvent.receiveAsFlow()
@@ -199,6 +256,12 @@ class ReaderViewModel(
         viewModelScope.launch {
             _uiState.value = ReaderUiState.Loading
 
+            // Any hard navigation resets the stitch window — the new
+            // chapter becomes the anchor and stitching starts fresh.
+            _stitchedChapters.value = emptyList()
+            stitchLoading = false
+            lastStitchFailed = false
+
             try {
                 val cachedContent = prefetcher?.getIfCached(currentChapterId)
 
@@ -262,6 +325,12 @@ class ReaderViewModel(
                         settings = settings
                     )
 
+                    anchorChapterId = currentChapterId
+                    activeChapterNumber = chapterData.chapterNumber
+                    activeChapterTitle = chapterData.chapterTitle
+                    updateActiveInfo()
+                    updateStitchTail()
+
                     statsTracker?.startSession(novelId, currentChapterId, content)
 
                     viewModelScope.launch {
@@ -309,7 +378,8 @@ class ReaderViewModel(
      * Collects into _chapterHighlights so the UI can render overlays.
      */
     private fun loadHighlightsForChapter(chapterId: String) {
-        viewModelScope.launch {
+        highlightsJob?.cancel()
+        highlightsJob = viewModelScope.launch {
             repository.getHighlightsForChapter(chapterId).collect { highlights ->
                 _chapterHighlights.value = highlights
             }
@@ -369,7 +439,10 @@ class ReaderViewModel(
                     repository.saveReadingProgress(
                         novelId = novelId,
                         chapterId = currentChapterId,
-                        chapterNumber = currentState.chapter.chapterNumber,
+                        // Active chapter's number — with stitching the user
+                        // may be several chapters past the anchor.
+                        chapterNumber = if (activeChapterNumber > 0) activeChapterNumber
+                        else currentState.chapter.chapterNumber,
                         paragraphIndex = paragraphIndex
                     )
                 } catch (e: Exception) {
@@ -611,6 +684,172 @@ class ReaderViewModel(
         }
     }
 
+    // ============ INFINITE SCROLL (STITCHING) METHODS ============
+
+    /**
+     * UI calls this when the user scrolls near the end of the stitched
+     * window. Loads the chapter AFTER the last chapter in the window and
+     * appends it. Self-guarding: re-entrant calls, a full window, and
+     * end-of-book are all no-ops, so the UI can call this freely.
+     */
+    fun requestStitchNext() {
+        val state = _uiState.value as? ReaderUiState.Success ?: return
+        if (stitchLoading || lastStitchFailed) return
+        val window = _stitchedChapters.value
+        if (window.size >= MAX_STITCHED) return
+
+        val lastId = window.lastOrNull()?.nav?.id ?: anchorChapterId
+        val lastIdx = chapterList.indexOfFirst { it.id == lastId }
+        if (lastIdx < 0 || lastIdx >= chapterList.size - 1) return
+        val next = chapterList[lastIdx + 1]
+
+        stitchLoading = true
+        viewModelScope.launch {
+            try {
+                val content = prefetcher?.getIfCached(next.id)
+                    ?: repository.getChapterContent(
+                        novelId = novelId,
+                        chapterId = next.id,
+                        chapterUrl = next.url
+                    )
+                // A hard navigation may have replaced the anchor while we
+                // were loading — if so, this result belongs to a dead window.
+                val cur = _uiState.value as? ReaderUiState.Success
+                if (content != null && cur?.chapter?.chapterId == state.chapter.chapterId) {
+                    _stitchedChapters.value = _stitchedChapters.value + StitchedChapter(
+                        nav = next.toChapterNav(),
+                        paragraphs = splitIntoParagraphs(content),
+                        content = content
+                    )
+                    // Keep the prefetch pipeline warm past the new window end
+                    prefetcher?.prefetchAround(
+                        novelId = novelId,
+                        currentIndex = lastIdx + 1,
+                        chapters = chapterList.map {
+                            ChapterPrefetcher.ChapterRef(id = it.id, url = it.url)
+                        }
+                    )
+                } else if (content == null) {
+                    // Offline / source error — tail falls back to the classic
+                    // end-of-chapter navigation instead of spinning forever.
+                    lastStitchFailed = true
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.e("Stitch load failed", e)
+                lastStitchFailed = true
+            } finally {
+                stitchLoading = false
+                updateStitchTail()
+            }
+        }
+    }
+
+    /**
+     * UI calls this when the viewport crosses a chapter divider. Everything
+     * keyed to "the chapter being read" follows: bookmarks, highlights,
+     * dictionary attribution, TTS content, reading progress, and the stats
+     * session. Synchronous state mutation — callbacks fired right after
+     * this (e.g. a bookmark) see the new chapter.
+     */
+    fun onActiveChapterChanged(chapterId: String) {
+        if (chapterId == currentChapterId) return
+        val state = _uiState.value as? ReaderUiState.Success ?: return
+
+        val window = _stitchedChapters.value
+        val (nav, content) = when (chapterId) {
+            state.chapter.chapterId -> {
+                val url = chapterList.firstOrNull { it.id == chapterId }?.url ?: return
+                ChapterNav(
+                    id = chapterId,
+                    title = state.chapter.chapterTitle,
+                    url = url,
+                    number = state.chapter.chapterNumber
+                ) to state.chapter.content
+            }
+            else -> {
+                val stitched = window.firstOrNull { it.nav.id == chapterId } ?: return
+                stitched.nav to stitched.content
+            }
+        }
+
+        currentChapterId = nav.id
+        currentChapterUrl = nav.url
+        activeChapterNumber = nav.number
+        activeChapterTitle = nav.title
+        updateActiveInfo()
+
+        // Close the old chapter's stats session, open the new one
+        viewModelScope.launch {
+            statsTracker?.endSession()
+            statsTracker?.startSession(novelId, nav.id, content)
+        }
+
+        // Highlights overlay follows the active chapter
+        loadHighlightsForChapter(nav.id)
+
+        // Persist the chapter switch immediately (the UI refines the
+        // paragraph index moments later via saveParagraphIndex)
+        saveProgress(nav.number, 0)
+
+        // Whole-chapter estimate baseline for the new active chapter
+        viewModelScope.launch {
+            val wordCount = content.split(Regex("\\s+")).count { it.isNotBlank() }
+            _estimatedMinutesLeft.value = statsTracker?.estimateMinutes(wordCount)
+        }
+    }
+
+    private fun updateActiveInfo() {
+        val idx = chapterList.indexOfFirst { it.id == currentChapterId }
+        _activeChapterInfo.value = ActiveChapterInfo(
+            chapterId = currentChapterId,
+            chapterNumber = activeChapterNumber,
+            chapterTitle = activeChapterTitle,
+            canGoPrevious = idx > 0,
+            canGoNext = idx >= 0 && idx < chapterList.size - 1
+        )
+    }
+
+    private fun updateStitchTail() {
+        val window = _stitchedChapters.value
+        val lastId = window.lastOrNull()?.nav?.id ?: anchorChapterId
+        val idx = chapterList.indexOfFirst { it.id == lastId }
+        val hasNext = idx >= 0 && idx < chapterList.size - 1
+        _stitchTail.value = when {
+            !hasNext -> StitchTailState.END_OF_BOOK
+            lastStitchFailed -> StitchTailState.FAILED
+            window.size >= MAX_STITCHED -> StitchTailState.WINDOW_FULL
+            else -> StitchTailState.LOADING_MORE
+        }
+    }
+
+    // ============ ACTIVE-RELATIVE NAVIGATION ============
+    // With stitching, "next/previous chapter" must be relative to the
+    // chapter the user is READING, not the anchor — otherwise pressing
+    // Next while three chapters deep in the window would jump backwards.
+    // Without stitching, active == anchor and these behave exactly like
+    // the original goToNextChapter/goToPreviousChapter.
+
+    fun goToPreviousOfActive() = navigateRelativeToActive(-1, withAutoRetry = false)
+
+    fun goToNextOfActive() = navigateRelativeToActive(+1, withAutoRetry = false)
+
+    fun goToNextOfActiveWithRetry() = navigateRelativeToActive(+1, withAutoRetry = true)
+
+    private fun navigateRelativeToActive(delta: Int, withAutoRetry: Boolean) {
+        val idx = chapterList.indexOfFirst { it.id == currentChapterId }
+        if (idx < 0) return
+        val target = chapterList.getOrNull(idx + delta) ?: return
+        viewModelScope.launch { statsTracker?.endSession() }
+        shouldRestorePosition = false
+        autoRetryEnabled = withAutoRetry
+        autoRetryCount = 0
+        currentChapterId = target.id
+        currentChapterUrl = target.url
+        loadChapter()
+    }
+
     private fun Chapter.toChapterNav(): ChapterNav {
         return ChapterNav(
             id = this.id,
@@ -631,6 +870,14 @@ class ReaderViewModel(
     }
 
     companion object {
+        /**
+         * Max chapters appended after the anchor (window = anchor + 4).
+         * Bounds memory for long binge sessions; when the window fills,
+         * the classic end-of-chapter navigation appears and pressing
+         * Next resets the window with a fresh anchor.
+         */
+        const val MAX_STITCHED = 4
+
         fun provideFactory(
             novelId: String,
             chapterId: String,

@@ -7,7 +7,11 @@ import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
@@ -18,6 +22,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -30,6 +35,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.abhinavxt.novelreader.data.BackupManager
@@ -39,9 +45,15 @@ import com.abhinavxt.novelreader.data.NovelRepository
 import com.abhinavxt.novelreader.data.PronunciationManager
 import com.abhinavxt.novelreader.data.ReadingStatsTracker
 import com.abhinavxt.novelreader.data.TTSManager
+import com.abhinavxt.novelreader.data.ThemeMode
 import com.abhinavxt.novelreader.data.ThemePreferences
 import com.abhinavxt.novelreader.data.UpdateChecker
 import com.abhinavxt.novelreader.data.source.NovelUrlResolver
+import com.abhinavxt.novelreader.data.source.SourceManager
+import com.abhinavxt.novelreader.worker.UpdateCheckerWorker
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import com.abhinavxt.novelreader.ui.NavigationHost
 import com.abhinavxt.novelreader.ui.Screen
 import com.abhinavxt.novelreader.ui.components.UpdateAvailableDialog
@@ -78,6 +90,23 @@ class MainActivity : ComponentActivity() {
 
     @Volatile
     private var volumeKeyNavEnabled = false
+
+    // ── Deep-link intents delivered while the Activity is alive ─
+    //
+    // onNewIntent() fires when the app is already running (share
+    // target, widget tap, update notification). Compose can't
+    // observe setIntent(), so we also push the Intent into this
+    // StateFlow; NovelReaderApp collects it and routes it through
+    // handleDeepLink(). Without this, warm-launch deep links were
+    // silently dropped — the old LaunchedEffect(Unit) handlers only
+    // ever ran once, against the cold-start Intent.
+    private val _newIntents = MutableStateFlow<Intent?>(null)
+    val newIntents: StateFlow<Intent?> = _newIntents.asStateFlow()
+
+    /** Called by the UI after a pending deep-link intent has been routed. */
+    fun consumeNewIntent() {
+        _newIntents.value = null
+    }
 
     /** Called by NovelReaderApp composable when reader route changes. */
     fun setReaderActive(active: Boolean) {
@@ -124,6 +153,11 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Opt in to edge-to-edge explicitly. Android 15 (target 35)
+        // enforces it anyway — opting in now means we control the
+        // timing and have verified the insets, instead of layouts
+        // jumping under the system bars on a future targetSdk bump.
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
         requestNotificationPermission()
@@ -142,6 +176,30 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeMode by themePreferences.themeMode.collectAsState()
             val colorScheme by themePreferences.colorScheme.collectAsState()
+
+            // Resolve dark mode the same way NovelReaderTheme does, so
+            // system-bar icon contrast follows the IN-APP theme setting.
+            // Plain enableEdgeToEdge() detects darkness from the system
+            // uiMode only — wrong when the user forces light/dark inside
+            // the app while the system is set to the opposite.
+            val darkTheme = when (themeMode) {
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+            }
+            DisposableEffect(darkTheme) {
+                enableEdgeToEdge(
+                    statusBarStyle = SystemBarStyle.auto(
+                        android.graphics.Color.TRANSPARENT,
+                        android.graphics.Color.TRANSPARENT,
+                    ) { darkTheme },
+                    navigationBarStyle = SystemBarStyle.auto(
+                        lightScrim,
+                        darkScrim,
+                    ) { darkTheme },
+                )
+                onDispose {}
+            }
 
             NovelReaderTheme(
                 themeMode = themeMode,
@@ -204,32 +262,87 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * If the Activity was launched via ACTION_SEND with a URL in the
-     * extras, return that URL. Null for any other launch path.
-     */
-    private fun extractSharedUrl(intent: Intent?): String? {
-        if (intent?.action != Intent.ACTION_SEND) return null
-        if (intent.type != "text/plain") return null
-        val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return null
-        return NovelUrlResolver.extractFirstUrl(text)
-    }
-
-    /**
-     * Public version callable from Compose. Reads the Activity's current
-     * intent (set at launch or updated by onNewIntent).
-     */
-    fun extractSharedUrlForNav(): String? = extractSharedUrl(intent)
-
-    /**
      * Called by Android when a new Intent is delivered to an already-running
-     * Activity. Happens when the user shares a URL into NovelForge while
-     * the app is already in the foreground/background — and also when the
-     * continue-reading widget is tapped while the app is already open.
+     * Activity — share target, widget tap, or update notification while the
+     * app is in the foreground/background.
+     *
+     * setIntent() keeps Activity.intent consistent for anyone reading it;
+     * the StateFlow emission is what actually makes Compose react.
      */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        _newIntents.value = intent
     }
+}
+
+// ── Edge-to-edge scrims ──────────────────────────────────────────
+// Used for the navigation bar on older APIs / 3-button navigation,
+// where a fully transparent bar isn't supported. Values match the
+// androidx edge-to-edge sample.
+private val lightScrim = android.graphics.Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
+private val darkScrim = android.graphics.Color.argb(0x80, 0x1b, 0x1b, 0x1b)
+
+/**
+ * Routes a deep-link Intent to the right screen. Returns true if the
+ * Intent carried a deep link and navigation happened.
+ *
+ * Handled cases (mutually exclusive in practice):
+ *  1. Update-checker notification tap → novel detail
+ *  2. Continue-reading widget tap     → detail + reader (builds back stack)
+ *  3. ACTION_SEND shared URL          → import-from-URL screen
+ *
+ * One function for BOTH delivery paths — the cold-start Intent and
+ * warm-launch Intents from onNewIntent(). Extras are removed / the
+ * action neutralized after handling so a configuration change doesn't
+ * replay the navigation.
+ */
+private fun handleDeepLink(intent: Intent, navController: NavHostController): Boolean {
+    // ── 1. Update-checker notification ──────────────────────────
+    intent.getStringExtra(UpdateCheckerWorker.EXTRA_NAVIGATE_NOVEL)?.let { novelId ->
+        val url = SourceManager.constructNovelUrl(novelId)
+        navController.navigate(Screen.Detail.createRoute(novelId, url))
+        intent.removeExtra(UpdateCheckerWorker.EXTRA_NAVIGATE_NOVEL)
+        return true
+    }
+
+    // ── 2. Continue-reading widget tap ──────────────────────────
+    val widgetNovelId = intent.getStringExtra(ContinueReadingWidget.EXTRA_NOVEL_ID)
+    val widgetNovelUrl = intent.getStringExtra(ContinueReadingWidget.EXTRA_NOVEL_URL)
+    val widgetChapterId = intent.getStringExtra(ContinueReadingWidget.EXTRA_CHAPTER_ID)
+    val widgetChapterUrl = intent.getStringExtra(ContinueReadingWidget.EXTRA_CHAPTER_URL)
+
+    if (widgetNovelId != null && widgetChapterId != null &&
+        widgetNovelUrl != null && widgetChapterUrl != null
+    ) {
+        // Detail first so Back from the reader lands on the novel page.
+        navController.navigate(Screen.Detail.createRoute(widgetNovelId, widgetNovelUrl))
+        navController.navigate(
+            Screen.Reader.createRoute(
+                widgetNovelId, widgetChapterId, widgetChapterUrl, widgetNovelUrl
+            )
+        )
+        intent.removeExtra(ContinueReadingWidget.EXTRA_NOVEL_ID)
+        intent.removeExtra(ContinueReadingWidget.EXTRA_NOVEL_URL)
+        intent.removeExtra(ContinueReadingWidget.EXTRA_CHAPTER_ID)
+        intent.removeExtra(ContinueReadingWidget.EXTRA_CHAPTER_URL)
+        return true
+    }
+
+    // ── 3. Share-to-app URL (ACTION_SEND text/plain) ────────────
+    if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+        val sharedUrl = intent.getStringExtra(Intent.EXTRA_TEXT)
+            ?.let { NovelUrlResolver.extractFirstUrl(it) }
+        if (sharedUrl != null) {
+            navController.navigate(Screen.ImportFromUrl.createRoute(sharedUrl))
+            // Neutralize so rotation doesn't re-open the import screen.
+            intent.replaceExtras(Bundle())
+            intent.action = Intent.ACTION_MAIN
+            return true
+        }
+    }
+
+    return false
 }
 
 @Composable
@@ -266,50 +379,29 @@ fun NovelReaderApp(
         activity?.setVolumeKeyNavEnabled(readerSettings.volumeKeyNavigation)
     }
 
-    // ── Deep-link 1: update-checker notification ────────────────
-    LaunchedEffect(Unit) {
-        val activity = context as? ComponentActivity
-        activity?.intent?.getStringExtra(
-            com.abhinavxt.novelreader.worker.UpdateCheckerWorker.EXTRA_NAVIGATE_NOVEL
-        )?.let { novelId ->
-            val url = com.abhinavxt.novelreader.data.source.SourceManager.constructNovelUrl(novelId)
-            navController.navigate(Screen.Detail.createRoute(novelId, url))
-            activity.intent.removeExtra(
-                com.abhinavxt.novelreader.worker.UpdateCheckerWorker.EXTRA_NAVIGATE_NOVEL
-            )
+    // ── Deep links: one handler, two delivery paths ──────────────
+    //
+    //   Cold start:  the launch Intent, handled once on first
+    //                composition.
+    //   Warm launch: onNewIntent() pushes into newIntents; we collect
+    //                and route each one, then mark it consumed.
+    //
+    // The old code had three separate LaunchedEffect(Unit) blocks —
+    // which never re-run — so any deep link arriving while the app
+    // was already alive (shared URL, widget tap, notification) was
+    // silently dropped.
+    val mainActivity = context as? MainActivity
+    if (mainActivity != null) {
+        LaunchedEffect(Unit) {
+            handleDeepLink(mainActivity.intent, navController)
         }
-    }
 
-    // ── Deep-link 2: share-to-app URL target ────────────────────
-    LaunchedEffect(Unit) {
-        val activity = context as? MainActivity ?: return@LaunchedEffect
-        val sharedUrl = activity.extractSharedUrlForNav() ?: return@LaunchedEffect
-        navController.navigate(Screen.ImportFromUrl.createRoute(sharedUrl))
-        activity.intent?.replaceExtras(android.os.Bundle())
-        activity.intent?.action = Intent.ACTION_MAIN
-    }
-
-    // ── Deep-link 3: continue-reading widget tap ────────────────
-    LaunchedEffect(Unit) {
-        val activity = context as? ComponentActivity ?: return@LaunchedEffect
-        val intent = activity.intent ?: return@LaunchedEffect
-
-        val novelId = intent.getStringExtra(ContinueReadingWidget.EXTRA_NOVEL_ID)
-        val novelUrl = intent.getStringExtra(ContinueReadingWidget.EXTRA_NOVEL_URL)
-        val chapterId = intent.getStringExtra(ContinueReadingWidget.EXTRA_CHAPTER_ID)
-        val chapterUrl = intent.getStringExtra(ContinueReadingWidget.EXTRA_CHAPTER_URL)
-
-        if (novelId != null && chapterId != null &&
-            novelUrl != null && chapterUrl != null
-        ) {
-            navController.navigate(Screen.Detail.createRoute(novelId, novelUrl))
-            navController.navigate(
-                Screen.Reader.createRoute(novelId, chapterId, chapterUrl, novelUrl)
-            )
-            intent.removeExtra(ContinueReadingWidget.EXTRA_NOVEL_ID)
-            intent.removeExtra(ContinueReadingWidget.EXTRA_NOVEL_URL)
-            intent.removeExtra(ContinueReadingWidget.EXTRA_CHAPTER_ID)
-            intent.removeExtra(ContinueReadingWidget.EXTRA_CHAPTER_URL)
+        val pendingIntent by mainActivity.newIntents.collectAsState()
+        LaunchedEffect(pendingIntent) {
+            pendingIntent?.let { intent ->
+                handleDeepLink(intent, navController)
+                mainActivity.consumeNewIntent()
+            }
         }
     }
 
@@ -397,8 +489,16 @@ fun NovelReaderApp(
                             selected = isSelected,
                             onClick = {
                                 navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.findStartDestination().id)
+                                    // saveState/restoreState preserve each
+                                    // tab's back stack — search query, scroll
+                                    // position, results. Without them every
+                                    // tab switch recreated the destination
+                                    // from scratch.
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
                                     launchSingleTop = true
+                                    restoreState = true
                                 }
                             }
                         )
@@ -420,7 +520,13 @@ fun NovelReaderApp(
                 audioPlayerViewModel = audioPlayerViewModel,
                 updateChecker = updateChecker,
                 networkMonitor = networkMonitor,
-                modifier = Modifier.padding(innerPadding)
+                // consumeWindowInsets is REQUIRED alongside edge-to-edge:
+                // 11 screens carry their own nested Scaffold, and without
+                // marking these insets as consumed each inner Scaffold
+                // would apply status/navigation-bar padding a second time.
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding)
             )
         }
     )

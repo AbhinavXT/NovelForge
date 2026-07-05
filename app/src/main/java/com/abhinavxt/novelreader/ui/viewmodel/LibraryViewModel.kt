@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.abhinavxt.novelreader.data.NovelRepository
+import com.abhinavxt.novelreader.data.database.CategoryEntity
 import com.abhinavxt.novelreader.data.database.ReadingProgressEntity
 import com.abhinavxt.novelreader.data.epub.EpubImporter
 import com.abhinavxt.novelreader.data.model.Novel
@@ -54,6 +55,25 @@ class LibraryViewModel(
     private val _currentSort = MutableStateFlow(LibrarySort.LAST_READ)
     val currentSort: StateFlow<LibrarySort> = _currentSort.asStateFlow()
 
+    // ── In-library search ────────────────────────────────────────
+    // Filters the ALREADY-LOADED library list in memory — no DB or
+    // network involved, so no debounce needed; every keystroke just
+    // re-runs applyFilterAndSort() over an in-memory list.
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    // ── Categories (Phase 6) ─────────────────────────────────────
+    private val _categories = MutableStateFlow<List<CategoryEntity>>(emptyList())
+    val categories: StateFlow<List<CategoryEntity>> = _categories.asStateFlow()
+
+    // novelId → set of category ids, folded from the cross-ref table
+    private val _novelCategoryMap = MutableStateFlow<Map<String, Set<Long>>>(emptyMap())
+    val novelCategoryMap: StateFlow<Map<String, Set<Long>>> = _novelCategoryMap.asStateFlow()
+
+    // null = "All" (no category filter)
+    private val _selectedCategoryId = MutableStateFlow<Long?>(null)
+    val selectedCategoryId: StateFlow<Long?> = _selectedCategoryId.asStateFlow()
+
     // Track which novels have downloads
     private val _novelsWithDownloads = MutableStateFlow<Set<String>>(emptySet())
 
@@ -73,6 +93,30 @@ class LibraryViewModel(
         loadNovelsWithDownloads()
         loadNovelsBeingRead()
         loadUpdateBadges()
+        loadCategories()
+    }
+
+    private fun loadCategories() {
+        viewModelScope.launch {
+            repository.getCategories().collect { cats ->
+                _categories.value = cats
+                // If the selected category was deleted, fall back to All
+                if (_selectedCategoryId.value != null &&
+                    cats.none { it.id == _selectedCategoryId.value }
+                ) {
+                    _selectedCategoryId.value = null
+                }
+                applyFilterAndSort()
+            }
+        }
+        viewModelScope.launch {
+            repository.getCategoryAssignments().collect { refs ->
+                _novelCategoryMap.value = refs
+                    .groupBy({ it.novelId }, { it.categoryId })
+                    .mapValues { (_, ids) -> ids.toSet() }
+                applyFilterAndSort()
+            }
+        }
     }
 
     /**
@@ -137,12 +181,32 @@ class LibraryViewModel(
         val withDownloads = _novelsWithDownloads.value
         val beingRead = _novelsBeingRead.value
         val progressMap = _readingProgressMap.value
+        val query = _searchQuery.value.trim()
+
+        // Search — title or author, case-insensitive
+        val searched = if (query.isEmpty()) {
+            novels
+        } else {
+            novels.filter {
+                it.title.contains(query, ignoreCase = true) ||
+                        it.author.contains(query, ignoreCase = true)
+            }
+        }
+
+        // Category filter (composes with search and status filters)
+        val categoryId = _selectedCategoryId.value
+        val categorized = if (categoryId == null) {
+            searched
+        } else {
+            val map = _novelCategoryMap.value
+            searched.filter { categoryId in (map[it.id] ?: emptySet()) }
+        }
 
         // Filter
         val filtered = when (filter) {
-            LibraryFilter.ALL -> novels
-            LibraryFilter.DOWNLOADED -> novels.filter { it.id in withDownloads }
-            LibraryFilter.READING -> novels.filter { it.id in beingRead }
+            LibraryFilter.ALL -> categorized
+            LibraryFilter.DOWNLOADED -> categorized.filter { it.id in withDownloads }
+            LibraryFilter.READING -> categorized.filter { it.id in beingRead }
         }
 
         // Sort
@@ -166,6 +230,40 @@ class LibraryViewModel(
     fun setSort(sort: LibrarySort) {
         _currentSort.value = sort
         applyFilterAndSort()
+    }
+
+    fun onSearchQueryChange(query: String) {
+        _searchQuery.value = query
+        applyFilterAndSort()
+    }
+
+    // ── Category actions (Phase 6) ───────────────────────────────
+
+    fun setCategoryFilter(categoryId: Long?) {
+        _selectedCategoryId.value = categoryId
+        applyFilterAndSort()
+    }
+
+    fun createCategory(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        // Silently ignore case-insensitive duplicates
+        if (_categories.value.any { it.name.equals(trimmed, ignoreCase = true) }) return
+        viewModelScope.launch {
+            repository.createCategory(trimmed)
+        }
+    }
+
+    fun deleteCategory(categoryId: Long) {
+        viewModelScope.launch {
+            repository.deleteCategory(categoryId)
+        }
+    }
+
+    fun setNovelCategories(novelId: String, categoryIds: Set<Long>) {
+        viewModelScope.launch {
+            repository.setNovelCategories(novelId, categoryIds)
+        }
     }
 
     fun refreshDownloads() {

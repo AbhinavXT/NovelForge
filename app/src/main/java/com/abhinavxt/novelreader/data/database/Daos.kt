@@ -63,11 +63,49 @@ interface NovelDao {
     suspend fun markUpdateSeen(novelId: String)
 }
 
+/**
+ * Lightweight projection of ChapterEntity WITHOUT the content column.
+ *
+ * ChapterEntity.content holds the full chapter text for downloaded
+ * chapters. A `SELECT *` list query therefore materializes every
+ * downloaded chapter's prose in RAM just to render a title list —
+ * 500 downloaded chapters ≈ 5–10 MB per Flow emission, and risks
+ * SQLite's 2 MB CursorWindow limit. All list consumers only need
+ * the fields below; content is fetched one chapter at a time via
+ * getChapterById() when actually reading.
+ */
+data class ChapterListItem(
+    val id: String,
+    val novelId: String,
+    val number: Int,
+    val title: String,
+    val url: String,
+    val isDownloaded: Boolean,
+    val downloadedAt: Long?
+)
+
+/**
+ * Per-novel download aggregate, computed in SQL instead of loading
+ * every chapter's content to sum sizes in Kotlin (see
+ * NovelRepository.getNovelsWithDownloads).
+ * sizeChars is SUM(LENGTH(content)) over downloaded chapters —
+ * multiply by 2 for an approximate UTF-16 in-memory byte count.
+ */
+data class NovelDownloadAggregate(
+    val novelId: String,
+    val totalChapters: Int,
+    val downloadedChapters: Int,
+    val sizeChars: Long
+)
+
 @Dao
 interface ChapterDao {
 
-    @Query("SELECT * FROM chapters WHERE novelId = :novelId ORDER BY number ASC")
-    fun getChaptersForNovel(novelId: String): Flow<List<ChapterEntity>>
+    @Query("""
+        SELECT id, novelId, number, title, url, isDownloaded, downloadedAt
+        FROM chapters WHERE novelId = :novelId ORDER BY number ASC
+    """)
+    fun getChaptersForNovel(novelId: String): Flow<List<ChapterListItem>>
 
     @Query("SELECT * FROM chapters WHERE id = :chapterId")
     suspend fun getChapterById(chapterId: String): ChapterEntity?
@@ -95,9 +133,6 @@ interface ChapterDao {
         downloadedAt: Long?
     )
 
-    @Query("SELECT * FROM chapters WHERE novelId = :novelId AND isDownloaded = 1 ORDER BY number ASC")
-    fun getDownloadedChapters(novelId: String): Flow<List<ChapterEntity>>
-
     @Query("SELECT COUNT(*) FROM chapters WHERE novelId = :novelId AND isDownloaded = 1")
     fun getDownloadedChapterCount(novelId: String): Flow<Int>
 
@@ -107,8 +142,31 @@ interface ChapterDao {
     @Query("UPDATE chapters SET isDownloaded = 0, content = NULL, downloadedAt = NULL WHERE id = :chapterId")
     suspend fun deleteDownload(chapterId: String)
 
-    @Query("SELECT * FROM chapters WHERE novelId = :novelId ORDER BY number ASC")
-    suspend fun getChaptersForNovelOnce(novelId: String): List<ChapterEntity>
+    @Query("""
+        SELECT id, novelId, number, title, url, isDownloaded, downloadedAt
+        FROM chapters WHERE novelId = :novelId ORDER BY number ASC
+    """)
+    suspend fun getChaptersForNovelOnce(novelId: String): List<ChapterListItem>
+
+    // ── One-query replacement for the per-chapter isChapterDownloaded()
+    //    loop in NovelDetailViewModel. Returns just the ids of downloaded
+    //    chapters; the caller does set-membership checks in memory. ──
+    @Query("SELECT id FROM chapters WHERE novelId = :novelId AND isDownloaded = 1")
+    suspend fun getDownloadedChapterIds(novelId: String): List<String>
+
+    // ── One-query replacement for the load-everything-and-sum-in-Kotlin
+    //    approach in getNovelsWithDownloads(). LENGTH(content) runs inside
+    //    SQLite; no chapter text ever crosses into the app process. ──
+    @Query("""
+        SELECT novelId,
+               COUNT(*) AS totalChapters,
+               SUM(CASE WHEN isDownloaded = 1 THEN 1 ELSE 0 END) AS downloadedChapters,
+               COALESCE(SUM(CASE WHEN isDownloaded = 1 THEN LENGTH(content) ELSE 0 END), 0) AS sizeChars
+        FROM chapters
+        GROUP BY novelId
+        HAVING downloadedChapters > 0
+    """)
+    suspend fun getDownloadAggregates(): List<NovelDownloadAggregate>
 
     @Delete
     suspend fun deleteChapter(chapter: ChapterEntity)
@@ -214,6 +272,10 @@ interface BookmarkDao {
     @Query("SELECT * FROM bookmarks")
     suspend fun getAllBookmarksOnce(): List<BookmarkEntity>
 
+    // Phase 7: annotation export
+    @Query("SELECT * FROM bookmarks WHERE novelId = :novelId ORDER BY chapterId, paragraphIndex")
+    suspend fun getBookmarksForNovelOnce(novelId: String): List<BookmarkEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBookmarkReplace(bookmark: BookmarkEntity)
 }
@@ -275,6 +337,23 @@ interface ReadingStatDao {
     // Days with any reading activity — return raw timestamps for local timezone bucketing
     @Query("SELECT completedAt FROM reading_stats ORDER BY completedAt DESC")
     suspend fun getAllCompletedTimestamps(): List<Long>
+
+    // Phase 7: reading history — events joined with chapter titles in
+    // one query (LEFT JOIN survives deleted chapters).
+    @Query("""
+        SELECT rs.novelId AS novelId,
+               rs.chapterId AS chapterId,
+               c.title AS chapterTitle,
+               c.number AS chapterNumber,
+               rs.wordsRead AS wordsRead,
+               rs.readingTimeMs AS readingTimeMs,
+               rs.completedAt AS completedAt
+        FROM reading_stats rs
+        LEFT JOIN chapters c ON c.id = rs.chapterId
+        ORDER BY rs.completedAt DESC
+        LIMIT :limit
+    """)
+    suspend fun getHistoryRows(limit: Int): List<HistoryRowData>
 
     // Per-novel stats
     @Query("SELECT COALESCE(SUM(wordsRead), 0) FROM reading_stats WHERE novelId = :novelId")
@@ -360,6 +439,81 @@ interface HighlightDao {
     @Query("SELECT * FROM highlights")
     suspend fun getAllHighlightsOnce(): List<HighlightEntity>
 
+    // Phase 7: annotation export
+    @Query("SELECT * FROM highlights WHERE novelId = :novelId ORDER BY chapterId, paragraphIndex, startOffset")
+    suspend fun getHighlightsForNovelOnce(novelId: String): List<HighlightEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHighlightReplace(highlight: HighlightEntity)
 }
+// ─────────────────────────────────────────────────────────────────
+// Phase 6: collections + updates feed
+// ─────────────────────────────────────────────────────────────────
+
+@Dao
+interface CategoryDao {
+
+    @Query("SELECT * FROM categories ORDER BY name COLLATE NOCASE ASC")
+    fun getAllCategories(): Flow<List<CategoryEntity>>
+
+    @Insert
+    suspend fun insertCategory(category: CategoryEntity): Long
+
+    @Query("DELETE FROM categories WHERE id = :categoryId")
+    suspend fun deleteCategory(categoryId: Long)
+
+    @Query("DELETE FROM novel_categories WHERE categoryId = :categoryId")
+    suspend fun clearCategoryAssignments(categoryId: Long)
+
+    // All novel↔category links as one observable list — the ViewModel
+    // folds it into a Map<novelId, Set<categoryId>> for filtering.
+    @Query("SELECT * FROM novel_categories")
+    fun getAllCrossRefs(): Flow<List<NovelCategoryCrossRef>>
+
+    @Query("SELECT categoryId FROM novel_categories WHERE novelId = :novelId")
+    suspend fun getCategoryIdsForNovel(novelId: String): List<Long>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertCrossRefs(refs: List<NovelCategoryCrossRef>)
+
+    @Query("DELETE FROM novel_categories WHERE novelId = :novelId")
+    suspend fun clearNovelCategories(novelId: String)
+}
+
+@Dao
+interface UpdateDao {
+
+    @Query("SELECT * FROM updates ORDER BY foundAt DESC LIMIT 200")
+    fun getRecentUpdates(): Flow<List<UpdateEntity>>
+
+    @Insert
+    suspend fun insertUpdate(update: UpdateEntity)
+
+    @Query("DELETE FROM updates")
+    suspend fun clearAll()
+
+    @Query("DELETE FROM updates WHERE novelId = :novelId")
+    suspend fun deleteForNovel(novelId: String)
+
+    @Query("DELETE FROM updates WHERE foundAt < :cutoff")
+    suspend fun pruneOlderThan(cutoff: Long)
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Phase 7: reading history + annotation export
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * One reading-history row: a stats event joined with its chapter's
+ * title/number. LEFT JOIN because the chapter may have been deleted
+ * (novel removed and re-added, etc.) — title/number are then null.
+ */
+data class HistoryRowData(
+    val novelId: String,
+    val chapterId: String,
+    val chapterTitle: String?,
+    val chapterNumber: Int?,
+    val wordsRead: Int,
+    val readingTimeMs: Long,
+    val completedAt: Long
+)

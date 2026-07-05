@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 // ── Activity feed item ──────────────────────────────────────────
 data class ReadingSession(
     val novelId: String,
+    val novelTitle: String,
     val chapterId: String,
     val wordsRead: Int,
     val readingTimeMs: Long,
@@ -113,6 +114,19 @@ class ReadingStatsViewModel(
                 overall.totalReadingTimeMs / overall.totalChapters
             } else 0L
 
+            // Resolve real novel titles from the DB. The old approach
+            // parsed the novelId string, which only looked right for
+            // online sources whose ids embed URL slugs — local EPUB ids
+            // are "local_<uuid8>" and rendered as gibberish like
+            // "F22fecf1". Removed novels fall back to the slug heuristic.
+            val titleById = recent
+                .map { it.novelId }
+                .distinct()
+                .mapNotNull { id ->
+                    repository.getNovelById(id)?.let { novel -> id to novel.title }
+                }
+                .toMap()
+
             // Build sessions with per-session WPM
             val sessions = recent.map { event ->
                 val minutes = event.readingTimeMs / 60_000.0
@@ -121,6 +135,8 @@ class ReadingStatsViewModel(
                 } else wpm
                 ReadingSession(
                     novelId = event.novelId,
+                    novelTitle = titleById[event.novelId]
+                        ?: fallbackNameFromId(event.novelId),
                     chapterId = event.chapterId,
                     wordsRead = event.wordsRead,
                     readingTimeMs = event.readingTimeMs,
@@ -172,6 +188,21 @@ class ReadingStatsViewModel(
                 avgChapterTimeMs = avgChapter
             )
         }
+    }
+
+    /**
+     * Last-resort display name for sessions whose novel is no longer in
+     * the library: strip the source prefix and de-slugify. For local
+     * ids ("local_<uuid8>") there is nothing meaningful to recover, so
+     * label them as an imported book instead of showing hex noise.
+     */
+    private fun fallbackNameFromId(novelId: String): String {
+        if (novelId.startsWith("local_")) return "Imported book"
+        return novelId
+            .substringAfter("_")
+            .replace("-", " ")
+            .replace("~", "/")
+            .replaceFirstChar { it.uppercase() }
     }
 
     /**

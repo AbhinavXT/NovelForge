@@ -1,6 +1,7 @@
 package com.abhinavxt.novelreader.data.database
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(tableName = "novels")
@@ -27,7 +28,13 @@ data class NovelEntity(
     val previousTotalChapters: Int = 0
 )
 
-@Entity(tableName = "chapters")
+@Entity(
+    tableName = "chapters",
+    // novelId is the filter column for every chapter query in the app —
+    // without this index each lookup is a full scan over a table that
+    // holds megabytes of downloaded chapter text.
+    indices = [Index("novelId")]
+)
 data class ChapterEntity(
     @PrimaryKey
     val id: String,
@@ -72,7 +79,10 @@ data class ReaderSettingsEntity(
     val autoScrollSpeed: Int = 60,
 )
 
-@Entity(tableName = "bookmarks")
+@Entity(
+    tableName = "bookmarks",
+    indices = [Index("novelId"), Index("chapterId")]
+)
 data class BookmarkEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
@@ -105,7 +115,10 @@ data class PronunciationEntry(
 
 // ============ Reading Stats ============
 
-@Entity(tableName = "reading_stats")
+@Entity(
+    tableName = "reading_stats",
+    indices = [Index("novelId"), Index("completedAt")]
+)
 data class ReadingStatEvent(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
@@ -132,7 +145,10 @@ data class ReadingStatEvent(
  * Unlike bookmarks (which mark a paragraph position), highlights mark
  * specific text selections and can have multiple per paragraph.
  */
-@Entity(tableName = "highlights")
+@Entity(
+    tableName = "highlights",
+    indices = [Index("chapterId"), Index("novelId")]
+)
 data class HighlightEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
@@ -172,3 +188,52 @@ enum class HighlightColor(val displayName: String) {
     PURPLE("Purple"),
     ORANGE("Orange")
 }
+// ─────────────────────────────────────────────────────────────────
+// Phase 6: collections (categories) + updates feed
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * A user-defined library collection ("Cultivation", "Finished", ...).
+ */
+@Entity(tableName = "categories")
+data class CategoryEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val name: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+/**
+ * Many-to-many link between novels and categories. Composite primary
+ * key makes duplicate assignments impossible; indexed both ways for
+ * filter queries.
+ */
+@Entity(
+    tableName = "novel_categories",
+    primaryKeys = ["novelId", "categoryId"],
+    indices = [Index("categoryId"), Index("novelId")]
+)
+data class NovelCategoryCrossRef(
+    val novelId: String,
+    val categoryId: Long
+)
+
+/**
+ * One entry in the Updates feed: "novel X got N new chapters at time T".
+ * Written by UpdateCheckerWorker whenever it finds new chapters.
+ * Title/cover are denormalized so the feed renders in a single query.
+ */
+@Entity(
+    tableName = "updates",
+    indices = [Index("novelId"), Index("foundAt")]
+)
+data class UpdateEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val novelId: String,
+    val novelTitle: String,
+    val coverUrl: String?,
+    val newChapters: Int,
+    val latestChapterNumber: Int,
+    val foundAt: Long
+)

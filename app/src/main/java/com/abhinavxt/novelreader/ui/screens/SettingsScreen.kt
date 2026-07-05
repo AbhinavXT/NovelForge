@@ -50,6 +50,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -68,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.abhinavxt.novelreader.data.BackupInfo
 import com.abhinavxt.novelreader.data.BackupManager
+import com.abhinavxt.novelreader.worker.AutoBackupWorker
 import com.abhinavxt.novelreader.data.ColorScheme
 import com.abhinavxt.novelreader.data.DictionaryLanguage
 import com.abhinavxt.novelreader.data.ThemeMode
@@ -302,6 +304,91 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ── Automatic backups (Phase 7) ──────────────────────
+            // UI state mirrors AutoBackupWorker's prefs; the worker
+            // companion owns persistence AND (re)scheduling.
+            var autoBackupEnabled by remember {
+                mutableStateOf(AutoBackupWorker.isEnabled(context))
+            }
+            var autoBackupFolder by remember {
+                mutableStateOf(AutoBackupWorker.getFolderUri(context))
+            }
+            val folderPickerLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.OpenDocumentTree()
+            ) { uri ->
+                if (uri != null) {
+                    // Persist access across reboots — without this the
+                    // worker loses the folder after the device restarts
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                    AutoBackupWorker.setFolderUri(context, uri.toString())
+                    autoBackupFolder = uri.toString()
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Automatic daily backups",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = if (autoBackupFolder != null) {
+                                    val last = AutoBackupWorker.getLastBackupTime(context)
+                                    if (last > 0L) {
+                                        "Keeps the 5 newest · last: " +
+                                                android.text.format.DateUtils.getRelativeTimeSpanString(last)
+                                    } else {
+                                        "Keeps the 5 newest backups"
+                                    }
+                                } else {
+                                    "Choose a folder to enable"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = autoBackupEnabled,
+                            onCheckedChange = { checked ->
+                                if (checked && autoBackupFolder == null) {
+                                    // Need a destination first
+                                    folderPickerLauncher.launch(null)
+                                } else {
+                                    AutoBackupWorker.setEnabled(context, checked)
+                                    autoBackupEnabled = checked
+                                }
+                            }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    TextButton(onClick = { folderPickerLauncher.launch(null) }) {
+                        Text(
+                            text = if (autoBackupFolder == null) "Choose backup folder"
+                            else "Change backup folder"
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 

@@ -61,6 +61,7 @@ fun SearchScreen(
     val searchQuery by viewModel.searchQuery.collectAsState()
     val popularNovels by viewModel.popularNovels.collectAsState()
     val selectedSource by viewModel.selectedSource.collectAsState()
+    val allSourcesMode by viewModel.allSourcesMode.collectAsState()
     val keyboardController = LocalSoftwareKeyboardController.current
 
     // ── Outer column ──
@@ -83,9 +84,17 @@ fun SearchScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
+                // Global search across every source (Phase 7)
+                item {
+                    FilterChip(
+                        selected = allSourcesMode,
+                        onClick = { viewModel.selectAllSources() },
+                        label = { Text("All sources") }
+                    )
+                }
                 items(viewModel.availableSources) { source ->
                     FilterChip(
-                        selected = selectedSource.id == source.id,
+                        selected = !allSourcesMode && selectedSource.id == source.id,
                         onClick = { viewModel.selectSource(source) },
                         label = { Text(source.name) }
                     )
@@ -101,7 +110,8 @@ fun SearchScreen(
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = {
                     Text(
-                        "Search on ${selectedSource.name}...",
+                        if (allSourcesMode) "Search all sources..."
+                        else "Search on ${selectedSource.name}...",
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -137,7 +147,25 @@ fun SearchScreen(
             // Content based on state
             when (val state = uiState) {
                 is SearchUiState.Initial -> {
-                    if (popularNovels.isNotEmpty()) {
+                    if (allSourcesMode) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "Search across all ${viewModel.availableSources.size} sources",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Results are grouped by source",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                    } else if (popularNovels.isNotEmpty()) {
                         Text(
                             text = "Popular on ${selectedSource.name}",
                             style = MaterialTheme.typography.titleMedium
@@ -197,6 +225,33 @@ fun SearchScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         NovelList(
                             novels = state.novels,
+                            onNovelClick = onNovelClick
+                        )
+                    }
+                }
+
+                is SearchUiState.SuccessGrouped -> {
+                    if (state.groups.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "No novels found",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "No source had results for this search",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                    } else {
+                        GroupedNovelList(
+                            groups = state.groups,
                             onNovelClick = onNovelClick
                         )
                     }
@@ -323,6 +378,41 @@ private fun NovelListItem(
                     color = MaterialTheme.colorScheme.outline,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Global-search results: per-source header, then that source's novels
+ * (Phase 7). One LazyColumn so scroll state spans all groups.
+ */
+@Composable
+private fun GroupedNovelList(
+    groups: List<com.abhinavxt.novelreader.ui.viewmodel.SourceResults>,
+    onNovelClick: (NovelPreview) -> Unit
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        groups.forEach { group ->
+            item(key = "header_${group.sourceId}") {
+                Text(
+                    text = "${group.sourceName} · ${group.novels.size}",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+                )
+            }
+            items(
+                items = group.novels.distinctBy { it.id },
+                key = { "${group.sourceId}_${it.id}" }
+            ) { novel ->
+                NovelListItem(
+                    novel = novel,
+                    onClick = { onNovelClick(novel) }
                 )
             }
         }

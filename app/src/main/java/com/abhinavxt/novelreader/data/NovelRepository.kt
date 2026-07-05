@@ -8,6 +8,10 @@ import com.abhinavxt.novelreader.data.database.HighlightEntity
 import com.abhinavxt.novelreader.data.database.NovelEntity
 import com.abhinavxt.novelreader.data.database.ReadingProgressEntity
 import com.abhinavxt.novelreader.data.database.ReaderSettingsEntity
+import com.abhinavxt.novelreader.data.database.CategoryEntity
+import com.abhinavxt.novelreader.data.database.ChapterListItem
+import com.abhinavxt.novelreader.data.database.NovelCategoryCrossRef
+import com.abhinavxt.novelreader.data.database.UpdateEntity
 import com.abhinavxt.novelreader.data.model.Chapter
 import com.abhinavxt.novelreader.data.model.Novel
 import com.abhinavxt.novelreader.data.model.NovelPreview
@@ -23,6 +27,7 @@ import kotlinx.coroutines.flow.map
 import com.abhinavxt.novelreader.ui.screens.NovelDownloadInfo
 import com.abhinavxt.novelreader.util.Logger
 import kotlinx.coroutines.flow.first
+import com.abhinavxt.novelreader.data.database.HistoryRowData
 
 /**
  * [onProgressSaved] is an optional callback fired after every
@@ -42,6 +47,9 @@ class NovelRepository(
     private val settingsDao = database.readerSettingsDao()
     private val bookmarkDao = database.bookmarkDao()
     private val highlightDao = database.highlightDao()
+    private val categoryDao = database.categoryDao()
+    private val updateDao = database.updateDao()
+    private val readingStatDao = database.readingStatDao()
 
     // ============ NETWORK OPERATIONS ============
 
@@ -104,6 +112,8 @@ class NovelRepository(
             progressDao.deleteProgress(novelId)
             bookmarkDao.deleteBookmarksForNovel(novelId)
             highlightDao.deleteHighlightsForNovel(novelId)  // Clean up highlights too
+            categoryDao.clearNovelCategories(novelId)       // Phase 6: category links
+            updateDao.deleteForNovel(novelId)               // Phase 6: updates feed rows
         }
         // Widget hook — if the removed novel was the widget's novel, the
         // callback will clear the widget. If not, it re-picks the most
@@ -440,12 +450,19 @@ class NovelRepository(
         )
     }
 
-    private fun ChapterEntity.toDomainModel(): Chapter {
+    /**
+     * Mapper for the content-free list projection. Unlike the old
+     * SELECT * path, isDownloaded now flows through from the DB —
+     * previously the mapper dropped it (always false) and ViewModels
+     * had to patch it back with per-chapter queries.
+     */
+    private fun ChapterListItem.toDomainModel(): Chapter {
         return Chapter(
             id = this.id,
             number = this.number,
             title = this.title,
-            url = this.url
+            url = this.url,
+            isDownloaded = this.isDownloaded
         )
     }
 
@@ -508,32 +525,37 @@ class NovelRepository(
     }
 
     suspend fun getNovelsWithDownloads(): List<NovelDownloadInfo> {
-        val novels = novelDao.getAllNovels().first()
-        val result = mutableListOf<NovelDownloadInfo>()
+        // Sizes are computed by SQLite (SUM(LENGTH(content))) in one grouped
+        // query — the old version loaded the full text of every downloaded
+        // chapter into RAM just to call .length on it.
+        val aggregates = chapterDao.getDownloadAggregates().associateBy { it.novelId }
+        if (aggregates.isEmpty()) return emptyList()
 
-        for (novelEntity in novels) {
-            val chapters = chapterDao.getChaptersForNovelOnce(novelEntity.id)
-            val downloadedChapters = chapters.filter { it.isDownloaded }
-
-            if (downloadedChapters.isNotEmpty()) {
-                val sizeBytes = downloadedChapters.sumOf {
-                    (it.content?.length ?: 0).toLong() * 2
-                }
-
-                result.add(
-                    NovelDownloadInfo(
-                        novelId = novelEntity.id,
-                        novelTitle = novelEntity.title,
-                        coverUrl = novelEntity.coverUrl,
-                        downloadedChapters = downloadedChapters.size,
-                        totalChapters = chapters.size,
-                        sizeBytes = sizeBytes
-                    )
-                )
-            }
+        // Iterate novels (lastUpdatedAt DESC) so result ordering matches
+        // the old implementation.
+        return novelDao.getAllNovels().first().mapNotNull { novelEntity ->
+            val agg = aggregates[novelEntity.id] ?: return@mapNotNull null
+            NovelDownloadInfo(
+                novelId = novelEntity.id,
+                novelTitle = novelEntity.title,
+                coverUrl = novelEntity.coverUrl,
+                downloadedChapters = agg.downloadedChapters,
+                totalChapters = agg.totalChapters,
+                // LENGTH() counts characters; ×2 approximates UTF-16 bytes,
+                // matching the old sizeBytes semantics.
+                sizeBytes = agg.sizeChars * 2
+            )
         }
+    }
 
-        return result
+    /**
+     * Ids of all downloaded chapters for a novel, in one query.
+     * Used by NovelDetailViewModel for set-membership status checks
+     * instead of a per-chapter isChapterDownloaded() loop (which was
+     * N single-row queries for an N-chapter novel).
+     */
+    suspend fun getDownloadedChapterIds(novelId: String): Set<String> {
+        return chapterDao.getDownloadedChapterIds(novelId).toSet()
     }
 
     // ============ Backup/Restore Methods ============
@@ -571,4 +593,52 @@ class NovelRepository(
         )
         novelDao.insertSettingsReplace(entity)
     }
+
+    // ============ CATEGORIES (Phase 6) ============
+
+    fun getCategories(): kotlinx.coroutines.flow.Flow<List<CategoryEntity>> =
+        categoryDao.getAllCategories()
+
+    fun getCategoryAssignments(): kotlinx.coroutines.flow.Flow<List<NovelCategoryCrossRef>> =
+        categoryDao.getAllCrossRefs()
+
+    suspend fun createCategory(name: String): Long =
+        categoryDao.insertCategory(CategoryEntity(name = name.trim()))
+
+    suspend fun deleteCategory(categoryId: Long) {
+        // Assignments first so no orphaned links survive
+        categoryDao.clearCategoryAssignments(categoryId)
+        categoryDao.deleteCategory(categoryId)
+    }
+
+    suspend fun getCategoryIdsForNovel(novelId: String): Set<Long> =
+        categoryDao.getCategoryIdsForNovel(novelId).toSet()
+
+    /** Replace a novel's category set atomically (clear + insert). */
+    suspend fun setNovelCategories(novelId: String, categoryIds: Set<Long>) {
+        categoryDao.clearNovelCategories(novelId)
+        if (categoryIds.isNotEmpty()) {
+            categoryDao.insertCrossRefs(categoryIds.map { NovelCategoryCrossRef(novelId, it) })
+        }
+    }
+
+    // ============ UPDATES FEED (Phase 6) ============
+
+    fun getRecentUpdates(): kotlinx.coroutines.flow.Flow<List<UpdateEntity>> =
+        updateDao.getRecentUpdates()
+
+    suspend fun clearUpdatesFeed() = updateDao.clearAll()
+
+
+    // ============ READING HISTORY + EXPORT (Phase 7) ============
+
+    suspend fun getReadingHistory(limit: Int = 300): List<HistoryRowData> =
+        readingStatDao.getHistoryRows(limit)
+
+    suspend fun getHighlightsForNovelOnce(novelId: String) =
+        highlightDao.getHighlightsForNovelOnce(novelId)
+
+    suspend fun getBookmarksForNovelOnce(novelId: String) =
+        bookmarkDao.getBookmarksForNovelOnce(novelId)
+
 }

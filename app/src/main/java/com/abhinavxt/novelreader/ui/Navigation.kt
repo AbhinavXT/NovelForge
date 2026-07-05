@@ -74,6 +74,18 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
         icon = Icons.Default.Download
     )
 
+    object Updates : Screen(
+        route = "updates",
+        title = "Updates",
+        icon = Icons.Default.MenuBook
+    )
+
+    object History : Screen(
+        route = "history",
+        title = "Reading History",
+        icon = Icons.Default.MenuBook
+    )
+
     object AudioLibrary : Screen(
         route = "audio_library",
         title = "Audio",
@@ -221,6 +233,18 @@ fun NavigationHost(
                             )
                         )
                     },
+                    onSeeLibrary = {
+                        navController.navigate(Screen.Library.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onSeeUpdates = {
+                        navController.navigate(Screen.Updates.route)
+                    },
                     networkMonitor = networkMonitor
                 )
             }
@@ -233,6 +257,28 @@ fun NavigationHost(
                         navController.navigate(Screen.Detail.createRoute(novelPreview.id, url))
                     },
                     networkMonitor = networkMonitor
+                )
+            }
+
+            composable(Screen.History.route) {
+                HistoryScreen(
+                    repository = repository,
+                    onBackClick = { navController.popBackStack() },
+                    onNovelClick = { novelId ->
+                        val url = constructNovelUrl(novelId)
+                        navController.navigate(Screen.Detail.createRoute(novelId, url))
+                    }
+                )
+            }
+
+            composable(Screen.Updates.route) {
+                UpdatesScreen(
+                    repository = repository,
+                    onBackClick = { navController.popBackStack() },
+                    onNovelClick = { novelId ->
+                        val url = constructNovelUrl(novelId)
+                        navController.navigate(Screen.Detail.createRoute(novelId, url))
+                    }
                 )
             }
 
@@ -253,6 +299,7 @@ fun NavigationHost(
         composable(Screen.Library.route) {
             LibraryScreen(
                 repository = repository,
+                themePreferences = themePreferences,
                 onNovelClick = { novelId ->
                     val url = constructNovelUrl(novelId)
                     navController.navigate(Screen.Detail.createRoute(novelId, url))
@@ -289,7 +336,8 @@ fun NavigationHost(
             ReadingStatsScreen(
                 readingStatsTracker = readingStatsTracker,
                 repository = repository,
-                onBackClick = { navController.popBackStack() }
+                onBackClick = { navController.popBackStack() },
+                onHistoryClick = { navController.navigate(Screen.History.route) }
             )
         }
 

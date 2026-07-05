@@ -16,13 +16,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -30,13 +29,15 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,11 +47,25 @@ import com.abhinavxt.novelreader.data.model.Novel
 import com.abhinavxt.novelreader.ui.components.NovelCover
 import com.abhinavxt.novelreader.ui.viewmodel.ContinueReadingData
 import com.abhinavxt.novelreader.ui.viewmodel.HomeViewModel
-import com.abhinavxt.novelreader.ui.viewmodel.ReadingActivityData
 import java.util.Calendar
 import com.abhinavxt.novelreader.ui.components.OfflineBanner
 import com.abhinavxt.novelreader.util.NetworkMonitor
 
+/**
+ * Home = dashboard (Phase 4 rework).
+ *
+ * Previously Home showed the FULL library grid, duplicating the
+ * Library tab with a different layout — two canonical views of the
+ * same collection. Home is now a dashboard:
+ *
+ *   greeting + streak line
+ *   Continue Reading rail
+ *   Recently Updated rail   (novels with unseen new chapters)
+ *   From Your Library rail  (10 most recent covers + "See all")
+ *
+ * The Library tab is the single canonical collection view, with
+ * search and a grid/list toggle.
+ */
 @Composable
 fun HomeScreen(
     repository: NovelRepository,
@@ -58,14 +73,21 @@ fun HomeScreen(
     onBrowseClick: () -> Unit,
     onNovelClick: (novelId: String) -> Unit,
     onContinueReading: (novelId: String, chapterId: String, chapterUrl: String, novelUrl: String) -> Unit = { novelId, _, _, _ -> onNovelClick(novelId) },
+    onSeeLibrary: () -> Unit = {},
+    onSeeUpdates: () -> Unit = {},
     networkMonitor: NetworkMonitor,
     viewModel: HomeViewModel = viewModel(
-        factory = HomeViewModel.provideFactory(repository, readingStatsTracker)
+        factory = HomeViewModel.provideFactory(
+            repository,
+            readingStatsTracker,
+            LocalContext.current.applicationContext
+        )
     )
 ) {
     val libraryNovels by viewModel.libraryNovels.collectAsState()
     val continueReadingList by viewModel.continueReadingList.collectAsState()
     val readingActivity by viewModel.readingActivity.collectAsState()
+    val recentlyUpdated by viewModel.recentlyUpdated.collectAsState()
 
     Column(
         modifier = Modifier
@@ -97,7 +119,6 @@ fun HomeScreen(
 
         // ── Reading activity — compact inline ─────────────────
         // Minimal single-line display: streak + today's stats.
-        // No card, no flame emoji — just clean info text.
         if (readingActivity.currentStreak > 0 || readingActivity.todayMinutes > 0) {
             val parts = mutableListOf<String>()
             if (readingActivity.currentStreak > 0) {
@@ -117,85 +138,7 @@ fun HomeScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // ── Continue Reading — horizontal scroll ────────────────
-        if (continueReadingList.isNotEmpty()) {
-            Text(
-                text = "Continue Reading",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp)
-            ) {
-                items(
-                    items = continueReadingList,
-                    key = { it.novel.id }
-                ) { data ->
-                    ContinueReadingCard(
-                        data = data,
-                        onClick = {
-                            onContinueReading(
-                                data.novel.id,
-                                data.chapterId,
-                                data.chapterUrl,
-                                data.novelUrl
-                            )
-                        }
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-        }
-
-        // ── Library grid ────────────────────────────────────────
-        if (libraryNovels.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Your Library",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text = "${libraryNovels.size} novels",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Adaptive grid: 3 columns on phone, more on tablet
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 100.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                items(
-                    items = libraryNovels,
-                    key = { it.id }
-                ) { novel ->
-                    LibraryNovelItem(
-                        novel = novel,
-                        onClick = { onNovelClick(novel.id) }
-                    )
-                }
-            }
-
-        } else {
+        if (libraryNovels.isEmpty()) {
             // ── Empty state ─────────────────────────────────────
             Box(
                 modifier = Modifier
@@ -234,7 +177,181 @@ fun HomeScreen(
                     }
                 }
             }
+        } else {
+            // ── Dashboard sections — scrollable column of rails ──
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // ── Continue Reading ────────────────────────────
+                if (continueReadingList.isNotEmpty()) {
+                    SectionHeader(title = "Continue Reading")
+                    Spacer(modifier = Modifier.height(10.dp))
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp)
+                    ) {
+                        items(
+                            items = continueReadingList,
+                            key = { it.novel.id }
+                        ) { data ->
+                            ContinueReadingCard(
+                                data = data,
+                                onClick = {
+                                    onContinueReading(
+                                        data.novel.id,
+                                        data.chapterId,
+                                        data.chapterUrl,
+                                        data.novelUrl
+                                    )
+                                }
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+
+                // ── Recently Updated ────────────────────────────
+                // Only shown when the update checker found new chapters
+                // the user hasn't opened yet. Tapping navigates to the
+                // detail screen (which clears the badge itself).
+                if (recentlyUpdated.isNotEmpty()) {
+                    SectionHeader(
+                        title = "Recently Updated",
+                        action = "See all",
+                        onAction = onSeeUpdates
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp)
+                    ) {
+                        items(
+                            items = recentlyUpdated,
+                            key = { it.id }
+                        ) { novel ->
+                            CoverRailItem(
+                                novel = novel,
+                                showNewChip = true,
+                                onClick = { onNovelClick(novel.id) }
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+
+                // ── From Your Library ───────────────────────────
+                // A taste of the collection (10 most recent), not the
+                // whole thing — the Library tab is the canonical view.
+                SectionHeader(
+                    title = "From Your Library",
+                    action = "See all",
+                    onAction = onSeeLibrary
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp)
+                ) {
+                    items(
+                        items = libraryNovels.take(10),
+                        key = { it.id }
+                    ) { novel ->
+                        CoverRailItem(
+                            novel = novel,
+                            onClick = { onNovelClick(novel.id) }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+            }
         }
+    }
+}
+
+// ── Section header with optional trailing action ─────────────────
+@Composable
+private fun SectionHeader(
+    title: String,
+    action: String? = null,
+    onAction: (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium
+        )
+        if (action != null && onAction != null) {
+            TextButton(onClick = onAction) {
+                Text(
+                    text = action,
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+        }
+    }
+}
+
+// ── Cover rail item: cover + title, optional "New" chip ──────────
+@Composable
+private fun CoverRailItem(
+    novel: Novel,
+    showNewChip: Boolean = false,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(100.dp)
+            .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box {
+            NovelCover(
+                coverUrl = novel.coverUrl,
+                width = 100.dp,
+                height = 140.dp
+            )
+            if (showNewChip) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = MaterialTheme.shapes.extraSmall,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                ) {
+                    Text(
+                        text = "New",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = novel.title,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
@@ -314,32 +431,5 @@ private fun ContinueReadingCard(
                 )
             }
         }
-    }
-}
-
-// ── Library grid item ────────────────────────────────────────────
-// Cover with title underneath — uses NovelCover for consistency
-@Composable
-private fun LibraryNovelItem(
-    novel: Novel,
-    onClick: () -> Unit
-) {
-    Column(
-        modifier = Modifier.clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        NovelCover(
-            coverUrl = novel.coverUrl,
-            width = 100.dp,
-            height = 140.dp
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = novel.title,
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth()
-        )
     }
 }

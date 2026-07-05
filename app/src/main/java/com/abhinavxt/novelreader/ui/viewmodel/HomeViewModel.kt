@@ -1,6 +1,7 @@
 package com.abhinavxt.novelreader.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
+import android.content.Context
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.abhinavxt.novelreader.data.NovelRepository
@@ -37,11 +38,19 @@ data class ReadingActivityData(
 
 class HomeViewModel(
     private val repository: NovelRepository,
-    private val statsTracker: ReadingStatsTracker? = null
+    private val statsTracker: ReadingStatsTracker? = null,
+    private val appContext: Context? = null
 ) : ViewModel() {
 
     private val _libraryNovels = MutableStateFlow<List<Novel>>(emptyList())
     val libraryNovels: StateFlow<List<Novel>> = _libraryNovels.asStateFlow()
+
+    // ── Recently updated: library novels with unseen new chapters ──
+    // Reuses the exact badge mechanism the Library tab already has —
+    // UpdateCheckerWorker writes updated novel ids to SharedPreferences;
+    // we intersect that set with the library list. No new infrastructure.
+    private val _recentlyUpdated = MutableStateFlow<List<Novel>>(emptyList())
+    val recentlyUpdated: StateFlow<List<Novel>> = _recentlyUpdated.asStateFlow()
 
     private val _continueReadingList = MutableStateFlow<List<ContinueReadingData>>(emptyList())
     val continueReadingList: StateFlow<List<ContinueReadingData>> = _continueReadingList.asStateFlow()
@@ -63,9 +72,11 @@ class HomeViewModel(
 
     private fun loadHomeData() {
         viewModelScope.launch {
-            // Load library novels
+            // Load library novels; recompute the recently-updated
+            // intersection on every library change
             repository.getLibraryNovels().collect { novels ->
                 _libraryNovels.value = novels
+                _recentlyUpdated.value = novels.filter { it.id in loadUpdatedIds() }
             }
         }
 
@@ -144,20 +155,35 @@ class HomeViewModel(
     fun refresh() {
         viewModelScope.launch {
             _totalChaptersRead.value = repository.getTotalChaptersRead()
+            _recentlyUpdated.value = _libraryNovels.value.filter { it.id in loadUpdatedIds() }
             loadAllContinueReading()
         }
         loadReadingActivity()
     }
 
+    /** Ids of novels the UpdateCheckerWorker flagged as having new chapters. */
+    private fun loadUpdatedIds(): Set<String> {
+        val ctx = appContext ?: return emptySet()
+        val prefs = ctx.getSharedPreferences(
+            com.abhinavxt.novelreader.worker.UpdateCheckerWorker.PREFS_NAME,
+            Context.MODE_PRIVATE
+        )
+        return prefs.getStringSet(
+            com.abhinavxt.novelreader.worker.UpdateCheckerWorker.PREF_UPDATED_NOVEL_IDS,
+            emptySet()
+        ) ?: emptySet()
+    }
+
     companion object {
         fun provideFactory(
             repository: NovelRepository,
-            statsTracker: ReadingStatsTracker? = null
+            statsTracker: ReadingStatsTracker? = null,
+            appContext: Context? = null
         ): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return HomeViewModel(repository, statsTracker) as T
+                    return HomeViewModel(repository, statsTracker, appContext) as T
                 }
             }
         }

@@ -17,6 +17,7 @@ import com.abhinavxt.novelreader.data.tts.M4BAudiobookBuilder
 import com.abhinavxt.novelreader.util.Logger
 import com.abhinavxt.novelreader.util.NetworkMonitor
 import com.abhinavxt.novelreader.widget.WidgetStateRepository
+import com.abhinavxt.novelreader.worker.AutoBackupWorker
 import com.abhinavxt.novelreader.worker.UpdateCheckerWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -138,6 +139,9 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
             val interval = prefs.getLong(UpdateCheckerWorker.PREF_INTERVAL_HOURS, 12)
             UpdateCheckerWorker.schedule(this, true, interval)
         }
+
+        // Restore auto-backup schedule if it was enabled (Phase 7)
+        AutoBackupWorker.schedule(this, AutoBackupWorker.isEnabled(this))
 
         networkMonitor.start()
 

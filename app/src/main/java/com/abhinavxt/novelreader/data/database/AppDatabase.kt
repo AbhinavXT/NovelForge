@@ -16,9 +16,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         BookmarkEntity::class,
         PronunciationEntry::class,
         ReadingStatEvent::class,
-        HighlightEntity::class           // NEW in v9
+        HighlightEntity::class,          // NEW in v9
+        CategoryEntity::class,           // NEW in v12
+        NovelCategoryCrossRef::class,    // NEW in v12
+        UpdateEntity::class              // NEW in v12
     ],
-    version = 10,
+    version = 12,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -31,6 +34,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun pronunciationDao(): PronunciationDao
     abstract fun readingStatDao(): ReadingStatDao
     abstract fun highlightDao(): HighlightDao            // NEW in v9
+    abstract fun categoryDao(): CategoryDao              // NEW in v12
+    abstract fun updateDao(): UpdateDao                  // NEW in v12
 
     companion object {
         @Volatile
@@ -115,6 +120,73 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration v10 → v11: adds indexes on all non-PK filter columns.
+         *
+         * Before this, every chapters/bookmarks/highlights/reading_stats
+         * lookup by novelId or chapterId was a full table scan — and the
+         * chapters table carries the full text of downloaded chapters, so
+         * those scans walked megabytes of prose.
+         *
+         * IMPORTANT: index names must exactly match what Room generates
+         * from the entities' `indices = [...]` annotations, i.e.
+         * `index_<table>_<column>` — otherwise Room's schema validation
+         * throws IllegalStateException("Migration didn't properly handle")
+         * on first open.
+         */
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_chapters_novelId ON chapters(novelId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_bookmarks_novelId ON bookmarks(novelId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_bookmarks_chapterId ON bookmarks(chapterId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_highlights_chapterId ON highlights(chapterId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_highlights_novelId ON highlights(novelId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_reading_stats_novelId ON reading_stats(novelId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_reading_stats_completedAt ON reading_stats(completedAt)")
+            }
+        }
+
+        /**
+         * Migration v11 → v12: collections (categories) + updates feed.
+         * Table/index definitions must match what Room generates from the
+         * entity annotations exactly, or schema validation fails on open.
+         */
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS categories (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        name TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                """.trimIndent())
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS novel_categories (
+                        novelId TEXT NOT NULL,
+                        categoryId INTEGER NOT NULL,
+                        PRIMARY KEY(novelId, categoryId)
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_novel_categories_categoryId ON novel_categories(categoryId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_novel_categories_novelId ON novel_categories(novelId)")
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS updates (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        novelId TEXT NOT NULL,
+                        novelTitle TEXT NOT NULL,
+                        coverUrl TEXT,
+                        newChapters INTEGER NOT NULL,
+                        latestChapterNumber INTEGER NOT NULL,
+                        foundAt INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_updates_novelId ON updates(novelId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_updates_foundAt ON updates(foundAt)")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -122,7 +194,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_reader_database"
                 )
-                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                     // No fallbackToDestructiveMigration() — if a migration is missing,
                     // the app crashes instead of silently wiping the user's library,
                     // bookmarks, reading progress, and stats. Always write migrations.

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowDropUp
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
@@ -86,6 +87,7 @@ fun ReadingStatsScreen(
     readingStatsTracker: ReadingStatsTracker,
     repository: NovelRepository,
     onBackClick: () -> Unit,
+    onHistoryClick: () -> Unit = {},
     viewModel: ReadingStatsViewModel = viewModel(
         factory = ReadingStatsViewModel.Factory(readingStatsTracker, repository)
     )
@@ -122,7 +124,7 @@ fun ReadingStatsScreen(
             StatsShareExporter.share(
                 context = context,
                 file = file,
-                shareText = "${formatNumber(state.thisWeekWords)} words this week " +
+                shareText = "${formatNumber(state.totalWordsRead)} words read " +
                         "on NovelForge 📖"
             )
         } else {
@@ -150,6 +152,12 @@ fun ReadingStatsScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onHistoryClick) {
+                        Icon(
+                            Icons.Default.History,
+                            contentDescription = "Reading history"
+                        )
+                    }
                     // Share icon — only enabled once stats have loaded and the user
                     // has actually read something. Sharing a "0 words this week" card
                     // is embarrassing; disabling the button avoids that failure mode.
@@ -465,12 +473,9 @@ private fun ActivityItem(session: ReadingSession) {
     val dateFormat = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
     val timeStr = dateFormat.format(Date(session.completedAt))
 
-    // Extract a readable novel name from novelId (remove source prefix, replace hyphens)
-    val novelName = session.novelId
-        .substringAfter("_")
-        .replace("-", " ")
-        .replace("~", "/")
-        .replaceFirstChar { it.uppercase() }
+    // Real title resolved from the DB by the ViewModel (with a slug
+    // fallback for novels that were removed from the library).
+    val novelName = session.novelTitle
 
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically) {

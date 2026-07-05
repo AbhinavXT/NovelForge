@@ -22,6 +22,15 @@ enum class ColorScheme(val label: String) {
     ORANGE("Orange")
 }
 
+/**
+ * How the Library tab renders the collection.
+ * Persisted so the choice survives restarts.
+ */
+enum class LibraryViewMode(val label: String) {
+    LIST("List"),
+    GRID("Grid")
+}
+
 enum class DictionaryLanguage(val code: String, val label: String) {
     ENGLISH("en", "English"),
     HINDI("hi", "Hindi"),
@@ -45,6 +54,9 @@ class ThemePreferences(context: Context) {
     private val _dictionaryLanguage = MutableStateFlow(loadDictionaryLanguage())
     val dictionaryLanguage: StateFlow<DictionaryLanguage> = _dictionaryLanguage.asStateFlow()
 
+    private val _libraryViewMode = MutableStateFlow(loadLibraryViewMode())
+    val libraryViewMode: StateFlow<LibraryViewMode> = _libraryViewMode.asStateFlow()
+
     fun setThemeMode(mode: ThemeMode) {
         prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
         _themeMode.value = mode
@@ -58,6 +70,11 @@ class ThemePreferences(context: Context) {
     fun setDictionaryLanguage(language: DictionaryLanguage) {
         prefs.edit().putString(KEY_DICTIONARY_LANGUAGE, language.name).apply()
         _dictionaryLanguage.value = language
+    }
+
+    fun setLibraryViewMode(mode: LibraryViewMode) {
+        prefs.edit().putString(KEY_LIBRARY_VIEW_MODE, mode.name).apply()
+        _libraryViewMode.value = mode
     }
 
     private fun loadThemeMode(): ThemeMode {
@@ -78,6 +95,15 @@ class ThemePreferences(context: Context) {
         }
     }
 
+    private fun loadLibraryViewMode(): LibraryViewMode {
+        val name = prefs.getString(KEY_LIBRARY_VIEW_MODE, LibraryViewMode.LIST.name)
+        return try {
+            LibraryViewMode.valueOf(name ?: LibraryViewMode.LIST.name)
+        } catch (_: IllegalArgumentException) {
+            LibraryViewMode.LIST
+        }
+    }
+
     private fun loadDictionaryLanguage(): DictionaryLanguage {
         val name = prefs.getString(KEY_DICTIONARY_LANGUAGE, DictionaryLanguage.ENGLISH.name)
         return try {
@@ -92,5 +118,6 @@ class ThemePreferences(context: Context) {
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_COLOR_SCHEME = "color_scheme"
         private const val KEY_DICTIONARY_LANGUAGE = "dictionary_language"
+        private const val KEY_LIBRARY_VIEW_MODE = "library_view_mode"
     }
 }
