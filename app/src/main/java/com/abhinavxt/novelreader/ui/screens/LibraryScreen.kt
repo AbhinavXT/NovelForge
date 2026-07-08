@@ -76,6 +76,7 @@ import android.widget.Toast
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import com.abhinavxt.novelreader.util.AnnotationExporter
+import com.abhinavxt.novelreader.util.EpubExporter
 import kotlinx.coroutines.launch
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -155,6 +156,29 @@ fun LibraryScreen(
                         ).show()
                     } else if (result is AnnotationExporter.ExportResult.Error) {
                         Toast.makeText(exportContext, result.message, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onExportEpub = {
+                optionsNovel = null
+                Toast.makeText(exportContext, "Exporting EPUB…", Toast.LENGTH_SHORT).show()
+                exportScope.launch {
+                    val result = EpubExporter.exportAndShare(
+                        context = exportContext,
+                        repository = repository,
+                        novelId = novel.id,
+                        novelTitle = novel.title
+                    )
+                    when (result) {
+                        is EpubExporter.ExportResult.Empty -> Toast.makeText(
+                            exportContext,
+                            "No downloaded chapters in \"${novel.title}\" — download some first",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        is EpubExporter.ExportResult.Error -> Toast.makeText(
+                            exportContext, result.message, Toast.LENGTH_SHORT
+                        ).show()
+                        is EpubExporter.ExportResult.Shared -> { /* share sheet is up */ }
                     }
                 }
             },
@@ -877,6 +901,7 @@ private fun NovelOptionsDialog(
     novel: Novel,
     onEditCategories: () -> Unit,
     onExportAnnotations: () -> Unit,
+    onExportEpub: () -> Unit,
     onRemove: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -899,6 +924,10 @@ private fun NovelOptionsDialog(
                     onClick = onExportAnnotations,
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Export highlights & notes") }
+                TextButton(
+                    onClick = onExportEpub,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Export as EPUB") }
                 TextButton(
                     onClick = onRemove,
                     modifier = Modifier.fillMaxWidth()
@@ -1064,3 +1093,4 @@ private fun ManageCategoriesDialog(
         }
     )
 }
+    
