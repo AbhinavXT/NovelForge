@@ -1,6 +1,7 @@
 package com.abhinavxt.novelreader.data.database
 
 import androidx.room.Entity
+import androidx.room.Fts4
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
@@ -242,4 +243,26 @@ data class UpdateEntity(
     val newChapters: Int,
     val latestChapterNumber: Int,
     val foundAt: Long
+)
+
+/**
+ * FTS4 shadow table over chapters.content — powers library-wide
+ * full-text search of downloaded chapter prose ("where did I read
+ * that name?").
+ *
+ * External-content FTS: this table stores only the search index;
+ * the actual text lives in `chapters`. Room recreates the content
+ * sync triggers on every database open, so downloads, deletes and
+ * EPUB imports keep the index up to date with zero code in the
+ * write paths. Rows where content IS NULL (not-downloaded chapters)
+ * simply index nothing and can never match.
+ *
+ * Default "simple" tokenizer on purpose: its CREATE statement is
+ * the easiest to reproduce byte-compatibly in MIGRATION_13_14, and
+ * webnovel prose is overwhelmingly ASCII romanizations anyway.
+ */
+@Entity(tableName = "chapters_fts")
+@Fts4(contentEntity = ChapterEntity::class)
+data class ChapterFtsEntity(
+    val content: String?
 )

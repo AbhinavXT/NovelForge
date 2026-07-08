@@ -100,8 +100,15 @@ class ReaderViewModel(
     private val repository: NovelRepository,
     private val themePreferences: ThemePreferences? = null,
     private val statsTracker: ReadingStatsTracker? = null,
-    private val prefetcher: ChapterPrefetcher? = null
+    private val prefetcher: ChapterPrefetcher? = null,
+    targetParagraph: Int = -1
 ) : ViewModel() {
+
+    // One-shot deep-jump target (full-text search → "open at the
+    // matching paragraph"). Consumed on the first successful chapter
+    // load, then cleared so chapter navigation and re-loads fall back
+    // to normal progress restore.
+    private var pendingTargetParagraph: Int = targetParagraph
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
@@ -241,11 +248,10 @@ class ReaderViewModel(
         }
     }
 
+    // Delegates to the shared util — full-text search computes jump
+    // targets with the same split, so the logic must not fork.
     private fun splitIntoParagraphs(content: String): List<String> {
-        return content
-            .split("\n\n", "\n")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
+        return com.abhinavxt.novelreader.util.ParagraphSplitter.split(content)
     }
 
     private var autoRetryEnabled = false
@@ -293,7 +299,13 @@ class ReaderViewModel(
 
                     val paragraphs = splitIntoParagraphs(content)
 
-                    val savedParagraphIndex = if (shouldRestorePosition) {
+                    val jumpTarget = pendingTargetParagraph
+                    val savedParagraphIndex = if (jumpTarget >= 0) {
+                        // Search-result deep jump wins over progress
+                        // restore, exactly once.
+                        pendingTargetParagraph = -1
+                        jumpTarget.coerceIn(0, (paragraphs.size - 1).coerceAtLeast(0))
+                    } else if (shouldRestorePosition) {
                         val progress = repository.getReadingProgress(novelId)
                         if (progress?.currentChapterId == currentChapterId) {
                             progress.paragraphIndex.coerceIn(0, paragraphs.size - 1)
@@ -887,12 +899,13 @@ class ReaderViewModel(
             repository: NovelRepository,
             themePreferences: ThemePreferences? = null,
             statsTracker: ReadingStatsTracker? = null,
-            prefetcher: ChapterPrefetcher? = null
+            prefetcher: ChapterPrefetcher? = null,
+            targetParagraph: Int = -1
         ): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences, statsTracker, prefetcher) as T
+                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences, statsTracker, prefetcher, targetParagraph) as T
                 }
             }
         }

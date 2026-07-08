@@ -159,9 +159,11 @@ fun ReaderScreen(
     themePreferences: ThemePreferences? = null,
     statsTracker: com.abhinavxt.novelreader.data.ReadingStatsTracker? = null,
     chapterPrefetcher: ChapterPrefetcher? = null,
+    // Full-text search deep-jump; -1 = normal progress restore.
+    targetParagraph: Int = -1,
     onBackClick: () -> Unit,
     viewModel: ReaderViewModel = viewModel(
-        factory = ReaderViewModel.provideFactory(novelId, chapterId, chapterUrl, novelUrl = novelUrl, repository, themePreferences, statsTracker, chapterPrefetcher)
+        factory = ReaderViewModel.provideFactory(novelId, chapterId, chapterUrl, novelUrl = novelUrl, repository, themePreferences, statsTracker, chapterPrefetcher, targetParagraph)
     )
 ) {
     val uiState by viewModel.uiState.collectAsState()

@@ -174,7 +174,50 @@ interface ChapterDao {
     // For update checker: get the highest chapter number stored for a novel
     @Query("SELECT MAX(number) FROM chapters WHERE novelId = :novelId")
     suspend fun getMaxChapterNumber(novelId: String): Int?
+
+    // ── Full-text search over downloaded chapter content ────────
+    // Joins the FTS index back to chapters (via the shared rowid)
+    // and novels for display metadata. snippet() args: table,
+    // match-start marker, match-end marker, ellipsis, column (-1 =
+    // the matched one), approx tokens of context. \u0001/\u0002 are
+    // control chars that can't appear in prose — the UI splits on
+    // them to bold the match. Ordered by novel so the screen can
+    // group results with simple adjacency, capped to keep a common
+    // word from materializing thousands of rows.
+    @Query("""
+        SELECT c.id AS chapterId,
+               c.novelId AS novelId,
+               c.number AS chapterNumber,
+               c.title AS chapterTitle,
+               c.url AS chapterUrl,
+               n.title AS novelTitle,
+               n.coverUrl AS coverUrl,
+               snippet(chapters_fts, '${'\u0001'}', '${'\u0002'}', '…', -1, 10) AS snippet
+        FROM chapters_fts
+        JOIN chapters c ON c.rowid = chapters_fts.rowid
+        JOIN novels n ON n.id = c.novelId
+        WHERE chapters_fts MATCH :ftsQuery
+        ORDER BY n.title ASC, c.number ASC
+        LIMIT 200
+    """)
+    suspend fun searchChapterContent(ftsQuery: String): List<ChapterSearchResult>
 }
+
+/**
+ * One full-text search hit: enough metadata to render a grouped
+ * result row (novel header + chapter line + snippet) and to
+ * navigate straight into the reader.
+ */
+data class ChapterSearchResult(
+    val chapterId: String,
+    val novelId: String,
+    val chapterNumber: Int,
+    val chapterTitle: String,
+    val chapterUrl: String,
+    val novelTitle: String,
+    val coverUrl: String?,
+    val snippet: String
+)
 
 @Dao
 interface ReadingProgressDao {

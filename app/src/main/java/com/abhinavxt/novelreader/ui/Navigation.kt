@@ -58,16 +58,33 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     }
 
     object Reader : Screen(
-        route = "reader/{novelId}/{chapterId}/{chapterUrl}/{novelUrl}",
+        // targetParagraph is an optional deep-jump used by full-text
+        // search ("open the reader AT the match"); -1 = no jump,
+        // normal progress restore. Optional query args don't affect
+        // existing callers.
+        route = "reader/{novelId}/{chapterId}/{chapterUrl}/{novelUrl}?targetParagraph={targetParagraph}",
         title = "Reader",
         icon = Icons.Default.MenuBook
     ) {
-        fun createRoute(novelId: String, chapterId: String, chapterUrl: String, novelUrl: String): String {
+        fun createRoute(
+            novelId: String,
+            chapterId: String,
+            chapterUrl: String,
+            novelUrl: String,
+            targetParagraph: Int = -1
+        ): String {
             val encodedChapterUrl = URLEncoder.encode(chapterUrl, "UTF-8")
             val encodedNovelUrl = URLEncoder.encode(novelUrl, "UTF-8")
-            return "reader/$novelId/$chapterId/$encodedChapterUrl/$encodedNovelUrl"
+            return "reader/$novelId/$chapterId/$encodedChapterUrl/$encodedNovelUrl" +
+                    if (targetParagraph >= 0) "?targetParagraph=$targetParagraph" else ""
         }
     }
+
+    object TextSearch : Screen(
+        route = "text_search",
+        title = "Search in Books",
+        icon = Icons.Default.Search
+    )
 
     object Downloads : Screen(
         route = "downloads",
@@ -319,10 +336,32 @@ fun NavigationHost(
                                 val url = constructNovelUrl(novelId)
                                 navController.navigate(Screen.Detail.createRoute(novelId, url))
                             },
+                            onTextSearchClick = {
+                                navController.navigate(Screen.TextSearch.route)
+                            },
                             networkMonitor = networkMonitor
                         )
 
                     }
+                }
+
+                // ── Full-text search over downloaded chapters ────────
+                composable(Screen.TextSearch.route) {
+                    TextSearchScreen(
+                        repository = repository,
+                        onBackClick = { navController.popBackStack() },
+                        onHitClick = { novelId, chapterId, chapterUrl, paragraphIndex ->
+                            navController.navigate(
+                                Screen.Reader.createRoute(
+                                    novelId = novelId,
+                                    chapterId = chapterId,
+                                    chapterUrl = chapterUrl,
+                                    novelUrl = constructNovelUrl(novelId),
+                                    targetParagraph = paragraphIndex
+                                )
+                            )
+                        }
+                    )
                 }
 
                 composable(Screen.Settings.route) {
@@ -410,7 +449,11 @@ fun NavigationHost(
                         navArgument("novelId") { type = NavType.StringType },
                         navArgument("chapterId") { type = NavType.StringType },
                         navArgument("chapterUrl") { type = NavType.StringType },
-                        navArgument("novelUrl") { type = NavType.StringType }
+                        navArgument("novelUrl") { type = NavType.StringType },
+                        navArgument("targetParagraph") {
+                            type = NavType.IntType
+                            defaultValue = -1
+                        }
                     )
                 ) { backStackEntry ->
                     val novelId = backStackEntry.arguments?.getString("novelId")!!
@@ -423,12 +466,14 @@ fun NavigationHost(
                         backStackEntry.arguments?.getString("novelUrl")!!,
                         "UTF-8"
                     )
+                    val targetParagraph = backStackEntry.arguments?.getInt("targetParagraph") ?: -1
 
                     ReaderScreen(
                         novelId = novelId,
                         chapterId = chapterId,
                         chapterUrl = chapterUrl,
                         novelUrl = novelUrl,
+                        targetParagraph = targetParagraph,
                         repository = repository,
                         ttsManager = ttsManager,
                         themePreferences = themePreferences,

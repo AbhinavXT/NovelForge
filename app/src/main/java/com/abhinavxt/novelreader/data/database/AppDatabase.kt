@@ -19,9 +19,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         HighlightEntity::class,          // NEW in v9
         CategoryEntity::class,           // NEW in v12
         NovelCategoryCrossRef::class,    // NEW in v12
-        UpdateEntity::class              // NEW in v12
+        UpdateEntity::class,             // NEW in v12
+        ChapterFtsEntity::class          // NEW in v14 — full-text search index
     ],
-    version = 13,
+    version = 14,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -202,6 +203,31 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration v13 → v14: full-text search index over downloaded
+         * chapter content.
+         *
+         * The CREATE VIRTUAL TABLE statement must match what Room
+         * generates from @Fts4(contentEntity = ChapterEntity::class)
+         * — column list plus `content=` option — or schema validation
+         * fails on first open. Room re-creates the external-content
+         * sync triggers itself on every open, so the migration only
+         * needs the table plus a one-time 'rebuild' to index chapters
+         * that were downloaded before this version.
+         */
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS `chapters_fts` " +
+                            "USING FTS4(`content` TEXT, content=`chapters`)"
+                )
+                // Populate the index from existing rows. FTS4 'rebuild'
+                // scans the content table once; NULL content rows
+                // (not-downloaded chapters) index nothing.
+                db.execSQL("INSERT INTO chapters_fts(chapters_fts) VALUES('rebuild')")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -209,7 +235,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_reader_database"
                 )
-                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                     // No fallbackToDestructiveMigration() — if a migration is missing,
                     // the app crashes instead of silently wiping the user's library,
                     // bookmarks, reading progress, and stats. Always write migrations.

@@ -159,6 +159,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.abhinavxt.novelreader.util.AutoScrollController
+import com.abhinavxt.novelreader.util.MatchHighlight
 
 // ─────────────────────────────────────────────────────────────────
 // Split out of the original ReaderScreen.kt (Phase 3 refactor).
@@ -243,6 +244,20 @@ internal fun ReaderContent(
     // Appearance bottom sheet state
     var showAppearanceSheet by remember { mutableStateOf(false) }
 
+    // ── In-book find ────────────────────────────────────────────
+    // Transient UI state, deliberately NOT in the ViewModel: closing
+    // the reader should discard it, and matches derive entirely from
+    // composition inputs (segments + query). Scroll mode searches the
+    // whole stitched window; paged mode only renders the anchor
+    // chapter, so it only searches that.
+    var findActive by remember(chapter.chapterId) { mutableStateOf(false) }
+    var findQuery by remember(chapter.chapterId) { mutableStateOf("") }
+    var activeFindIndex by remember { mutableIntStateOf(0) }
+    // Paged-mode jump requests: (monotonic id, paragraphIndex). The id
+    // makes re-jumping to the same paragraph re-trigger the effect.
+    var pagedFindRequest by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    val findScope = rememberCoroutineScope()
+
     val listState = rememberLazyListState()
 
     // Activity handle for the left-edge brightness gesture (null-safe:
@@ -285,6 +300,42 @@ internal fun ReaderContent(
     }
     val contentItemCount = remember(segments) {
         segments.last().let { it.startIndex + it.paragraphs.size }
+    }
+
+    // ── Find matches over the loaded text ───────────────────────
+    // Recomputes when the query changes OR when stitching appends a
+    // chapter (new text should become findable). Empty query → empty
+    // list, so closing the bar (which clears the query) also clears
+    // all match styling.
+    val findMatches = remember(segments, findQuery, settings.readingMode) {
+        val searchSegments = if (settings.readingMode == ReadingMode.PAGED) {
+            segments.take(1)
+        } else {
+            segments
+        }
+        computeFindMatches(searchSegments, findQuery)
+    }
+    val safeFindIndex = activeFindIndex.coerceIn(0, (findMatches.size - 1).coerceAtLeast(0))
+    val activeFindMatch = if (findActive) findMatches.getOrNull(safeFindIndex) else null
+
+    val jumpToFindMatch: (Int) -> Unit = { idx ->
+        findMatches.getOrNull(idx)?.let { m ->
+            if (settings.readingMode == ReadingMode.PAGED) {
+                pagedFindRequest = ((pagedFindRequest?.first ?: 0) + 1) to m.paragraphIndex
+            } else {
+                findScope.launch { listState.animateScrollToItem(m.globalIndex) }
+            }
+        }
+    }
+
+    // Auto-jump to the first match as the user types. Keyed on the
+    // QUERY, not the match list — a stitch append also changes
+    // findMatches and must not yank the scroll position.
+    LaunchedEffect(findQuery) {
+        if (findActive && findQuery.length >= MatchHighlight.MIN_QUERY_LENGTH) {
+            activeFindIndex = 0
+            if (findMatches.isNotEmpty()) jumpToFindMatch(0)
+        }
     }
 
     // Global LazyColumn index → (segment, paragraph-within-segment).
@@ -517,31 +568,65 @@ internal fun ReaderContent(
                 enter = slideInVertically(initialOffsetY = { -it }),
                 exit = slideOutVertically(targetOffsetY = { -it })
             ) {
-                ReaderTopBar(
-                    // Active chapter — with stitching the user may be
-                    // several chapters past the anchor.
-                    chapterTitle = activeSegment.title,
-                    novelTitle = chapter.novelTitle,
-                    chapterNumber = activeSegment.number,
-                    totalChapters = chapter.totalChapters,
-                    ttsState = ttsState,
-                    estimatedMinutesLeft = dynamicMinutesLeft,
-                    onBackClick = onBackClick,
-                    onTTSClick = onToggleTTSControls,
-                    isAutoScrollActive = isAutoScrollActive,
-                    onAutoScrollClick = {
-                        when (autoScrollState) {
-                            AutoScrollController.State.IDLE,
-                            AutoScrollController.State.CHAPTER_END ->
-                                autoScrollController.start(onAutoScrollChapterEnd)
-                            AutoScrollController.State.ACTIVE,
-                            AutoScrollController.State.PAUSED ->
-                                autoScrollController.stop()
-                        }
-                    },
-                    backgroundColor = colors.background,
-                    contentColor = colors.text
-                )
+                if (findActive) {
+                    ReaderFindBar(
+                        query = findQuery,
+                        onQueryChange = { findQuery = it },
+                        matchCount = findMatches.size,
+                        activeIndex = safeFindIndex,
+                        onPrev = {
+                            if (findMatches.isNotEmpty()) {
+                                val n = (safeFindIndex - 1 + findMatches.size) % findMatches.size
+                                activeFindIndex = n
+                                jumpToFindMatch(n)
+                            }
+                        },
+                        onNext = {
+                            if (findMatches.isNotEmpty()) {
+                                val n = (safeFindIndex + 1) % findMatches.size
+                                activeFindIndex = n
+                                jumpToFindMatch(n)
+                            }
+                        },
+                        onClose = {
+                            findActive = false
+                            findQuery = ""
+                            activeFindIndex = 0
+                        },
+                        backgroundColor = colors.background,
+                        contentColor = colors.text
+                    )
+                } else {
+                    ReaderTopBar(
+                        // Active chapter — with stitching the user may be
+                        // several chapters past the anchor.
+                        chapterTitle = activeSegment.title,
+                        novelTitle = chapter.novelTitle,
+                        chapterNumber = activeSegment.number,
+                        totalChapters = chapter.totalChapters,
+                        ttsState = ttsState,
+                        estimatedMinutesLeft = dynamicMinutesLeft,
+                        onBackClick = onBackClick,
+                        onTTSClick = onToggleTTSControls,
+                        onFindClick = {
+                            findActive = true
+                            isImmersive = false
+                        },
+                        isAutoScrollActive = isAutoScrollActive,
+                        onAutoScrollClick = {
+                            when (autoScrollState) {
+                                AutoScrollController.State.IDLE,
+                                AutoScrollController.State.CHAPTER_END ->
+                                    autoScrollController.start(onAutoScrollChapterEnd)
+                                AutoScrollController.State.ACTIVE,
+                                AutoScrollController.State.PAUSED ->
+                                    autoScrollController.stop()
+                            }
+                        },
+                        backgroundColor = colors.background,
+                        contentColor = colors.text
+                    )
+                }
             }
         },
         bottomBar = {
@@ -611,6 +696,10 @@ internal fun ReaderContent(
                     settings = settings,
                     colors = colors,
                     savedParagraphIndex = chapter.savedParagraphIndex,
+                    searchQuery = if (findActive) findQuery else "",
+                    activeSearchParagraph = activeFindMatch?.paragraphIndex ?: -1,
+                    activeSearchRange = activeFindMatch?.range,
+                    searchJumpRequest = pagedFindRequest,
                     onParagraphIndexChanged = { index -> onSaveParagraphIndex(index) },
                     onToggleImmersive = { isImmersive = !isImmersive },
                     onPreviousChapter = onPreviousChapter,
@@ -743,6 +832,12 @@ internal fun ReaderContent(
                             val isCurrentParagraph = ttsState == TTSState.PLAYING &&
                                     isActiveSeg && index == currentTTSParagraph
 
+                            // In-book find: the active match's range only
+                            // applies to the paragraph that contains it.
+                            val activeSearchRange = activeFindMatch?.let { m ->
+                                if (seg.startIndex + index == m.globalIndex) m.range else null
+                            }
+
                             BookmarkableParagraph(
                                 paragraph = paragraph,
                                 index = index,
@@ -752,6 +847,8 @@ internal fun ReaderContent(
                                 ttsManager = ttsManager,
                                 colors = colors,
                                 settings = settings,
+                                searchQuery = if (findActive) findQuery else "",
+                                activeSearchRange = activeSearchRange,
                                 // Highlight overlays are loaded for the ACTIVE
                                 // chapter; peeking segments render plain until
                                 // the viewport crosses their divider.
@@ -918,6 +1015,8 @@ private fun BookmarkableParagraph(
     ttsManager: TTSManager,
     colors: ThemeColors,
     settings: ReaderSettings,
+    searchQuery: String = "",
+    activeSearchRange: IntRange? = null,
     highlights: List<HighlightEntity> = emptyList(),
     onAddBookmark: (Int, String) -> Unit,
     onLookupWord: (String) -> Unit,
@@ -954,50 +1053,70 @@ private fun BookmarkableParagraph(
                         indent = settings.paragraphIndent,
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
-                } else if (highlights.isNotEmpty()) {
-                    // Render paragraph with highlight overlays using AnnotatedString
-                    val annotatedText = buildAnnotatedString {
-                        append(paragraph)
-                        highlights.forEach { hl ->
-                            val s = hl.startOffset.coerceIn(0, paragraph.length)
-                            val e = hl.endOffset.coerceIn(s, paragraph.length)
-                            if (s < e) {
-                                addStyle(
-                                    SpanStyle(background = getHighlightColor(hl.color)),
-                                    s, e
+                } else {
+                    // In-book find occurrences for this paragraph.
+                    // remember-ed: the scan reruns only when the text
+                    // or query changes, not on every recomposition.
+                    val searchRanges = remember(paragraph, searchQuery) {
+                        MatchHighlight.findOccurrences(paragraph, searchQuery)
+                    }
+
+                    if (highlights.isNotEmpty() || searchRanges.isNotEmpty()) {
+                        // Highlight overlays + search matches share one
+                        // AnnotatedString. Search spans are added LAST so
+                        // they win where the two overlap — a find match
+                        // must stay visible inside a yellow highlight.
+                        val annotatedText = buildAnnotatedString {
+                            append(paragraph)
+                            highlights.forEach { hl ->
+                                val s = hl.startOffset.coerceIn(0, paragraph.length)
+                                val e = hl.endOffset.coerceIn(s, paragraph.length)
+                                if (s < e) {
+                                    addStyle(
+                                        SpanStyle(background = getHighlightColor(hl.color)),
+                                        s, e
+                                    )
+                                }
+                            }
+                            with(MatchHighlight) {
+                                addSearchSpans(
+                                    ranges = searchRanges,
+                                    activeRange = activeSearchRange,
+                                    textColor = colors.text,
+                                    backgroundColor = colors.background
                                 )
                             }
                         }
+                        Text(
+                            text = annotatedText,
+                            color = colors.text,
+                            fontSize = settings.fontSize.sp,
+                            fontFamily = settings.font.toFontFamily(),
+                            lineHeight = (settings.fontSize * settings.lineSpacing).sp,
+                            textAlign = if (settings.justifyText) TextAlign.Justify else TextAlign.Start,
+                            style = TextStyle(
+                                textIndent = if (settings.paragraphIndent) {
+                                    TextIndent(firstLine = (settings.fontSize * 1.5).sp)
+                                } else TextIndent.None
+                            ),
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+                    } else {
+                        Text(
+                            text = paragraph,
+                            color = colors.text,
+                            fontSize = settings.fontSize.sp,
+                            fontFamily = settings.font.toFontFamily(),
+                            lineHeight = (settings.fontSize * settings.lineSpacing).sp,
+                            textAlign = if (settings.justifyText) TextAlign.Justify else TextAlign.Start,
+                            style = TextStyle(
+                                textIndent = if (settings.paragraphIndent) {
+                                    TextIndent(firstLine = (settings.fontSize * 1.5).sp)
+                                } else TextIndent.None
+                            ),
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
                     }
-                    Text(
-                        text = annotatedText,
-                        color = colors.text,
-                        fontSize = settings.fontSize.sp,
-                        fontFamily = settings.font.toFontFamily(),
-                        lineHeight = (settings.fontSize * settings.lineSpacing).sp,
-                        textAlign = if (settings.justifyText) TextAlign.Justify else TextAlign.Start,
-                        style = TextStyle(
-                            textIndent = if (settings.paragraphIndent) {
-                                TextIndent(firstLine = (settings.fontSize * 1.5).sp)
-                            } else TextIndent.None
-                        ),
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-                } else {
-                    Text(
-                        text = paragraph,
-                        color = colors.text,
-                        fontSize = settings.fontSize.sp,
-                        fontFamily = settings.font.toFontFamily(),
-                        lineHeight = (settings.fontSize * settings.lineSpacing).sp,
-                        textAlign = if (settings.justifyText) TextAlign.Justify else TextAlign.Start,
-                        style = TextStyle(
-                            textIndent = if (settings.paragraphIndent) {
-                                TextIndent(firstLine = (settings.fontSize * 1.5).sp)
-                            } else TextIndent.None
-                        ),
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
                 }
             }
         }

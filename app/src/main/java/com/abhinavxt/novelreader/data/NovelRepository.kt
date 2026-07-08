@@ -649,4 +649,51 @@ class NovelRepository(
     suspend fun getBookmarksForNovelOnce(novelId: String) =
         bookmarkDao.getBookmarksForNovelOnce(novelId)
 
+    // ============ FULL-TEXT SEARCH (v14) ============
+
+    /**
+     * Full-text search over all downloaded chapter content.
+     *
+     * Raw user input is converted to FTS4 MATCH syntax here so the
+     * ViewModel never has to know about it: quotes and FTS operators
+     * are stripped (a stray `"` or `'` in the input is a MATCH
+     * syntax error → SQLiteException), tokens are implicitly ANDed,
+     * and the last token gets a `*` so results appear while the
+     * user is still typing ("cultiv" matches "cultivation").
+     */
+    suspend fun searchDownloadedContent(rawQuery: String): List<com.abhinavxt.novelreader.data.database.ChapterSearchResult> {
+        val ftsQuery = toFtsMatchQuery(rawQuery) ?: return emptyList()
+        return try {
+            chapterDao.searchChapterContent(ftsQuery)
+        } catch (e: Exception) {
+            // Defense in depth: any residual MATCH syntax issue is a
+            // "no results", never a crash.
+            Logger.e("FTS search failed for query \"$rawQuery\": ${e.message}")
+            emptyList()
+        }
+    }
+
+    /**
+     * Local-only chapter content read (no network fallback), for
+     * turning a search hit into a jump-to-paragraph target. Search
+     * results are downloaded chapters by definition, so this should
+     * never miss; returns null defensively if the download was
+     * deleted between search and tap.
+     */
+    suspend fun getDownloadedChapterContent(chapterId: String): String? {
+        return chapterDao.getChapterById(chapterId)?.content
+    }
+
+    private fun toFtsMatchQuery(raw: String): String? {
+        val tokens = raw
+            .replace(Regex("[\"'*^\\-:()]"), " ")   // strip MATCH metacharacters
+            .split(Regex("\\s+"))
+            .filter { it.isNotBlank() }
+        if (tokens.isEmpty()) return null
+
+        return tokens.mapIndexed { i, t ->
+            if (i == tokens.lastIndex) "$t*" else t
+        }.joinToString(" ")
+    }
+
 }

@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.ManageSearch
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.ViewList
@@ -101,6 +102,7 @@ fun LibraryScreen(
     repository: NovelRepository,
     themePreferences: ThemePreferences,
     onNovelClick: (String) -> Unit,
+    onTextSearchClick: () -> Unit = {},
     networkMonitor: NetworkMonitor,
     viewModel: LibraryViewModel = viewModel(
         factory = LibraryViewModel.provideFactory(repository, LocalContext.current)
@@ -296,27 +298,38 @@ fun LibraryScreen(
                             text = "My Library",
                             style = MaterialTheme.typography.headlineMedium
                         )
-                        IconButton(
-                            onClick = {
-                                themePreferences.setLibraryViewMode(
-                                    if (viewMode == LibraryViewMode.LIST) LibraryViewMode.GRID
-                                    else LibraryViewMode.LIST
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Full-text search over downloaded chapter
+                            // content — distinct from the title filter
+                            // field below.
+                            IconButton(onClick = onTextSearchClick) {
+                                Icon(
+                                    imageVector = Icons.Default.ManageSearch,
+                                    contentDescription = "Search in books"
                                 )
                             }
-                        ) {
-                            Icon(
-                                // Show the mode you'd SWITCH TO, not the current one
-                                imageVector = if (viewMode == LibraryViewMode.LIST) {
-                                    Icons.Default.GridView
-                                } else {
-                                    Icons.AutoMirrored.Filled.ViewList
-                                },
-                                contentDescription = if (viewMode == LibraryViewMode.LIST) {
-                                    "Switch to grid view"
-                                } else {
-                                    "Switch to list view"
+                            IconButton(
+                                onClick = {
+                                    themePreferences.setLibraryViewMode(
+                                        if (viewMode == LibraryViewMode.LIST) LibraryViewMode.GRID
+                                        else LibraryViewMode.LIST
+                                    )
                                 }
-                            )
+                            ) {
+                                Icon(
+                                    // Show the mode you'd SWITCH TO, not the current one
+                                    imageVector = if (viewMode == LibraryViewMode.LIST) {
+                                        Icons.Default.GridView
+                                    } else {
+                                        Icons.AutoMirrored.Filled.ViewList
+                                    },
+                                    contentDescription = if (viewMode == LibraryViewMode.LIST) {
+                                        "Switch to grid view"
+                                    } else {
+                                        "Switch to list view"
+                                    }
+                                )
+                            }
                         }
                     }
 

@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -260,6 +261,7 @@ internal fun ReaderTopBar(
     estimatedMinutesLeft: Int? = null,
     onBackClick: () -> Unit,
     onTTSClick: () -> Unit,
+    onFindClick: () -> Unit = {},
     isAutoScrollActive: Boolean = false,
     onAutoScrollClick: () -> Unit = {},
     backgroundColor: Color,
@@ -315,6 +317,15 @@ internal fun ReaderTopBar(
                     )
                 }
             }
+        }
+
+        // In-book find — swaps the top bar for the find bar.
+        IconButton(onClick = onFindClick) {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = "Find in chapter",
+                tint = contentColor
+            )
         }
 
         // Auto-scroll toggle. Disabled while TTS is playing — they're
