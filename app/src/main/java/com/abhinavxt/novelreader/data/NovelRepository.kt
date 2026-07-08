@@ -10,6 +10,7 @@ import com.abhinavxt.novelreader.data.database.ReadingProgressEntity
 import com.abhinavxt.novelreader.data.database.ReaderSettingsEntity
 import com.abhinavxt.novelreader.data.database.CategoryEntity
 import com.abhinavxt.novelreader.data.database.ChapterListItem
+import com.abhinavxt.novelreader.data.database.HistoryRowData
 import com.abhinavxt.novelreader.data.database.NovelCategoryCrossRef
 import com.abhinavxt.novelreader.data.database.UpdateEntity
 import com.abhinavxt.novelreader.data.model.Chapter
@@ -27,7 +28,6 @@ import kotlinx.coroutines.flow.map
 import com.abhinavxt.novelreader.ui.screens.NovelDownloadInfo
 import com.abhinavxt.novelreader.util.Logger
 import kotlinx.coroutines.flow.first
-import com.abhinavxt.novelreader.data.database.HistoryRowData
 
 /**
  * [onProgressSaved] is an optional callback fired after every
@@ -418,6 +418,10 @@ class NovelRepository(
             keepScreenOn = settings.keepScreenOn,
             volumeKeyNavigation = settings.volumeKeyNavigation,
             autoScrollSpeed = settings.autoScrollSpeed,  // NEW
+            justifyText = settings.justifyText,
+            paragraphIndent = settings.paragraphIndent,
+            customBackgroundColor = settings.customBackgroundColor,
+            customTextColor = settings.customTextColor,
         )
         settingsDao.saveSettings(entity)
     }
@@ -500,6 +504,10 @@ class NovelRepository(
             keepScreenOn = this.keepScreenOn,
             volumeKeyNavigation = this.volumeKeyNavigation,
             autoScrollSpeed = this.autoScrollSpeed.coerceIn(20, 200),  // NEW
+            justifyText = this.justifyText,
+            paragraphIndent = this.paragraphIndent,
+            customBackgroundColor = this.customBackgroundColor,
+            customTextColor = this.customTextColor,
         )
     }
 

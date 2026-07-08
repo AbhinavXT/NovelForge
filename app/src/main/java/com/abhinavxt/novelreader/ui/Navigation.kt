@@ -1,5 +1,6 @@
 package com.abhinavxt.novelreader.ui
 
+import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MenuBook
@@ -151,6 +152,7 @@ private fun constructNovelUrl(novelId: String): String {
     return SourceManager.constructNovelUrl(novelId)
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun NavigationHost(
     navController: NavHostController,
@@ -169,334 +171,356 @@ fun NavigationHost(
 ) {
     val startRoute = if (AppConfig.ONLINE_SOURCES_ENABLED) Screen.Home.route else Screen.Library.route
 
-    NavHost(
-        navController = navController,
-        startDestination = startRoute,
-        modifier = modifier,
-        // ── Default screen transitions ──────────────────────────
-        // Slide in from right + fade in when navigating forward.
-        // Slide out to right + fade out when navigating back.
-        // 250ms feels snappy without being jarring.
-        enterTransition = {
-            slideInHorizontally(
-                initialOffsetX = { fullWidth -> fullWidth / 4 },
-                animationSpec = tween(250)
-            ) + fadeIn(animationSpec = tween(250))
-        },
-        exitTransition = {
-            slideOutHorizontally(
-                targetOffsetX = { fullWidth -> -fullWidth / 4 },
-                animationSpec = tween(250)
-            ) + fadeOut(animationSpec = tween(150))
-        },
-        popEnterTransition = {
-            slideInHorizontally(
-                initialOffsetX = { fullWidth -> -fullWidth / 4 },
-                animationSpec = tween(250)
-            ) + fadeIn(animationSpec = tween(250))
-        },
-        popExitTransition = {
-            slideOutHorizontally(
-                targetOffsetX = { fullWidth -> fullWidth / 4 },
-                animationSpec = tween(250)
-            ) + fadeOut(animationSpec = tween(150))
-        }
-    ) {
-        // ── Online source screens (Browse/Search/Home) ────────────
-        // Only registered when online sources are enabled
+    androidx.compose.animation.SharedTransitionLayout(modifier = modifier) {
+        androidx.compose.runtime.CompositionLocalProvider(
+            com.abhinavxt.novelreader.ui.components.LocalSharedTransitionScope provides this@SharedTransitionLayout
+        ) {
+            NavHost(
+                navController = navController,
+                startDestination = startRoute,
+                // ── Default screen transitions ──────────────────────────
+                // Slide in from right + fade in when navigating forward.
+                // Slide out to right + fade out when navigating back.
+                // 250ms feels snappy without being jarring.
+                enterTransition = {
+                    slideInHorizontally(
+                        initialOffsetX = { fullWidth -> fullWidth / 4 },
+                        animationSpec = tween(250)
+                    ) + fadeIn(animationSpec = tween(250))
+                },
+                exitTransition = {
+                    slideOutHorizontally(
+                        targetOffsetX = { fullWidth -> -fullWidth / 4 },
+                        animationSpec = tween(250)
+                    ) + fadeOut(animationSpec = tween(150))
+                },
+                popEnterTransition = {
+                    slideInHorizontally(
+                        initialOffsetX = { fullWidth -> -fullWidth / 4 },
+                        animationSpec = tween(250)
+                    ) + fadeIn(animationSpec = tween(250))
+                },
+                popExitTransition = {
+                    slideOutHorizontally(
+                        targetOffsetX = { fullWidth -> fullWidth / 4 },
+                        animationSpec = tween(250)
+                    ) + fadeOut(animationSpec = tween(150))
+                }
+            ) {
+                // ── Online source screens (Browse/Search/Home) ────────────
+                // Only registered when online sources are enabled
 
-        if (AppConfig.ONLINE_SOURCES_ENABLED) {
-            composable(Screen.Home.route) {
-                HomeScreen(
-                    repository = repository,
-                    readingStatsTracker = readingStatsTracker,
-                    onBrowseClick = {
-                        navController.navigate(Screen.Search.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    onNovelClick = { novelId ->
-                        val url = constructNovelUrl(novelId)
-                        navController.navigate(Screen.Detail.createRoute(novelId, url))
-                    },
-                    onContinueReading = { novelId, chapterId, chapterUrl, novelUrl ->
-                        navController.navigate(
-                            Screen.Reader.createRoute(
-                                novelId = novelId,
-                                chapterId = chapterId,
-                                chapterUrl = chapterUrl,
-                                novelUrl = novelUrl
+                if (AppConfig.ONLINE_SOURCES_ENABLED) {
+                    composable(Screen.Home.route) {
+                        androidx.compose.runtime.CompositionLocalProvider(
+                            com.abhinavxt.novelreader.ui.components.LocalNavAnimatedVisibilityScope provides this@composable
+                        ) {
+
+                            HomeScreen(
+                                repository = repository,
+                                readingStatsTracker = readingStatsTracker,
+                                onBrowseClick = {
+                                    navController.navigate(Screen.Search.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                },
+                                onNovelClick = { novelId ->
+                                    val url = constructNovelUrl(novelId)
+                                    navController.navigate(Screen.Detail.createRoute(novelId, url))
+                                },
+                                onContinueReading = { novelId, chapterId, chapterUrl, novelUrl ->
+                                    navController.navigate(
+                                        Screen.Reader.createRoute(
+                                            novelId = novelId,
+                                            chapterId = chapterId,
+                                            chapterUrl = chapterUrl,
+                                            novelUrl = novelUrl
+                                        )
+                                    )
+                                },
+                                onSeeLibrary = {
+                                    navController.navigate(Screen.Library.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                },
+                                onSeeUpdates = {
+                                    navController.navigate(Screen.Updates.route)
+                                },
+                                networkMonitor = networkMonitor
                             )
-                        )
-                    },
-                    onSeeLibrary = {
-                        navController.navigate(Screen.Library.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
+
                         }
-                    },
-                    onSeeUpdates = {
-                        navController.navigate(Screen.Updates.route)
-                    },
-                    networkMonitor = networkMonitor
-                )
-            }
-
-            composable(Screen.Search.route) {
-                SearchScreen(
-                    repository = repository,
-                    onNovelClick = { novelPreview ->
-                        val url = constructNovelUrl(novelPreview.id)
-                        navController.navigate(Screen.Detail.createRoute(novelPreview.id, url))
-                    },
-                    networkMonitor = networkMonitor
-                )
-            }
-
-            composable(Screen.History.route) {
-                HistoryScreen(
-                    repository = repository,
-                    onBackClick = { navController.popBackStack() },
-                    onNovelClick = { novelId ->
-                        val url = constructNovelUrl(novelId)
-                        navController.navigate(Screen.Detail.createRoute(novelId, url))
                     }
-                )
-            }
 
-            composable(Screen.Updates.route) {
-                UpdatesScreen(
-                    repository = repository,
-                    onBackClick = { navController.popBackStack() },
-                    onNovelClick = { novelId ->
-                        val url = constructNovelUrl(novelId)
-                        navController.navigate(Screen.Detail.createRoute(novelId, url))
-                    }
-                )
-            }
-
-            composable(Screen.Downloads.route) {
-                DownloadsScreen(
-                    repository = repository,
-                    downloadManager = downloadManager,
-                    onBackClick = { navController.popBackStack() },
-                    onNovelClick = { novelId ->
-                        val url = constructNovelUrl(novelId)
-                        navController.navigate(Screen.Detail.createRoute(novelId, url))
-                    },
-                    networkMonitor = networkMonitor
-                )
-            }
-        }
-
-        composable(Screen.Library.route) {
-            LibraryScreen(
-                repository = repository,
-                themePreferences = themePreferences,
-                onNovelClick = { novelId ->
-                    val url = constructNovelUrl(novelId)
-                    navController.navigate(Screen.Detail.createRoute(novelId, url))
-                },
-                networkMonitor = networkMonitor
-            )
-        }
-
-        composable(Screen.Settings.route) {
-            SettingsScreen(
-                backupManager = backupManager,
-                themePreferences = themePreferences,
-                onNavigateToPronunciation = {
-                    navController.navigate(Screen.Pronunciation.route)
-                },
-                onNavigateToReadingStats = {
-                    navController.navigate(Screen.ReadingStats.route)
-                },
-                onNavigateToChangelog = {
-                    navController.navigate(Screen.Changelog.route)
-                },
-                updateChecker = updateChecker,
-            )
-        }
-
-        composable(Screen.Pronunciation.route) {
-            PronunciationScreen(
-                pronunciationManager = pronunciationManager,
-                onBackClick = { navController.popBackStack() }
-            )
-        }
-
-        composable(Screen.ReadingStats.route) {
-            ReadingStatsScreen(
-                readingStatsTracker = readingStatsTracker,
-                repository = repository,
-                onBackClick = { navController.popBackStack() },
-                onHistoryClick = { navController.navigate(Screen.History.route) }
-            )
-        }
-
-        composable(Screen.Changelog.route) {
-            ChangelogScreen(
-                onBackClick = { navController.popBackStack() }
-            )
-        }
-
-        composable(
-            route = Screen.Detail.route,
-            arguments = listOf(
-                navArgument("novelId") { type = NavType.StringType },
-                navArgument("novelUrl") { type = NavType.StringType }
-            )
-        ) { backStackEntry ->
-            val novelId = backStackEntry.arguments?.getString("novelId")!!
-            val novelUrl = URLDecoder.decode(
-                backStackEntry.arguments?.getString("novelUrl")!!,
-                "UTF-8"
-            )
-
-            NovelDetailScreen(
-                novelId = novelId,
-                novelUrl = novelUrl,
-                repository = repository,
-                downloadManager = downloadManager,
-                ttsManager = ttsManager,
-                readingStatsTracker = readingStatsTracker,
-                networkMonitor = networkMonitor,
-                onBackClick = { navController.popBackStack() },
-                onChapterClick = { chapterId, chapterUrl ->
-                    navController.navigate(
-                        Screen.Reader.createRoute(
-                            novelId = novelId,
-                            chapterId = chapterId,
-                            chapterUrl = chapterUrl,
-                            novelUrl = novelUrl
+                    composable(Screen.Search.route) {
+                        SearchScreen(
+                            repository = repository,
+                            onNovelClick = { novelPreview ->
+                                val url = constructNovelUrl(novelPreview.id)
+                                navController.navigate(Screen.Detail.createRoute(novelPreview.id, url))
+                            },
+                            networkMonitor = networkMonitor
                         )
+                    }
+
+                    composable(Screen.History.route) {
+                        HistoryScreen(
+                            repository = repository,
+                            onBackClick = { navController.popBackStack() },
+                            onNovelClick = { novelId ->
+                                val url = constructNovelUrl(novelId)
+                                navController.navigate(Screen.Detail.createRoute(novelId, url))
+                            }
+                        )
+                    }
+
+                    composable(Screen.Updates.route) {
+                        UpdatesScreen(
+                            repository = repository,
+                            onBackClick = { navController.popBackStack() },
+                            onNovelClick = { novelId ->
+                                val url = constructNovelUrl(novelId)
+                                navController.navigate(Screen.Detail.createRoute(novelId, url))
+                            }
+                        )
+                    }
+
+                    composable(Screen.Downloads.route) {
+                        DownloadsScreen(
+                            repository = repository,
+                            downloadManager = downloadManager,
+                            onBackClick = { navController.popBackStack() },
+                            onNovelClick = { novelId ->
+                                val url = constructNovelUrl(novelId)
+                                navController.navigate(Screen.Detail.createRoute(novelId, url))
+                            },
+                            networkMonitor = networkMonitor
+                        )
+                    }
+                }
+
+                composable(Screen.Library.route) {
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        com.abhinavxt.novelreader.ui.components.LocalNavAnimatedVisibilityScope provides this@composable
+                    ) {
+
+                        LibraryScreen(
+                            repository = repository,
+                            themePreferences = themePreferences,
+                            onNovelClick = { novelId ->
+                                val url = constructNovelUrl(novelId)
+                                navController.navigate(Screen.Detail.createRoute(novelId, url))
+                            },
+                            networkMonitor = networkMonitor
+                        )
+
+                    }
+                }
+
+                composable(Screen.Settings.route) {
+                    SettingsScreen(
+                        backupManager = backupManager,
+                        themePreferences = themePreferences,
+                        onNavigateToPronunciation = {
+                            navController.navigate(Screen.Pronunciation.route)
+                        },
+                        onNavigateToReadingStats = {
+                            navController.navigate(Screen.ReadingStats.route)
+                        },
+                        onNavigateToChangelog = {
+                            navController.navigate(Screen.Changelog.route)
+                        },
+                        updateChecker = updateChecker,
                     )
                 }
-            )
-        }
 
-        composable(
-            route = Screen.Reader.route,
-            arguments = listOf(
-                navArgument("novelId") { type = NavType.StringType },
-                navArgument("chapterId") { type = NavType.StringType },
-                navArgument("chapterUrl") { type = NavType.StringType },
-                navArgument("novelUrl") { type = NavType.StringType }
-            )
-        ) { backStackEntry ->
-            val novelId = backStackEntry.arguments?.getString("novelId")!!
-            val chapterId = backStackEntry.arguments?.getString("chapterId")!!
-            val chapterUrl = URLDecoder.decode(
-                backStackEntry.arguments?.getString("chapterUrl")!!,
-                "UTF-8"
-            )
-            val novelUrl = URLDecoder.decode(
-                backStackEntry.arguments?.getString("novelUrl")!!,
-                "UTF-8"
-            )
+                composable(Screen.Pronunciation.route) {
+                    PronunciationScreen(
+                        pronunciationManager = pronunciationManager,
+                        onBackClick = { navController.popBackStack() }
+                    )
+                }
 
-            ReaderScreen(
-                novelId = novelId,
-                chapterId = chapterId,
-                chapterUrl = chapterUrl,
-                novelUrl = novelUrl,
-                repository = repository,
-                ttsManager = ttsManager,
-                themePreferences = themePreferences,
-                statsTracker = readingStatsTracker,
-                chapterPrefetcher = chapterPrefetcher,
-                onBackClick = { navController.popBackStack() }
-            )
-        }
+                composable(Screen.ReadingStats.route) {
+                    ReadingStatsScreen(
+                        readingStatsTracker = readingStatsTracker,
+                        repository = repository,
+                        onBackClick = { navController.popBackStack() },
+                        onHistoryClick = { navController.navigate(Screen.History.route) }
+                    )
+                }
 
-        // ── Audio screens ────────────────────────────────────────
+                composable(Screen.Changelog.route) {
+                    ChangelogScreen(
+                        onBackClick = { navController.popBackStack() }
+                    )
+                }
 
-        composable(Screen.AudioLibrary.route) {
-            AudioLibraryScreen(
-                viewModel = audioPlayerViewModel,
-                onNovelClick = { folderName ->
-                    navController.navigate(Screen.AudioChapters.createRoute(folderName))
-                },
-                onBackClick = { navController.popBackStack() }
-            )
-        }
+                composable(
+                    route = Screen.Detail.route,
+                    arguments = listOf(
+                        navArgument("novelId") { type = NavType.StringType },
+                        navArgument("novelUrl") { type = NavType.StringType }
+                    )
+                ) { backStackEntry ->
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        com.abhinavxt.novelreader.ui.components.LocalNavAnimatedVisibilityScope provides this@composable
+                    ) {
+                        val novelId = backStackEntry.arguments?.getString("novelId")!!
+                        val novelUrl = URLDecoder.decode(
+                            backStackEntry.arguments?.getString("novelUrl")!!,
+                            "UTF-8"
+                        )
 
-        composable(
-            route = Screen.AudioChapters.route,
-            arguments = listOf(
-                navArgument("folderName") { type = NavType.StringType }
-            )
-        ) { backStackEntry ->
-            val folderName = URLDecoder.decode(
-                backStackEntry.arguments?.getString("folderName")!!,
-                "UTF-8"
-            )
+                        NovelDetailScreen(
+                            novelId = novelId,
+                            novelUrl = novelUrl,
+                            repository = repository,
+                            downloadManager = downloadManager,
+                            ttsManager = ttsManager,
+                            readingStatsTracker = readingStatsTracker,
+                            networkMonitor = networkMonitor,
+                            onBackClick = { navController.popBackStack() },
+                            onChapterClick = { chapterId, chapterUrl ->
+                                navController.navigate(
+                                    Screen.Reader.createRoute(
+                                        novelId = novelId,
+                                        chapterId = chapterId,
+                                        chapterUrl = chapterUrl,
+                                        novelUrl = novelUrl
+                                    )
+                                )
+                            }
+                        )
 
-            AudioChapterListScreen(
-                viewModel = audioPlayerViewModel,
-                novelFolderName = folderName,
-                onChapterClick = { folder, filePath ->
-                    navController.navigate(Screen.AudioPlayer.createRoute(folder, filePath))
-                },
-                onBackClick = { navController.popBackStack() }
-            )
-        }
-
-        composable(
-            route = Screen.AudioPlayer.route,
-            arguments = listOf(
-                navArgument("folderName") { type = NavType.StringType },
-                navArgument("filePath") { type = NavType.StringType }
-            )
-        ) { backStackEntry ->
-            val folderName = URLDecoder.decode(
-                backStackEntry.arguments?.getString("folderName")!!,
-                "UTF-8"
-            )
-            val filePath = URLDecoder.decode(
-                backStackEntry.arguments?.getString("filePath")!!,
-                "UTF-8"
-            )
-
-            AudioPlayerScreen(
-                viewModel = audioPlayerViewModel,
-                novelFolderName = folderName,
-                chapterFilePath = filePath,
-                onBackClick = { navController.popBackStack() }
-            )
-        }
-
-        composable(
-            route = Screen.ImportFromUrl.route,
-            arguments = listOf(
-                navArgument("url") { type = NavType.StringType }
-            )
-        ) { backStackEntry ->
-            val url = URLDecoder.decode(
-                backStackEntry.arguments?.getString("url") ?: "",
-                "UTF-8"
-            )
-            ImportFromUrlScreen(
-                sharedUrl = url,
-                repository = repository,
-                networkMonitor = networkMonitor,
-                onBackClick = { navController.popBackStack() },
-                onOpenNovel = { novelId, novelUrl ->
-                    // Replace the import screen with the detail screen so
-                    // the user doesn't see ImportFromUrl again if they hit
-                    // back from the reader.
-                    navController.navigate(Screen.Detail.createRoute(novelId, novelUrl)) {
-                        popUpTo(Screen.ImportFromUrl.route) { inclusive = true }
                     }
                 }
-            )
+
+                composable(
+                    route = Screen.Reader.route,
+                    arguments = listOf(
+                        navArgument("novelId") { type = NavType.StringType },
+                        navArgument("chapterId") { type = NavType.StringType },
+                        navArgument("chapterUrl") { type = NavType.StringType },
+                        navArgument("novelUrl") { type = NavType.StringType }
+                    )
+                ) { backStackEntry ->
+                    val novelId = backStackEntry.arguments?.getString("novelId")!!
+                    val chapterId = backStackEntry.arguments?.getString("chapterId")!!
+                    val chapterUrl = URLDecoder.decode(
+                        backStackEntry.arguments?.getString("chapterUrl")!!,
+                        "UTF-8"
+                    )
+                    val novelUrl = URLDecoder.decode(
+                        backStackEntry.arguments?.getString("novelUrl")!!,
+                        "UTF-8"
+                    )
+
+                    ReaderScreen(
+                        novelId = novelId,
+                        chapterId = chapterId,
+                        chapterUrl = chapterUrl,
+                        novelUrl = novelUrl,
+                        repository = repository,
+                        ttsManager = ttsManager,
+                        themePreferences = themePreferences,
+                        statsTracker = readingStatsTracker,
+                        chapterPrefetcher = chapterPrefetcher,
+                        onBackClick = { navController.popBackStack() }
+                    )
+                }
+
+                // ── Audio screens ────────────────────────────────────────
+
+                composable(Screen.AudioLibrary.route) {
+                    AudioLibraryScreen(
+                        viewModel = audioPlayerViewModel,
+                        onNovelClick = { folderName ->
+                            navController.navigate(Screen.AudioChapters.createRoute(folderName))
+                        },
+                        onBackClick = { navController.popBackStack() }
+                    )
+                }
+
+                composable(
+                    route = Screen.AudioChapters.route,
+                    arguments = listOf(
+                        navArgument("folderName") { type = NavType.StringType }
+                    )
+                ) { backStackEntry ->
+                    val folderName = URLDecoder.decode(
+                        backStackEntry.arguments?.getString("folderName")!!,
+                        "UTF-8"
+                    )
+
+                    AudioChapterListScreen(
+                        viewModel = audioPlayerViewModel,
+                        novelFolderName = folderName,
+                        onChapterClick = { folder, filePath ->
+                            navController.navigate(Screen.AudioPlayer.createRoute(folder, filePath))
+                        },
+                        onBackClick = { navController.popBackStack() }
+                    )
+                }
+
+                composable(
+                    route = Screen.AudioPlayer.route,
+                    arguments = listOf(
+                        navArgument("folderName") { type = NavType.StringType },
+                        navArgument("filePath") { type = NavType.StringType }
+                    )
+                ) { backStackEntry ->
+                    val folderName = URLDecoder.decode(
+                        backStackEntry.arguments?.getString("folderName")!!,
+                        "UTF-8"
+                    )
+                    val filePath = URLDecoder.decode(
+                        backStackEntry.arguments?.getString("filePath")!!,
+                        "UTF-8"
+                    )
+
+                    AudioPlayerScreen(
+                        viewModel = audioPlayerViewModel,
+                        novelFolderName = folderName,
+                        chapterFilePath = filePath,
+                        onBackClick = { navController.popBackStack() }
+                    )
+                }
+
+                composable(
+                    route = Screen.ImportFromUrl.route,
+                    arguments = listOf(
+                        navArgument("url") { type = NavType.StringType }
+                    )
+                ) { backStackEntry ->
+                    val url = URLDecoder.decode(
+                        backStackEntry.arguments?.getString("url") ?: "",
+                        "UTF-8"
+                    )
+                    ImportFromUrlScreen(
+                        sharedUrl = url,
+                        repository = repository,
+                        networkMonitor = networkMonitor,
+                        onBackClick = { navController.popBackStack() },
+                        onOpenNovel = { novelId, novelUrl ->
+                            // Replace the import screen with the detail screen so
+                            // the user doesn't see ImportFromUrl again if they hit
+                            // back from the reader.
+                            navController.navigate(Screen.Detail.createRoute(novelId, novelUrl)) {
+                                popUpTo(Screen.ImportFromUrl.route) { inclusive = true }
+                            }
+                        }
+                    )
+                }
+            }
         }
     }
 }

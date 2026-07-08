@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -152,6 +154,24 @@ fun QuickSettingsSheet(
                         onSettingsChanged(settings.copy(horizontalMargin = margin))
                     }
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // ── Alignment & indent (Reader Polish) ───────────
+                SettingToggleRow(
+                    label = "Justify text",
+                    checked = settings.justifyText,
+                    onCheckedChange = { checked ->
+                        onSettingsChanged(settings.copy(justifyText = checked))
+                    }
+                )
+                SettingToggleRow(
+                    label = "Paragraph indent",
+                    checked = settings.paragraphIndent,
+                    onCheckedChange = { checked ->
+                        onSettingsChanged(settings.copy(paragraphIndent = checked))
+                    }
+                )
                 SectionDivider()
             }
 
@@ -164,6 +184,26 @@ fun QuickSettingsSheet(
                         onSettingsChanged(settings.copy(theme = theme))
                     }
                 )
+                if (settings.theme == ReaderTheme.CUSTOM) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    CustomColorRow(
+                        label = "Background",
+                        swatches = customBackgroundSwatches,
+                        selected = settings.customBackgroundColor,
+                        onPick = { color ->
+                            onSettingsChanged(settings.copy(customBackgroundColor = color))
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    CustomColorRow(
+                        label = "Text",
+                        swatches = customTextSwatches,
+                        selected = settings.customTextColor,
+                        onPick = { color ->
+                            onSettingsChanged(settings.copy(customTextColor = color))
+                        }
+                    )
+                }
                 SectionDivider()
             }
 
@@ -640,4 +680,76 @@ private fun SectionDivider() {
         modifier = Modifier.padding(vertical = 16.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
     )
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Reader Polish: custom theme swatches + toggle row
+// ─────────────────────────────────────────────────────────────────
+
+// Curated backgrounds: warm papers, cool greys, true darks — spans the
+// useful reading range without a full color wheel.
+private val customBackgroundSwatches = listOf(
+    0xFFFFFFFF, 0xFFF5F0E8, 0xFFFBF0D9, 0xFFEDE7D9, 0xFFE8EDF2,
+    0xFFDCE3EA, 0xFFC9D1C8, 0xFF3A3A3A, 0xFF2B2B2B, 0xFF1E2127,
+    0xFF16181D, 0xFF101216, 0xFF0B0D10, 0xFF000000,
+)
+
+// Text colors: warm inks for light backgrounds, muted lights for dark.
+private val customTextSwatches = listOf(
+    0xFF000000, 0xFF2D2A26, 0xFF3B3630, 0xFF5F4B32, 0xFF37474F,
+    0xFF263238, 0xFFBFC7CF, 0xFFC5C1B8, 0xFFD8D4CC, 0xFFE6E1D6,
+    0xFFECEFF1, 0xFFFFFFFF,
+)
+
+@Composable
+private fun CustomColorRow(
+    label: String,
+    swatches: List<Long>,
+    selected: Long,
+    onPick: (Long) -> Unit
+) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.outline,
+        modifier = Modifier.padding(bottom = 6.dp)
+    )
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+    ) {
+        swatches.forEach { colorLong ->
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Color(colorLong))
+                    .border(
+                        width = if (selected == colorLong) 3.dp else 1.dp,
+                        color = if (selected == colorLong) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                        shape = CircleShape
+                    )
+                    .clickable { onPick(colorLong) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingToggleRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, style = MaterialTheme.typography.bodySmall)
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
 }

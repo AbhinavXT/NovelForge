@@ -240,7 +240,36 @@ fun getThemeColors(theme: ReaderTheme): ThemeColors {
             text = Color(0xFFC0BCB4),           // Warm-neutral grey
             secondaryText = Color(0xFF8A8580)
         )
+
+        // CUSTOM through the theme-only overload has no access to the
+        // user's colors — falls back to Paper. Real custom rendering
+        // goes through getThemeColors(settings) below.
+        ReaderTheme.CUSTOM -> ThemeColors(
+            background = Color(0xFFF5F0E8),
+            text = Color(0xFF2D2A26),
+            secondaryText = Color(0xFF5C5347),
+            isPaper = true
+        )
     }
+}
+
+/**
+ * Settings-aware variant: resolves CUSTOM from the user's stored
+ * colors; every other theme delegates to the enum overload.
+ * secondaryText derives from the text color at 60% alpha, which works
+ * on both light and dark custom backgrounds.
+ */
+fun getThemeColors(settings: ReaderSettings): ThemeColors {
+    if (settings.theme == ReaderTheme.CUSTOM) {
+        val text = Color(settings.customTextColor)
+        return ThemeColors(
+            background = Color(settings.customBackgroundColor),
+            text = text,
+            secondaryText = text.copy(alpha = 0.6f),
+            isPaper = false
+        )
+    }
+    return getThemeColors(settings.theme)
 }
 
 fun ReaderFont.toFontFamily(): FontFamily {

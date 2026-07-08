@@ -21,7 +21,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         NovelCategoryCrossRef::class,    // NEW in v12
         UpdateEntity::class              // NEW in v12
     ],
-    version = 12,
+    version = 13,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -187,6 +187,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration v12 → v13: Reader Polish — text alignment/indent
+         * settings and CUSTOM theme colors on reader_settings.
+         * Color defaults are the Paper theme (0xFFF5F0E8 / 0xFF2D2A26)
+         * expressed as signed 64-bit literals.
+         */
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE reader_settings ADD COLUMN justifyText INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE reader_settings ADD COLUMN paragraphIndent INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE reader_settings ADD COLUMN customBackgroundColor INTEGER NOT NULL DEFAULT 4294308072")
+                db.execSQL("ALTER TABLE reader_settings ADD COLUMN customTextColor INTEGER NOT NULL DEFAULT 4281149990")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -194,7 +209,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_reader_database"
                 )
-                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
                     // No fallbackToDestructiveMigration() — if a migration is missing,
                     // the app crashes instead of silently wiping the user's library,
                     // bookmarks, reading progress, and stats. Always write migrations.

@@ -118,6 +118,7 @@ import java.util.Locale
 internal fun NovelDetailContent(
     novel: Novel,
     isInLibrary: Boolean,
+    onSetReadingPosition: (Chapter) -> Unit = {},
     isLocalNovel: Boolean,
     downloadState: NovelDownloadState?,
     downloadingChapters: Set<String>,
@@ -176,6 +177,33 @@ internal fun NovelDetailContent(
                 hasScrolledToReading = true
             }
         }
+    }
+
+
+    // ── "Start reading from here" (long-press a chapter) ────────
+    var startFromChapter by remember { mutableStateOf<Chapter?>(null) }
+    startFromChapter?.let { target ->
+        AlertDialog(
+            onDismissRequest = { startFromChapter = null },
+            title = { Text("Start reading here?") },
+            text = {
+                Text(
+                    "Sets your reading position to Chapter ${target.number}. " +
+                            "Continue Reading will pick up from this chapter."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onSetReadingPosition(target)
+                        startFromChapter = null
+                    }
+                ) { Text("Set position") }
+            },
+            dismissButton = {
+                TextButton(onClick = { startFromChapter = null }) { Text("Cancel") }
+            }
+        )
     }
 
     // Filter chapters based on search query and download filter
@@ -627,6 +655,7 @@ internal fun NovelDetailContent(
                             exportState = exportState,
                             isLocalNovel = isLocalNovel,
                             onClick = { onChapterClick(chapter.id, chapter.url) },
+                            onLongPress = { startFromChapter = chapter },
                             onDownload = { onDownloadChapter(chapter) },
                             onExportAudio = { onExportChapterAudio(chapter) },
                             onCancelExport = onCancelExport

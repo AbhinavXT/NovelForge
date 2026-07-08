@@ -45,6 +45,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.abhinavxt.novelreader.data.NovelRepository
 import com.abhinavxt.novelreader.data.model.Novel
 import com.abhinavxt.novelreader.ui.components.NovelCover
+import com.abhinavxt.novelreader.ui.components.novelCoverShared
 import com.abhinavxt.novelreader.ui.viewmodel.ContinueReadingData
 import com.abhinavxt.novelreader.ui.viewmodel.HomeViewModel
 import java.util.Calendar
@@ -324,6 +325,7 @@ private fun CoverRailItem(
         Box {
             NovelCover(
                 coverUrl = novel.coverUrl,
+                modifier = Modifier.novelCoverShared(novel.id),
                 width = 100.dp,
                 height = 140.dp
             )
@@ -380,6 +382,7 @@ private fun ContinueReadingCard(
 
             NovelCover(
                 coverUrl = data.novel.coverUrl,
+                modifier = Modifier.novelCoverShared(data.novel.id),
                 width = 56.dp,
                 height = 78.dp,
                 progress = progress

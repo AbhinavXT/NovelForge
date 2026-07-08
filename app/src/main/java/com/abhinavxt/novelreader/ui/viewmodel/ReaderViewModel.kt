@@ -547,6 +547,7 @@ class ReaderViewModel(
                 ReaderTheme.GRUVBOX -> ReaderTheme.CATPPUCCIN
                 ReaderTheme.CATPPUCCIN -> ReaderTheme.NAVY
                 ReaderTheme.NAVY -> ReaderTheme.GREY
+                ReaderTheme.CUSTOM -> ReaderTheme.CUSTOM
                 ReaderTheme.GREY -> ReaderTheme.PAPER
             }
             updateSettings(currentState.settings.copy(theme = nextTheme))

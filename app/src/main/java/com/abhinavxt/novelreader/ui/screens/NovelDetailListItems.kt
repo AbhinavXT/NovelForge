@@ -1,6 +1,8 @@
 package com.abhinavxt.novelreader.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -114,6 +115,7 @@ import java.util.Locale
 // ─────────────────────────────────────────────────────────────────
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 internal fun ChapterListItem(
     chapter: Chapter,
     isDownloading: Boolean,
@@ -122,6 +124,7 @@ internal fun ChapterListItem(
     exportState: com.abhinavxt.novelreader.data.tts.AudioExporter.ExportState,
     isLocalNovel: Boolean,
     onClick: () -> Unit,
+    onLongPress: () -> Unit = {},
     onDownload: () -> Unit,
     onExportAudio: () -> Unit,
     onCancelExport: () -> Unit
@@ -133,10 +136,13 @@ internal fun ChapterListItem(
     } else null
 
     Card(
-        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongPress
+            )
     ) {
         Row(
             modifier = Modifier

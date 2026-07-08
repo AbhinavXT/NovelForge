@@ -86,6 +86,7 @@ import com.abhinavxt.novelreader.data.NovelRepository
 import com.abhinavxt.novelreader.data.ThemePreferences
 import com.abhinavxt.novelreader.data.model.Novel
 import com.abhinavxt.novelreader.ui.components.NovelCover
+import com.abhinavxt.novelreader.ui.components.novelCoverShared
 import com.abhinavxt.novelreader.ui.components.OfflineBanner
 import com.abhinavxt.novelreader.ui.viewmodel.ImportState
 import com.abhinavxt.novelreader.ui.viewmodel.LibraryFilter
@@ -696,6 +697,7 @@ private fun LibraryGridItem(
         Box {
             NovelCover(
                 coverUrl = novel.coverUrl,
+                modifier = Modifier.novelCoverShared(novel.id),
                 width = 100.dp,
                 height = 140.dp
             )
@@ -755,7 +757,7 @@ private fun LibraryNovelItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Cover image or placeholder with update badge
-            Box {
+            Box(modifier = Modifier.novelCoverShared(novel.id)) {
                 if (imageModel != null) {
                     AsyncImage(
                         model = imageModel,

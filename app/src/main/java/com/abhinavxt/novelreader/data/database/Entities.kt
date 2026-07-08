@@ -77,6 +77,12 @@ data class ReaderSettingsEntity(
 
     // ── NEW: auto-scroll speed (px/sec) ─────────────────────────
     val autoScrollSpeed: Int = 60,
+
+    // ── Reader Polish (v13) ─────────────────────────────────────
+    val justifyText: Boolean = true,
+    val paragraphIndent: Boolean = false,
+    val customBackgroundColor: Long = 0xFFF5F0E8,
+    val customTextColor: Long = 0xFF2D2A26,
 )
 
 @Entity(

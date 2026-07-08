@@ -31,6 +31,11 @@ enum class ReaderTheme(val displayName: String, val isDark: Boolean) {
     // ── Specialty ───────────────────────────────────────────────
     NAVY("Navy", true),                           // Deep blue night, late-night readers
     GREY("Grey", true),                           // Neutral, no color temperature bias
+
+    // ── User-defined ────────────────────────────────────────────
+    // Colors come from ReaderSettings.customBackgroundColor/customTextColor.
+    // isDark is a nominal default; actual luminance depends on the picks.
+    CUSTOM("Custom", false),
 }
 
 /**
@@ -99,4 +104,10 @@ data class ReaderSettings(
     val volumeKeyNavigation: Boolean = false,            // Use volume keys for page/chapter nav
 
     val autoScrollSpeed: Int = 60,
+
+    // ── Reader Polish phase ─────────────────────────────────────
+    val justifyText: Boolean = true,              // Was hard-coded Justify before this setting
+    val paragraphIndent: Boolean = false,         // First-line indent per paragraph
+    val customBackgroundColor: Long = 0xFFF5F0E8, // CUSTOM theme background (defaults = Paper)
+    val customTextColor: Long = 0xFF2D2A26,       // CUSTOM theme text
 )

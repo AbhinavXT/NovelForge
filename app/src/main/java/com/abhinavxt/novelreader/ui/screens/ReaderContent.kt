@@ -98,6 +98,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalTextToolbar
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -107,7 +108,9 @@ import androidx.compose.ui.platform.TextToolbarStatus
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -148,6 +151,9 @@ import com.abhinavxt.novelreader.data.ChapterPrefetcher
 import com.abhinavxt.novelreader.NovelReaderApplication
 import com.abhinavxt.novelreader.VolumeKeyEvent
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -209,7 +215,7 @@ internal fun ReaderContent(
     onAddHighlight: (paragraphIndex: Int, selectedText: String, paragraphText: String) -> Unit = { _, _, _ -> },
     onHighlightSavedShown: () -> Unit = {}
 ) {
-    val colors = getThemeColors(settings.theme)
+    val colors = getThemeColors(settings)
 
     // ── Immersive mode ──────────────────────────────────────────
     // Tap center of screen to toggle. Hides top bar, bottom bar, and system bars.
@@ -238,6 +244,10 @@ internal fun ReaderContent(
     var showAppearanceSheet by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
+
+    // Activity handle for the left-edge brightness gesture (null-safe:
+    // no-ops in previews or non-activity hosts)
+    val readerActivity = LocalContext.current as? android.app.Activity
 
     // ── Stitched-window segment model ───────────────────────────
     // The LazyColumn renders the anchor chapter plus any stitched
@@ -686,6 +696,31 @@ internal fun ReaderContent(
                                 )
                             }
                         }
+                        .pointerInput(Unit) {
+                            // ── Left-edge brightness gesture ────────
+                            // Vertical drag starting in the leftmost
+                            // 28dp adjusts window brightness (drag up =
+                            // brighter). Consuming each change keeps
+                            // the list from scrolling underneath; drags
+                            // starting elsewhere are ignored entirely,
+                            // so normal scrolling is unaffected.
+                            val edgeWidth = 28.dp.toPx()
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                if (down.position.x > edgeWidth) return@awaitEachGesture
+                                val activity = readerActivity ?: return@awaitEachGesture
+                                var level = activity.window.attributes.screenBrightness
+                                if (level < 0f) level = 0.5f  // -1 = "system" sentinel
+                                drag(down.id) { change ->
+                                    val delta = change.position.y - change.previousPosition.y
+                                    level = (level - delta / size.height).coerceIn(0.02f, 1f)
+                                    val lp = activity.window.attributes
+                                    lp.screenBrightness = level
+                                    activity.window.attributes = lp
+                                    change.consume()
+                                }
+                            }
+                        }
                         .padding(horizontal = settings.horizontalMargin.dp, vertical = 8.dp)
                 ) {
                     segments.forEachIndexed { segIdx, seg ->
@@ -915,6 +950,8 @@ private fun BookmarkableParagraph(
                         fontSize = settings.fontSize,
                         lineSpacing = settings.lineSpacing,
                         fontFamily = settings.font.toFontFamily(),
+                        justify = settings.justifyText,
+                        indent = settings.paragraphIndent,
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
                 } else if (highlights.isNotEmpty()) {
@@ -938,7 +975,12 @@ private fun BookmarkableParagraph(
                         fontSize = settings.fontSize.sp,
                         fontFamily = settings.font.toFontFamily(),
                         lineHeight = (settings.fontSize * settings.lineSpacing).sp,
-                        textAlign = TextAlign.Justify,
+                        textAlign = if (settings.justifyText) TextAlign.Justify else TextAlign.Start,
+                        style = TextStyle(
+                            textIndent = if (settings.paragraphIndent) {
+                                TextIndent(firstLine = (settings.fontSize * 1.5).sp)
+                            } else TextIndent.None
+                        ),
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
                 } else {
@@ -948,7 +990,12 @@ private fun BookmarkableParagraph(
                         fontSize = settings.fontSize.sp,
                         fontFamily = settings.font.toFontFamily(),
                         lineHeight = (settings.fontSize * settings.lineSpacing).sp,
-                        textAlign = TextAlign.Justify,
+                        textAlign = if (settings.justifyText) TextAlign.Justify else TextAlign.Start,
+                        style = TextStyle(
+                            textIndent = if (settings.paragraphIndent) {
+                                TextIndent(firstLine = (settings.fontSize * 1.5).sp)
+                            } else TextIndent.None
+                        ),
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
                 }
@@ -1073,8 +1120,11 @@ private fun HighlightedParagraph(
     fontSize: Int,
     lineSpacing: Float = 1.6f,
     fontFamily: FontFamily,
+    justify: Boolean = true,
+    indent: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+
     // Split paragraph into sentences
     val sentences = remember(paragraph) {
         paragraph.split(Regex("(?<=[.!?])\\s+"))
@@ -1109,7 +1159,11 @@ private fun HighlightedParagraph(
         fontSize = fontSize.sp,
         fontFamily = fontFamily,
         lineHeight = (fontSize * lineSpacing).sp,
-        textAlign = TextAlign.Justify,
+        textAlign = if (justify) TextAlign.Justify else TextAlign.Start,
+        style = TextStyle(
+            textIndent = if (indent) TextIndent(firstLine = (fontSize * 1.5).sp)
+            else TextIndent.None
+        ),
         modifier = modifier
     )
 }

@@ -87,6 +87,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import com.abhinavxt.novelreader.data.tts.M4BAudiobookBuilder
 import com.abhinavxt.novelreader.ui.components.NovelCover
+import com.abhinavxt.novelreader.ui.components.novelCoverShared
 import androidx.compose.ui.platform.LocalContext
 import com.abhinavxt.novelreader.AppConfig
 import com.abhinavxt.novelreader.data.DownloadManager
@@ -220,6 +221,7 @@ internal fun NovelHeader(
                 // Cover image with rounded corners and shadow
                 NovelCover(
                     coverUrl = novel.coverUrl,
+                    modifier = Modifier.novelCoverShared(novel.id),
                     width = 110.dp,
                     height = 160.dp
                 )

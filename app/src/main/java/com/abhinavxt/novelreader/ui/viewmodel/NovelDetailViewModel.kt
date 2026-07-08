@@ -688,6 +688,27 @@ class NovelDetailViewModel(
         (appContext as NovelReaderApplication).m4bBuilder.reset()
     }
 
+    /**
+     * "Start reading from here" (long-press a chapter): sets the saved
+     * reading position to the start of the given chapter, so Continue
+     * Reading and the widget resume there. Uses the same progress-save
+     * path as the reader itself.
+     */
+    fun startReadingFrom(chapter: Chapter) {
+        viewModelScope.launch {
+            try {
+                repository.saveReadingProgress(
+                    novelId = novelId,
+                    chapterId = chapter.id,
+                    chapterNumber = chapter.number,
+                    paragraphIndex = 0
+                )
+            } catch (e: Exception) {
+                Logger.e("Failed to set reading position", e)
+            }
+        }
+    }
+
     companion object {
         fun provideFactory(
             novelId: String,

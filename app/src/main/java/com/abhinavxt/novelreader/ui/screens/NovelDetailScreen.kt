@@ -258,6 +258,9 @@ fun NovelDetailScreen(
                     NovelDetailContent(
                         novel = state.novel,
                         isInLibrary = state.isInLibrary,
+                        onSetReadingPosition = { chapter ->
+                            viewModel.startReadingFrom(chapter)
+                        },
                         isLocalNovel = state.isLocalNovel,
                         downloadState = downloadState,
                         downloadingChapters = allDownloadingChapters,
