@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "NovelReader"
+rootProject.name = "NovelForge"
 include(":app")

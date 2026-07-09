@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.abhinavxt.novelreader"
+    namespace = "com.abhinavxt.novelforge"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.abhinavxt.novelreader"
+        applicationId = "com.abhinavxt.novelforge"
         minSdk = 24
         targetSdk = 36
         versionCode = 2
