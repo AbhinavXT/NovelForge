@@ -2,7 +2,7 @@
 
 A reading app for people who actually read.
 
-NovelForge is a privacy-respecting Android reader for web novels and EPUBs. No account. No subscription. No analytics. The book stays on your phone.
+NovelForge is a privacy-respecting Android reader for web novels and EPUBs. No account. No subscription. No analytics. The book stays on your phone — and now the app reads it too: a character codex, a relationship graph, and full-text search across your whole library, all computed on-device.
 
 | Home | Library | Novel details | Reader | Audio | Quick settings |
 | --- | --- | --- | --- | --- | --- |
@@ -11,9 +11,12 @@ NovelForge is a privacy-respecting Android reader for web novels and EPUBs. No a
 ## What it does
 
 - Reads web novels from 7+ sources, with offline downloads
-- Imports `.epub` files from your device
+- Imports `.epub` files — and exports any novel back out as a clean EPUB
+- **Character codex** — every recurring character, place, and faction indexed on-device, spoiler-safe: it only ever shows you what you've read
+- **Relationship graph** — who appears with whom, drawn as a live map that grows with your reading position
+- Full-text search across every downloaded chapter, plus in-chapter find with match highlighting
 - 11 themes, 8 reading fonts, configurable margins and line spacing
-- Scroll mode, paged mode, and a teleprompter-style auto-scroll
+- Scroll mode, paged mode, a teleprompter-style auto-scroll, and four tap-zone layouts
 - Neural text-to-speech with Piper, Kokoro, and your device's TTS
 - Generates M4B audiobooks with chapter markers
 - Tracks reading stats locally (streaks, words, chapters, time)
@@ -50,7 +53,7 @@ Requirements: Android Studio Hedgehog or later, JDK 17, Android SDK 34.
 
 ## Stack
 
-Kotlin · Jetpack Compose · Room · Hilt · Coroutines/Flow · WorkManager · Coil · Sherpa-ONNX
+Kotlin · Jetpack Compose · Room (with FTS4) · Coroutines/Flow · WorkManager · Coil · Sherpa-ONNX
 
 MVVM with a repository layer. See [`docs/FEATURES.md`](docs/FEATURES.md) for what each feature covers, and the source itself for how the layers connect.
 

@@ -1,6 +1,6 @@
 # Features
 
-This is the long-form documentation for everything NovelForge does. It's organized by surface — reader, library, audio, stats, settings — rather than by version, so it stays useful as a reference even after several releases.
+This is the long-form documentation for everything NovelForge does. It's organized by surface — reader, library, codex, audio, stats, settings — rather than by version, so it stays useful as a reference even after several releases.
 
 If you just want a quick summary, see the [README](../README.md).
 
@@ -12,6 +12,7 @@ If you just want a quick summary, see the [README](../README.md).
   - [Table of contents](#table-of-contents)
   - [The reader](#the-reader)
     - [Saving your position](#saving-your-position)
+    - [Tap zones](#tap-zones)
     - [Volume key navigation](#volume-key-navigation)
     - [Keep screen on](#keep-screen-on)
   - [Reading modes](#reading-modes)
@@ -24,12 +25,23 @@ If you just want a quick summary, see the [README](../README.md).
   - [Bookmarks and highlights](#bookmarks-and-highlights)
     - [Bookmarks](#bookmarks)
     - [Highlights](#highlights)
+  - [Search](#search)
+    - [Full-text library search](#full-text-library-search)
+    - [In-book find](#in-book-find)
+  - [The codex](#the-codex)
+    - [Character codex](#character-codex)
+    - [The spoiler guard](#the-spoiler-guard)
+    - [Relationship graph](#relationship-graph)
+    - [Scanning](#scanning)
+    - [Honest limitations](#honest-limitations)
   - [Library](#library)
   - [Sources and downloads](#sources-and-downloads)
     - [Currently supported sources](#currently-supported-sources)
     - [Downloading chapters for offline](#downloading-chapters-for-offline)
     - [Update checking](#update-checking)
-  - [EPUB import](#epub-import)
+  - [EPUB import and export](#epub-import-and-export)
+    - [Import](#import)
+    - [Export](#export)
   - [Text-to-speech](#text-to-speech)
     - [System TTS](#system-tts)
     - [Piper](#piper)
@@ -63,15 +75,26 @@ The reader is where you'll spend most of your time. The screen has three layers:
 
 **The text** — paragraphs flow vertically (scroll mode) or horizontally as pages (paged mode). Long-press any paragraph to bookmark it or pull a highlight from it. Select text the normal way to copy or look it up in the inline dictionary.
 
-**The chrome** — top bar (back, chapter title, fullscreen toggle, auto-scroll, TTS) and bottom bar (previous chapter, settings, brightness, scroll-to-top, next chapter). Both can be hidden via the dedicated fullscreen button in the top bar.
+**The chrome** — top bar (back, chapter title, find, fullscreen toggle, auto-scroll, TTS) and bottom bar (previous chapter, settings, brightness, scroll-to-top, next chapter). Both can be hidden via the dedicated fullscreen button in the top bar.
 
-**Quick Settings** — a bottom sheet reachable from the palette icon in the bottom bar. This is where you change reading mode, font, theme, font size, line spacing, margins, page-turn animation, and a few toggles. See [Settings reference](#settings-reference) for the full list.
+**Quick Settings** — a bottom sheet reachable from the palette icon in the bottom bar. This is where you change reading mode, font, theme, font size, line spacing, margins, page-turn animation, tap zones, and a few toggles. See [Settings reference](#settings-reference) for the full list.
 
 ### Saving your position
 
 Reading position saves continuously as you scroll. Close the app mid-chapter, come back a week later, you'll be on the same paragraph. Position is per-novel, not per-chapter, so if you re-open a novel from the Library it goes to where you stopped.
 
 The reader also tracks WPM (words per minute) over time and uses it to estimate "minutes left in this chapter" in the top bar. Estimates get more accurate the more you read.
+
+### Tap zones
+
+What a tap on the text does is configurable. Quick Settings → Tap Zones, four layouts:
+
+- **Sides** (default, the classic behavior) — left 30% goes back, right 30% goes forward, the middle toggles the chrome.
+- **Forward** — tap anywhere to advance; a center box toggles the chrome. Made for one-handed reading with either thumb.
+- **L-shaped** — the top strip goes back, everything else goes forward, with a chrome toggle punched through the center. Familiar if you've used manga readers.
+- **Off** — taps only show or hide the chrome, for swipe-and-volume-key readers.
+
+The same zone geometry applies in both scroll and paged mode, so switching modes doesn't reshuffle your muscle memory. Every layout keeps some path to the chrome — you can't strand yourself in fullscreen. Buttons inside the text (and long-press selection) are separate gesture paths and always work regardless of layout.
 
 ### Volume key navigation
 
@@ -109,7 +132,7 @@ Continuous vertical scroll, the default. The whole chapter is one long page; you
 
 Horizontal page-turn, like a real book. The chapter is split into discrete pages.
 
-- **Swipe left/right** to turn pages, or tap the left/right edges of the screen.
+- **Swipe left/right** to turn pages, or tap according to your [tap-zone layout](#tap-zones).
 - **Page-turn animation** is configurable in Quick Settings → Page Turn Animation: slide, fade, page curl, or none (instant).
 
 Auto-scroll is not available in paged mode (the button is hidden when paged is active).
@@ -198,7 +221,98 @@ Select text the normal way (long-press → drag handles), then tap "Highlight" i
 
 Highlights are tied to the paragraph + offset within it. If a source updates a chapter and the text changes, highlights on changed paragraphs are preserved but may shift visually — the underlying offsets don't auto-correct because we can't tell whether the change is meaningful or cosmetic.
 
-Highlights are included in backup/restore and exportable to JSON.
+Highlights are included in backup/restore and exportable to JSON. They're also cross-referenced by [the codex](#the-codex) — open a character and see every line you've marked about them.
+
+---
+
+## Search
+
+Two ranges: your whole library, or the chapter in front of you.
+
+### Full-text library search
+
+**Open it:** Library → the search-in-books icon in the header (distinct from the title filter field below it).
+
+Every downloaded chapter is indexed on-device the moment it's downloaded — imports, deletions, and re-downloads keep the index current automatically, with no background service. Type a name, a phrase, half a memory:
+
+- Results are grouped by book, with the matching text bolded in a snippet of context.
+- The last word you type matches as a prefix, so results appear while you're still typing ("cultiv" matches "cultivation").
+- Tap a result and the reader opens **at that paragraph**, not just that chapter.
+
+Only downloaded chapters are searchable — the index is built from what's on your device, which is also why it works on a plane. Results are capped at 200 hits per query; if a common word maxes that out, add a second word.
+
+### In-book find
+
+**Open it:** the find icon in the reader's top bar. The top bar swaps for a find bar: a text field, a match counter, next/previous arrows, and close.
+
+- Every occurrence on the page gets a subtle mark; the active match is emphasized so it's visible on any theme, light or AMOLED.
+- Next/previous wrap around, and the IME's search key also advances.
+- Works in both reading modes. In scroll mode it searches everything currently loaded — including next chapters that infinite scroll has stitched in. In paged mode it searches the current chapter and turns pages to each match.
+- Minimum two characters; closing the bar clears all marks.
+
+One quirk to know: while TTS is playing, the paragraph currently being read aloud shows the spoken-sentence highlight instead of find marks. Everywhere else on screen, find wins.
+
+For the whole book at once, use library search — in-book find is deliberately close-range.
+
+---
+
+## The codex
+
+The feature for the question every long-series reader asks: _"wait — who is this again?"_
+
+**Open it:** novel detail screen → the codex icon in the top bar.
+
+### Character codex
+
+NovelForge scans your downloaded chapters and builds an index of every recurring name — characters, but also places and factions ("Azure Cloud Sect" is codex-worthy too). The list is ordered by how often each name appears, with a filter field on top.
+
+Each entry shows:
+
+- **First appearance** — "since Ch. 4", so you know how long they've been around
+- **Mention counts** — total occurrences and how many distinct chapters they appear in
+- **A presence sparkline** — the shape of their presence across the whole book at a glance: introduced early, vanished for 400 chapters, back for the finale arc
+- **Every mention** — chapter by chapter, each with a snippet. Tap one and the reader opens at that exact paragraph.
+- **Your highlights** — any highlight whose text mentions the name is surfaced on their entry
+
+Detection is heuristic and runs entirely on your phone: capitalization patterns, multi-word name merging ("Elder Chen", "Old Man Zhao"), stop-word and generic-title filtering. No cloud, no model download, no network.
+
+### The spoiler guard
+
+The codex cannot spoil you, and that's structural rather than a filter you have to trust:
+
+- The list hides any entry whose first appearance is past your current reading position — a character you haven't met **doesn't exist yet**.
+- Mention lookups are capped at your position in the query itself — a character you have met can't leak future scenes.
+- The guard is on by default whenever you have reading progress, and toggleable when you _want_ to peek. The chip shows exactly where the cutoff sits ("up to Ch. 312").
+
+### Relationship graph
+
+**Open it:** the graph icon in the codex top bar.
+
+Who appears with whom, drawn as a live map. Characters are nodes sized by how often they appear; two characters are connected when they share chapters, with the line's weight showing how many. The layout is force-drawn, so factions cluster together and loners drift to the edges — the protagonist's web is usually unmistakable at a glance.
+
+- **Tap a character** to select them: their bonds light up, everything else dims.
+- **Tap a second character** for the pair view: every chapter the two share, each one tap from reading the scene (the reader opens at a paragraph mentioning both, when one exists).
+- **Pinch to zoom, drag to pan.** Node and label sizes stay constant while zoom spreads the layout, which keeps dense books readable.
+
+The graph is built only from chapters behind your bookmark — the same spoiler guard as the codex — so it literally grows as you read. Finishing an arc redraws the map.
+
+To stay a map rather than a hairball, the graph shows the top 25 characters and the 60 strongest bonds, and ignores pairs that share fewer than 2 chapters.
+
+### Scanning
+
+The first visit to a novel's codex offers a scan. Scans are:
+
+- **On-device and streaming** — chapters are processed one at a time, so even a 2,000-chapter novel never strains memory. A progress bar shows chapter N of M.
+- **Incremental** — the app remembers the highest chapter scanned per novel. Hitting refresh after downloading new chapters processes only the new ones.
+- **Rebuildable** — a full rebuild is offered from the empty state, useful after re-downloading chapters with fixed text.
+
+Mentions, snippets, and the graph's bonds aren't stored — they're served live by the same full-text index that powers library search, so there's nothing to go stale.
+
+### Honest limitations
+
+- Name detection is English-oriented. Romanized translations (the typical web novel case) are the sweet spot; untranslated CJK text won't tokenize.
+- Name variants are separate entries: if a translator writes "Xiulan" in some chapters and "Xiu Lan" in others, the codex sees two people. Merging variants is on the roadmap.
+- Detection is heuristic, so the occasional non-name sneaks in (chapter-title words, frequently capitalized phrases). The mention list makes these easy to identify — and they tend to rank low.
 
 ---
 
@@ -209,6 +323,8 @@ The library is your collection of novels you've added. Find it in the bottom nav
 **Adding a novel:** browse a source (Search tab → pick a source → search/browse), tap a novel, tap "Add to Library". Or import an EPUB (see below).
 
 **Sorting:** sort by last read, title, chapters, or recently added. The control is in the library top bar.
+
+**Searching inside books:** the search-in-books icon in the header opens [full-text search](#full-text-library-search) across everything you've downloaded. The filter field below it matches titles only.
 
 **Update badges:** when a source has new chapters since you last opened a novel, the library card shows an "N new" badge. Tap into the novel and the new chapters are at the bottom of the chapter list.
 
@@ -238,13 +354,17 @@ From a novel's detail screen → "Downloads" tab → "Download all" or pick a ra
 
 You can also bulk-download from the Library → long-press novel → Downloads. The download manager runs in the background via WorkManager and survives app restarts. Network type can be restricted to wifi-only in Settings → Downloads.
 
+Downloading also feeds the rest of the app: downloaded chapters are what full-text search indexes and what the codex scans. More downloads, smarter app.
+
 ### Update checking
 
 Quietly checks for new chapters in the background when you're on wifi. Off by default. Turn it on in Settings → Updates. Updates show up as badges in the library and as a banner on the novel detail screen.
 
 ---
 
-## EPUB import
+## EPUB import and export
+
+### Import
 
 Drag any `.epub` file into the app, or use the system file picker (Library → top bar → "Import EPUB"). The app extracts:
 
@@ -254,6 +374,17 @@ Drag any `.epub` file into the app, or use the system file picker (Library → t
 - Description (if present in the EPUB metadata)
 
 EPUBs and online novels live side-by-side in the same library. There's no separate "local books" section. The app distinguishes them internally for chapter-update logic (EPUBs don't get update checks).
+
+### Export
+
+Any novel can leave the same way it came in. Library → long-press a novel → **Export as EPUB** → share sheet. What you get:
+
+- A standard **EPUB 3** package with an EPUB 2 table of contents included, so it opens correctly in old and new readers alike (tested against Moon+ Reader, KOReader, and Calibre's expectations).
+- The cover image embedded, when the novel has a local one.
+- One `<p>` per paragraph, split exactly the way the reader displays them.
+- A stable book identifier derived from the novel, so re-exports are recognizably the same book to readers that track identifiers.
+
+Only downloaded chapters are exported (the export works fully offline). Chapters stream into the file one at a time, so exporting a 2,000-chapter novel doesn't strain memory. And it round-trips: an exported EPUB re-imports into NovelForge with the same chapters, text, and cover — useful for archiving before pruning downloads, or for moving a book to a dedicated e-reader.
 
 ---
 
@@ -398,7 +529,7 @@ The widget refreshes itself when you save reading position, so it's always curre
 
 **Backup:** Settings → Backup → Export. Produces a single ZIP containing:
 
-- Reader settings (theme, font, sizes, modes, toggles)
+- Reader settings (theme, font, sizes, modes, tap zones, toggles)
 - TTS settings (per-engine: speed, pitch, voice, pauses)
 - Library (novels, chapter metadata — but not chapter _content_; downloads are not in the backup)
 - Reading progress (per-novel paragraph positions)
@@ -413,12 +544,13 @@ The ZIP can be saved to Drive, Dropbox, anywhere.
 **What's not in the backup:**
 
 - Downloaded chapter content (re-download after restore — the metadata knows what to fetch)
+- The full-text search index and the codex (both are derived from downloaded content, so they rebuild after you re-download — the search index automatically, the codex with one tap of the scan button)
 - Voice models (re-download from Settings → Voice models)
 - Generated audiobooks (regenerate if needed)
 
 These are excluded because they're large and re-derivable. Including voice models would push backup ZIPs to 500 MB+.
 
-**Cross-device:** backup ZIPs are platform-portable across Android versions. The internal schema is versioned, so restoring a v1.6 backup on v1.7 works (forward-compatible). Backwards compatibility (v1.7 backup on v1.6) is not guaranteed; downgrades are not a supported flow.
+**Cross-device:** backup ZIPs are platform-portable across Android versions. The internal schema is versioned, so restoring a v1.6 backup on v1.8 works (forward-compatible). Backwards compatibility (v1.8 backup on v1.6) is not guaranteed; downgrades are not a supported flow.
 
 ---
 
@@ -435,7 +567,7 @@ Most reader settings live in the in-reader Quick Settings sheet (palette icon). 
 - Default theme
 - Default font size, line spacing, margins
 
-Whatever's set here is the starting point for new novels; per-novel changes are saved separately.
+Whatever's set here is the starting point for new novels; per-novel changes are saved separately. Tap-zone layout is set from Quick Settings and applies app-wide.
 
 ### Downloads
 
@@ -481,6 +613,7 @@ Whatever's set here is the starting point for new novels; per-novel changes are 
 Some explicit non-features so expectations match reality:
 
 - **No cloud sync.** The app is offline-first and stays that way. Backup/restore is the closest equivalent — manual, on your terms.
+- **No cloud AI.** The codex, the relationship graph, and search are local heuristics plus a local index. Nothing you read is sent anywhere to be "analyzed."
 - **No account system.** Never. There is no NovelForge server.
 - **No iOS version.** App Store rules conflict with the way this app is built.
 - **No Play Store distribution.** Sideload only, see the [README](../README.md) for install steps.
