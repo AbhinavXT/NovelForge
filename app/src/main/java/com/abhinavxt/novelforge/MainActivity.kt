@@ -45,7 +45,6 @@ import com.abhinavxt.novelforge.data.NovelRepository
 import com.abhinavxt.novelforge.data.PronunciationManager
 import com.abhinavxt.novelforge.data.ReadingStatsTracker
 import com.abhinavxt.novelforge.data.TTSManager
-import com.abhinavxt.novelforge.data.ThemeMode
 import com.abhinavxt.novelforge.data.ThemePreferences
 import com.abhinavxt.novelforge.data.UpdateChecker
 import com.abhinavxt.novelforge.data.source.NovelUrlResolver
@@ -59,6 +58,7 @@ import com.abhinavxt.novelforge.ui.Screen
 import com.abhinavxt.novelforge.ui.components.UpdateAvailableDialog
 import com.abhinavxt.novelforge.ui.components.openUpdateUrlInBrowser
 import com.abhinavxt.novelforge.ui.theme.NovelReaderTheme
+import com.abhinavxt.novelforge.ui.theme.resolveDarkTheme
 import com.abhinavxt.novelforge.ui.viewmodel.AudioPlayerViewModel
 import com.abhinavxt.novelforge.util.NetworkMonitor
 import com.abhinavxt.novelforge.widget.ContinueReadingWidget
@@ -175,17 +175,21 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeMode by themePreferences.themeMode.collectAsState()
             val colorScheme by themePreferences.colorScheme.collectAsState()
+            val appTheme by themePreferences.appTheme.collectAsState()
+            val appFont by themePreferences.appFont.collectAsState()
+            val customPrimaryColor by themePreferences.customPrimaryColor.collectAsState()
+            val customAppBackground by themePreferences.customAppBackground.collectAsState()
 
             // Resolve dark mode the same way NovelReaderTheme does, so
-            // system-bar icon contrast follows the IN-APP theme setting.
-            // Plain enableEdgeToEdge() detects darkness from the system
-            // uiMode only — wrong when the user forces light/dark inside
-            // the app while the system is set to the opposite.
-            val darkTheme = when (themeMode) {
-                ThemeMode.LIGHT -> false
-                ThemeMode.DARK -> true
-                ThemeMode.SYSTEM -> isSystemInDarkTheme()
-            }
+            // system-bar icon contrast follows the IN-APP theme setting —
+            // including palette themes (Nord while the system is light
+            // must still get light bar icons) and the custom background.
+            val darkTheme = resolveDarkTheme(
+                appTheme = appTheme,
+                themeMode = themeMode,
+                customAppBackground = customAppBackground,
+                systemDark = isSystemInDarkTheme(),
+            )
             DisposableEffect(darkTheme) {
                 enableEdgeToEdge(
                     statusBarStyle = SystemBarStyle.auto(
@@ -202,7 +206,11 @@ class MainActivity : ComponentActivity() {
 
             NovelReaderTheme(
                 themeMode = themeMode,
-                appColorScheme = colorScheme
+                appColorScheme = colorScheme,
+                appTheme = appTheme,
+                appFont = appFont,
+                customPrimaryColor = customPrimaryColor,
+                customAppBackground = customAppBackground
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),

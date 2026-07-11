@@ -245,26 +245,46 @@ fun HomeScreen(
                 }
 
                 // ── From Your Library ───────────────────────────
-                // A taste of the collection (10 most recent), not the
-                // whole thing — the Library tab is the canonical view.
+                // 3×3 grid of the newest novels (getAllNovels() is
+                // ORDER BY lastUpdatedAt DESC, so take(9) = 9 latest).
+                // Static chunked Rows, not LazyVerticalGrid — a lazy
+                // grid can't be nested inside this verticalScroll
+                // Column (infinite-height constraint), and 9 items
+                // don't need laziness. Overflow lives behind "See all"
+                // → the Library tab, the canonical collection view.
                 SectionHeader(
                     title = "From Your Library",
                     action = "See all",
                     onAction = onSeeLibrary
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    items(
-                        items = libraryNovels.take(10),
-                        key = { it.id }
-                    ) { novel ->
-                        CoverRailItem(
-                            novel = novel,
-                            onClick = { onNovelClick(novel.id) }
-                        )
+                    libraryNovels.take(9).chunked(3).forEach { rowNovels ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            rowNovels.forEach { novel ->
+                                Box(
+                                    modifier = Modifier.weight(1f),
+                                    contentAlignment = Alignment.TopCenter
+                                ) {
+                                    CoverRailItem(
+                                        novel = novel,
+                                        onClick = { onNovelClick(novel.id) }
+                                    )
+                                }
+                            }
+                            // Keep cell widths stable on a short last row
+                            repeat(3 - rowNovels.size) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
                     }
                 }
 

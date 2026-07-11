@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.abhinavxt.novelforge.data.BackupInfo
 import com.abhinavxt.novelforge.data.BackupManager
 import com.abhinavxt.novelforge.data.BackupResult
+import com.abhinavxt.novelforge.data.AppFont
+import com.abhinavxt.novelforge.data.AppTheme
 import com.abhinavxt.novelforge.data.ColorScheme
 import com.abhinavxt.novelforge.data.DictionaryLanguage
 import com.abhinavxt.novelforge.data.ThemeMode
@@ -36,6 +38,10 @@ class SettingsViewModel(
     // Theme state — delegates to ThemePreferences StateFlows
     val themeMode: StateFlow<ThemeMode> = themePreferences.themeMode
     val colorScheme: StateFlow<ColorScheme> = themePreferences.colorScheme
+    val appTheme: StateFlow<AppTheme> = themePreferences.appTheme
+    val appFont: StateFlow<AppFont> = themePreferences.appFont
+    val customPrimaryColor: StateFlow<Long> = themePreferences.customPrimaryColor
+    val customAppBackground: StateFlow<Long> = themePreferences.customAppBackground
     val dictionaryLanguage: StateFlow<DictionaryLanguage> = themePreferences.dictionaryLanguage
 
     fun setThemeMode(mode: ThemeMode) {
@@ -44,6 +50,22 @@ class SettingsViewModel(
 
     fun setColorScheme(scheme: ColorScheme) {
         themePreferences.setColorScheme(scheme)
+    }
+
+    fun setAppFont(font: AppFont) {
+        themePreferences.setAppFont(font)
+    }
+
+    fun setAppTheme(theme: AppTheme) {
+        themePreferences.setAppTheme(theme)
+    }
+
+    fun setCustomAppBackground(color: Long) {
+        themePreferences.setCustomAppBackground(color)
+    }
+
+    fun setCustomPrimaryColor(color: Long) {
+        themePreferences.setCustomPrimaryColor(color)
     }
 
     fun setDictionaryLanguage(language: DictionaryLanguage) {

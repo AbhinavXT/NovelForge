@@ -174,6 +174,18 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v1.8.0",
+        date = "Jul 2026",
+        changes = listOf(
+            "App-wide themes — Nord, Dracula, Gruvbox, Catppuccin, AMOLED, Sepia, Paper, Solarized, Navy and Grey, matching the reader palettes",
+            "Custom app theme — pick your own background and accent color",
+            "4 new accent colors (Pink, Indigo, Cyan, Amber) plus a custom accent seed",
+            "App-wide font setting — apply any bundled font across the whole UI",
+            "Home screen now shows a 3×3 grid of your latest novels",
+            "New launcher icon — cursive Nf monogram in Dancing Script"
+        )
+    ),
+    VersionEntry(
         version = "v1.7.0",
         date = "Apr 2026",
         changes = listOf(
