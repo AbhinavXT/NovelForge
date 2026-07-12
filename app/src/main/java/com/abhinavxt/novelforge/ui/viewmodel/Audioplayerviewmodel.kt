@@ -52,7 +52,7 @@ class AudioPlayerViewModel(
 
     companion object {
         private const val TAG = "AudioPlayerVM"
-        private const val AUDIO_DIR = "NovelReader"
+        private const val AUDIO_DIR = "NovelForge"
         private const val SEEK_STEP_MS = 10_000
 
         fun provideFactory(context: Context): ViewModelProvider.Factory {

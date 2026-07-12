@@ -100,7 +100,7 @@ class SettingsViewModel(
                 _backupState.value = BackupUiState.ConfirmRestore(info, uri)
             } else {
                 _backupState.value = BackupUiState.Error(
-                    "Could not read backup file. Please select a valid Novel Reader backup."
+                    "Could not read backup file. Please select a valid Novel Forge backup."
                 )
             }
         }

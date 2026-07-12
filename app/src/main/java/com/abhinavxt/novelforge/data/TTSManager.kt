@@ -426,7 +426,7 @@ class TTSManager(private val context: Context) {
         onChapterComplete = onComplete
         _state.value = TTSState.LOADING
 
-        TTSForegroundService.start(context, nowPlayingNovelTitle.ifBlank { "Novel Reader" })
+        TTSForegroundService.start(context, nowPlayingNovelTitle.ifBlank { "Novel Forge" })
 
         speakCurrentSentence()
     }
@@ -475,7 +475,7 @@ class TTSManager(private val context: Context) {
                 }
                 TTSForegroundService.updateNotification(
                     context,
-                    nowPlayingNovelTitle.ifBlank { "Novel Reader" },
+                    nowPlayingNovelTitle.ifBlank { "Novel Forge" },
                     subtitle
                 )
                 // Pre-generate the next sentence while this one plays

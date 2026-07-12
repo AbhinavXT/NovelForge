@@ -143,7 +143,7 @@ class BackupManager(
     fun generateBackupFilename(): String {
         val dateFormat = SimpleDateFormat("yyyy-MM-dd_HHmmss", Locale.US)
         val timestamp = dateFormat.format(Date())
-        return "novel_reader_backup_$timestamp.json"
+        return "novel_forge_backup_$timestamp.json"
     }
 
     /**
@@ -458,7 +458,7 @@ class BackupManager(
             )
         } catch (e: com.google.gson.JsonSyntaxException) {
             Logger.e("BackupManager", "Invalid backup file format", e)
-            BackupResult.Error("Invalid backup file format. Please select a valid Novel Reader backup.")
+            BackupResult.Error("Invalid backup file format. Please select a valid Novel Forge backup.")
         } catch (e: Exception) {
             Logger.e("BackupManager", "Restore failed", e)
             BackupResult.Error("Restore failed: ${e.message}")

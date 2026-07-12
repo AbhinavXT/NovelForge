@@ -41,7 +41,7 @@ class TTSForegroundService : Service() {
         private const val ACTION_NEXT = "NEXT_TTS"
 
         // Track latest notification state for rebuilds
-        @Volatile var lastTitle: String = "Novel Reader"
+        @Volatile var lastTitle: String = "Novel Forge"
             private set
         @Volatile var lastSubtitle: String = "Playing..."
             private set
@@ -89,7 +89,7 @@ class TTSForegroundService : Service() {
             return NotificationCompat.Builder(context, CHANNEL_ID)
                 .setContentTitle(title)
                 .setContentText(subtitle)
-                .setSubText("Novel Reader")
+                .setSubText("Novel Forge")
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setOngoing(true)
                 .setContentIntent(openPending)

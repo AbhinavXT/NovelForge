@@ -435,6 +435,13 @@ class SherpaOnnxEngine(
         val tokensFile = files.find { it.name == "tokens.txt" }
         val dataDir = files.find { it.isDirectory && it.name.contains("espeak") }
         val lexiconFile = files.find { it.name == "lexicon.txt" }
+        // Multi-lingual Kokoro (v1.0+) ships several lexicons: lexicon-us-en.txt, lexicon-zh.txt, ...
+        val lexiconFiles = files.filter {
+            it.isFile && it.name.startsWith("lexicon") && it.extension == "txt"
+        }
+        val dictDir = files.find { it.isDirectory && it.name == "dict" }
+        // Chinese text-normalization rules (date-zh.fst, number-zh.fst, phone-zh.fst)
+        val ruleFstFiles = files.filter { it.isFile && it.extension == "fst" }
         val vocoderFile = files.find { it.name.contains("vocoder") || it.name.contains("vocos") }
         val voicesFile = files.find { it.name == "voices.bin" }
 
@@ -452,11 +459,25 @@ class SherpaOnnxEngine(
         return when {
             dirName.contains("kokoro") -> {
                 val modelFile = onnxFiles.find { it.name.contains("model") } ?: onnxFiles.first()
+                // Kokoro >= v1.0 (model version 2, multi-lingual) REQUIRES either a
+                // lexicon list or a lang code. Without one, native InitFrontend()
+                // calls exit() and kills the whole process (uncatchable).
+                val kokoroLexicon = when {
+                    lexiconFiles.isNotEmpty() ->
+                        lexiconFiles.sortedBy { it.name }.joinToString(",") { it.absolutePath }
+                    else -> lexiconFile?.absolutePath
+                }
                 SherpaModelConfig(
                     type = ModelType.KOKORO,
                     modelPath = modelFile.absolutePath,
                     tokensPath = tokensFile.absolutePath,
-                    lexiconPath = lexiconFile?.absolutePath,
+                    lexiconPath = kokoroLexicon,
+                    // Safety net: multi-lingual model with no lexicon files on disk —
+                    // fall back to espeak English so the native lib doesn't exit().
+                    lang = if (kokoroLexicon == null && dirName.contains("multi")) "en-us" else "",
+                    dictDir = dictDir?.absolutePath,
+                    ruleFsts = ruleFstFiles.sortedBy { it.name }
+                        .joinToString(",") { it.absolutePath },
                     dataDir = dataDir?.absolutePath,
                     vocoderPath = vocoderFile?.absolutePath,
                     voicesPath = voicesFile?.absolutePath,
@@ -612,7 +633,10 @@ data class SherpaModelConfig(
     val type: ModelType,
     val modelPath: String,
     val tokensPath: String,
-    val lexiconPath: String? = null,
+    val lexiconPath: String? = null,   // comma-separated absolute paths for multi-lingual Kokoro
+    val lang: String = "",             // e.g. "en-us"; alternative to lexicon for Kokoro >= v1.0
+    val dictDir: String? = null,       // jieba dict dir for Chinese (older sherpa-onnx versions)
+    val ruleFsts: String = "",         // comma-separated .fst text-normalization rules
     val dataDir: String? = null,
     val vocoderPath: String? = null,
     val voicesPath: String? = null,
@@ -747,6 +771,9 @@ class SherpaOnnxWrapper private constructor(
                             voices = config.voicesPath ?: "",
                             tokens = config.tokensPath,
                             dataDir = config.dataDir ?: "",
+                            lexicon = config.lexiconPath ?: "",
+                            lang = config.lang,
+                            dictDir = config.dictDir ?: "",
                             lengthScale = 1.0f
                         )
                         OfflineTtsModelConfig(
@@ -784,6 +811,7 @@ class SherpaOnnxWrapper private constructor(
 
             return OfflineTtsConfig(
                 model = modelConfig,
+                ruleFsts = config.ruleFsts,   // zh date/number/phone normalization for multi-lang Kokoro
                 maxNumSentences = 1   // process one sentence at a time for streaming feel
             )
         }

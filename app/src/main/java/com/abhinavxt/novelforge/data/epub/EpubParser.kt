@@ -130,7 +130,9 @@ class EpubParser(private val context: Context) {
         return EpubBook(
             title = opfData.title ?: "Unknown Title",
             author = opfData.author ?: "Unknown Author",
-            description = opfData.description ?: "",
+            description = opfData.description
+                ?.let { com.abhinavxt.novelforge.util.HtmlText.stripHtml(it) }
+                ?: "",
             coverImage = coverImage,
             chapters = chapters
         )

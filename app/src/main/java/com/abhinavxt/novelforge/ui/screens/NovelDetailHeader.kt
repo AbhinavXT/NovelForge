@@ -352,6 +352,12 @@ internal fun NovelHeader(
 
 @Composable
 internal fun NovelDescription(description: String) {
+    // Defensive clean: books imported before the parser fix still have raw
+    // publisher HTML in the database. Also cap to a fixed size so a
+    // multi-page blurb can't blow up the detail screen.
+    val cleanDescription = remember(description) {
+        com.abhinavxt.novelforge.util.HtmlText.cleanSynopsis(description, maxChars = 600)
+    }
     Column(modifier = Modifier.padding(16.dp)) {
         Text(
             text = "Synopsis",
@@ -359,8 +365,10 @@ internal fun NovelDescription(description: String) {
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = description.ifEmpty { "No description available." },
-            style = MaterialTheme.typography.bodyMedium
+            text = cleanDescription.ifEmpty { "No description available." },
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 10,
+            overflow = TextOverflow.Ellipsis
         )
     }
     HorizontalDivider()
@@ -538,4 +546,3 @@ private fun VoiceSelectorDialog(
         }
     )
 }
-

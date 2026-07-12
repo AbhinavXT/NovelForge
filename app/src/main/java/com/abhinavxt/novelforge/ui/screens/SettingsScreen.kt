@@ -804,7 +804,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Novel Reader v1.7.0",
+                text = "Novel Forge v1.8.0",
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium
             )

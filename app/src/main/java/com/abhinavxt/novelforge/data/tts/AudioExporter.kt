@@ -51,7 +51,7 @@ class AudioExporter(
 ) {
     companion object {
         private const val TAG = "AudioExporter"
-        private const val SUBFOLDER = "NovelReader"
+        private const val SUBFOLDER = "NovelForge"
         private const val SILENCE_BETWEEN_SENTENCES_MS = 300
         private const val SILENCE_BETWEEN_PARAGRAPHS_MS = 600
 
@@ -98,7 +98,7 @@ class AudioExporter(
         val notification = NotificationCompat.Builder(context, EXPORT_CHANNEL_ID)
             .setContentTitle("Exporting: $chapterTitle")
             .setContentText("Sentence $sentence / $total")
-            .setSubText("Novel Reader")
+            .setSubText("Novel Forge")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setOngoing(true)
             .setContentIntent(openPending)
@@ -121,7 +121,7 @@ class AudioExporter(
         val notification = NotificationCompat.Builder(context, EXPORT_CHANNEL_ID)
             .setContentTitle("Export Complete")
             .setContentText(chapterTitle)
-            .setSubText("Novel Reader")
+            .setSubText("Novel Forge")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)

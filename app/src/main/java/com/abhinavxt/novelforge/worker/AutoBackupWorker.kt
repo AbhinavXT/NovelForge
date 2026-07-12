@@ -108,7 +108,7 @@ class AutoBackupWorker(
                 while (cursor.moveToNext()) {
                     val docId = cursor.getString(0)
                     val name = cursor.getString(1) ?: continue
-                    if (name.startsWith("novel_reader_backup_") && name.endsWith(".json")) {
+                    if (name.startsWith("novel_forge_backup_") && name.endsWith(".json")) {
                         backups.add(docId to name)
                     }
                 }
