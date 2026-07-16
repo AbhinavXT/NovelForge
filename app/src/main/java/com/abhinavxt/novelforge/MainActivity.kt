@@ -10,6 +10,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.ComposeFoundationFlags
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -151,12 +153,16 @@ class MainActivity : ComponentActivity() {
         return super.onKeyUp(keyCode, event)
     }
 
+    @OptIn(ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         // Opt in to edge-to-edge explicitly. Android 15 (target 35)
         // enforces it anyway — opting in now means we control the
         // timing and have verified the insets, instead of layouts
         // jumping under the system bars on a future targetSdk bump.
         enableEdgeToEdge()
+
+        ComposeFoundationFlags.isNewContextMenuEnabled = false;
+
         super.onCreate(savedInstanceState)
 
         requestNotificationPermission()
