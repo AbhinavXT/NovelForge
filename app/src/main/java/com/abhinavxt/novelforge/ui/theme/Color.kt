@@ -109,20 +109,54 @@ val PreviewAmber = Color(0xFF785A00)
 // as the reader's custom background/text pickers. Each generates a
 // full light/dark scheme via customColorScheme() in Theme.kt.
 val customSeedSwatches = listOf(
+    // Reds & oranges
     0xFFE53935L, // red
+    0xFFC48B8BL, // dusty rose
+    0xFFF4511EL, // orange red
+    0xFFBF5B3FL, // terracotta
     0xFFFF7043L, // deep orange
+    0xFF6D4C41L, // brown
+    // Yellows & greens
     0xFFFFB300L, // amber
+    0xFFFDD835L, // yellow
+    0xFF9E9D24L, // olive
+    0xFFC0CA33L, // lime
+    0xFF87A96BL, // sage
     0xFF7CB342L, // light green
     0xFF2E7D32L, // green
+    0xFF00C853L, // spring green
+    // Teals & blues
     0xFF00897BL, // teal
     0xFF00ACC1L, // cyan
+    0xFF039BE5L, // sky blue
     0xFF1E88E5L, // blue
+    0xFF5B84A8L, // steel blue
     0xFF3949ABL, // indigo
+    // Purples & pinks
+    0xFF5E35B1L, // deep purple
+    0xFF9C8ACBL, // lavender
     0xFF6650A4L, // purple (default)
     0xFF8E24AAL, // violet
+    0xFFC2189CL, // magenta
     0xFFD81B60L, // pink
-    0xFF6D4C41L, // brown
+    0xFF880E4FL, // wine
+    // Neutrals
     0xFF546E7AL, // blue grey
+    0xFF37474FL, // charcoal
+)
+
+// ── Custom app-theme text swatches ───────────────────────────────
+// Mirrors the reader's custom text picker: warm inks for light
+// backgrounds, muted lights for dark. The "Auto" option in the
+// picker maps to ThemePreferences.CUSTOM_APP_TEXT_AUTO instead of
+// a value from this list.
+val appTextSwatches = listOf(
+    // Inks for light backgrounds
+    0xFF000000L, 0xFF2D2A26L, 0xFF3B3630L, 0xFF5F4B32L, 0xFF37474FL,
+    0xFF263238L, 0xFF1B4332L, 0xFF1E3A5FL, 0xFF4A2C2AL, 0xFF3E2C41L,
+    // Muted lights for dark backgrounds
+    0xFFBFC7CFL, 0xFFC5C1B8L, 0xFFD8D4CCL, 0xFFE6E1D6L, 0xFFECEFF1L,
+    0xFFFFFFFFL, 0xFFE8D5B0L, 0xFFA8C5A0L, 0xFFA9BCD4L, 0xFFC9ADA7L,
 )
 
 // ── Custom app-theme background swatches ─────────────────────────
@@ -130,7 +164,15 @@ val customSeedSwatches = listOf(
 // warm papers, cool greys, true darks. Text/on-colors are derived
 // from luminance in customAppColorScheme().
 val appBackgroundSwatches = listOf(
-    0xFFFFFFFFL, 0xFFF5F0E8L, 0xFFFBF0D9L, 0xFFEDE7D9L, 0xFFE8EDF2L,
-    0xFFDCE3EAL, 0xFFC9D1C8L, 0xFF3A3A3AL, 0xFF2B2B2BL, 0xFF1E2127L,
-    0xFF16181DL, 0xFF101216L, 0xFF0B0D10L, 0xFF000000L,
+    // Whites & warm papers
+    0xFFFFFFFFL, 0xFFF5F0E8L, 0xFFFBF0D9L, 0xFFFDF6E3L, 0xFFF0EAD6L,
+    0xFFF2E2C9L, 0xFFEDE7D9L,
+    // Cool & tinted lights (eye-care green, lavender, blush)
+    0xFFE8EDF2L, 0xFFDCE3EAL, 0xFFE3EDCDL, 0xFFC9D1C8L, 0xFFEAE4F2L,
+    0xFFF7E6E3L,
+    // Dark greys & true darks
+    0xFF3A3A3AL, 0xFF2B2B2BL, 0xFF1E2127L, 0xFF16181DL, 0xFF101216L,
+    0xFF0B0D10L, 0xFF000000L,
+    // Tinted darks (navy, forest, violet, nord)
+    0xFF0D1B2AL, 0xFF1B2621L, 0xFF241B2FL, 0xFF2E3440L,
 )

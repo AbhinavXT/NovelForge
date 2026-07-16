@@ -27,16 +27,19 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -158,7 +161,9 @@ internal fun ReaderContent(
     chapterHighlights: List<HighlightEntity> = emptyList(),
     highlightSaved: Boolean = false,
     onAddHighlight: (paragraphIndex: Int, selectedText: String, paragraphText: String) -> Unit = { _, _, _ -> },
-    onHighlightSavedShown: () -> Unit = {}
+    onHighlightSavedShown: () -> Unit = {},
+    // Pronunciation: save word → spoken replacement from the selection toolbar
+    onSavePronunciation: (word: String, replacement: String) -> Unit = { _, _ -> }
 ) {
     val colors = getThemeColors(settings)
 
@@ -313,6 +318,15 @@ internal fun ReaderContent(
     // Selection clearing: increment this key to force SelectionContainer recomposition
     var selectionKey by remember { mutableIntStateOf(0) }
 
+    // Whether a text-selection toolbar is currently showing. A tap
+    // anywhere on the reader while this is true clears the selection
+    // instead of triggering the tap-zone action (see the tap handler).
+    var isTextSelectionActive by remember { mutableStateOf(false) }
+
+    // "Pronounce" from the selection toolbar — holds the selected word
+    // while the add-pronunciation dialog is open. Null = dialog closed.
+    var pronunciationWord by remember { mutableStateOf<String?>(null) }
+
     // Wrap onLookupWord to also clear selection
     val lookupWordAndClearSelection: (String) -> Unit = { word ->
         onLookupWord(word)
@@ -321,6 +335,7 @@ internal fun ReaderContent(
 
     // Snackbar for bookmark confirmation
     val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarScope = rememberCoroutineScope()
 
     // Show snackbar when a bookmark is saved
     LaunchedEffect(bookmarkSaved) {
@@ -714,6 +729,19 @@ internal fun ReaderContent(
                                 // is unaffected.
                                 detectTapGestures(
                                     onTap = { offset ->
+                                        // A tap anywhere while text is selected
+                                        // clears the selection instead of acting
+                                        // as a page-turn / menu tap. Fixes the
+                                        // “selection only clears when tapping the
+                                        // selected word itself” issue — each
+                                        // paragraph has its own SelectionContainer,
+                                        // so taps outside it never reached the
+                                        // container holding the selection.
+                                        if (isTextSelectionActive) {
+                                            selectionKey++
+                                            isTextSelectionActive = false
+                                            return@detectTapGestures
+                                        }
                                         val viewport = listState.layoutInfo.viewportEndOffset -
                                                 listState.layoutInfo.viewportStartOffset
                                         val jump = viewport * 0.8f
@@ -821,6 +849,13 @@ internal fun ReaderContent(
                                     selectionKey++
                                 },
                                 onLookupWord = lookupWordAndClearSelection,
+                                onAddPronunciation = { selectedText ->
+                                    pronunciationWord = selectedText
+                                    selectionKey++
+                                },
+                                onSelectionVisibilityChanged = { visible ->
+                                    isTextSelectionActive = visible
+                                },
                                 onHighlight = { selectedText ->
                                     if (seg.chapterId != activeSegmentId) {
                                         activeSegmentId = seg.chapterId
@@ -947,6 +982,21 @@ internal fun ReaderContent(
         dictionaryState = dictionaryState,
         onDismiss = onDismissDictionary
     )
+
+    // Add-pronunciation dialog — shown when user taps "Pronounce" on selected text
+    pronunciationWord?.let { selectedWord ->
+        AddPronunciationDialog(
+            initialWord = selectedWord,
+            onSave = { word, replacement ->
+                onSavePronunciation(word, replacement)
+                pronunciationWord = null
+                snackbarScope.launch {
+                    snackbarHostState.showSnackbar("Added to pronunciation dictionary")
+                }
+            },
+            onDismiss = { pronunciationWord = null }
+        )
+    }
 }
 
 /**
@@ -971,6 +1021,8 @@ private fun BookmarkableParagraph(
     highlights: List<HighlightEntity> = emptyList(),
     onAddBookmark: (Int, String) -> Unit,
     onLookupWord: (String) -> Unit,
+    onAddPronunciation: (String) -> Unit = {},
+    onSelectionVisibilityChanged: (Boolean) -> Unit = {},
     onHighlight: (String) -> Unit = {}
 ) {
     val view = LocalView.current
@@ -979,12 +1031,14 @@ private fun BookmarkableParagraph(
         ReaderTextToolbar(
             view = view,
             onDefineRequested = { selectedText -> onLookupWord(selectedText) },
+            onPronounceRequested = { selectedText -> onAddPronunciation(selectedText) },
             onBookmarkRequested = if (isInLibrary) {
                 { onAddBookmark(index, paragraph) }
             } else null,
             onHighlightRequested = if (isInLibrary) {
                 { selectedText -> onHighlight(selectedText) }
-            } else null
+            } else null,
+            onVisibilityChanged = onSelectionVisibilityChanged
         )
     }
 
@@ -1081,8 +1135,12 @@ private fun BookmarkableParagraph(
 private class ReaderTextToolbar(
     private val view: View,
     private val onDefineRequested: (String) -> Unit,
+    private val onPronounceRequested: ((String) -> Unit)? = null,
     private val onBookmarkRequested: (() -> Unit)?,
-    private val onHighlightRequested: ((String) -> Unit)? = null
+    private val onHighlightRequested: ((String) -> Unit)? = null,
+    /** Reports whether the selection toolbar is visible — lets the reader
+     *  treat the next tap as “clear selection” instead of a tap-zone action. */
+    private val onVisibilityChanged: (Boolean) -> Unit = {}
 ) : TextToolbar {
 
     private var actionMode: ActionMode? = null
@@ -1103,11 +1161,14 @@ private class ReaderTextToolbar(
                     menu.add(0, MENU_COPY, 0, "Copy")
                 }
                 menu.add(0, MENU_DEFINE, 1, "Define")
+                if (onPronounceRequested != null) {
+                    menu.add(0, MENU_PRONOUNCE, 2, "Pronounce")
+                }
                 if (onHighlightRequested != null) {
-                    menu.add(0, MENU_HIGHLIGHT, 2, "Highlight")
+                    menu.add(0, MENU_HIGHLIGHT, 3, "Highlight")
                 }
                 if (onBookmarkRequested != null) {
-                    menu.add(0, MENU_BOOKMARK, 3, "Bookmark")
+                    menu.add(0, MENU_BOOKMARK, 4, "Bookmark")
                 }
                 return true
             }
@@ -1127,6 +1188,17 @@ private class ReaderTextToolbar(
                             ?.getItemAt(0)?.text?.toString()?.trim() ?: ""
                         if (selectedText.isNotBlank()) {
                             onDefineRequested(selectedText)
+                        }
+                    }
+                    MENU_PRONOUNCE -> {
+                        // Same clipboard round-trip as Define: copy the
+                        // selection, read it back, hand it to the dialog.
+                        onCopyRequested?.invoke()
+                        val clipboard = view.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val selectedText = clipboard.primaryClip
+                            ?.getItemAt(0)?.text?.toString()?.trim() ?: ""
+                        if (selectedText.isNotBlank()) {
+                            onPronounceRequested?.invoke(selectedText)
                         }
                     }
                     MENU_HIGHLIGHT -> {
@@ -1149,6 +1221,7 @@ private class ReaderTextToolbar(
 
             override fun onDestroyActionMode(mode: ActionMode) {
                 actionMode = null
+                onVisibilityChanged(false)
             }
 
             override fun onGetContentRect(mode: ActionMode, view: View, outRect: android.graphics.Rect) {
@@ -1163,11 +1236,13 @@ private class ReaderTextToolbar(
 
         actionMode?.finish()
         actionMode = view.startActionMode(callback, ActionMode.TYPE_FLOATING)
+        onVisibilityChanged(true)
     }
 
     override fun hide() {
         actionMode?.finish()
         actionMode = null
+        onVisibilityChanged(false)
     }
 
     companion object {
@@ -1175,6 +1250,7 @@ private class ReaderTextToolbar(
         private const val MENU_DEFINE = 2
         private const val MENU_HIGHLIGHT = 3
         private const val MENU_BOOKMARK = 4
+        private const val MENU_PRONOUNCE = 5
     }
 }
 
@@ -1235,6 +1311,56 @@ private fun HighlightedParagraph(
             else TextIndent.None
         ),
         modifier = modifier
+    )
+}
+
+/**
+ * Dialog for adding a selected word to the pronunciation dictionary.
+ * The word is prefilled from the selection; the user types how it
+ * should be spoken. Mirrors PronunciationEntryDialog on the
+ * Pronunciation settings screen.
+ */
+@Composable
+private fun AddPronunciationDialog(
+    initialWord: String,
+    onSave: (word: String, replacement: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var word by remember { mutableStateOf(initialWord) }
+    var replacement by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Pronunciation") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = word,
+                    onValueChange = { word = it },
+                    label = { Text("Word (as written)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = replacement,
+                    onValueChange = { replacement = it },
+                    label = { Text("Speak as") },
+                    placeholder = { Text("e.g. shoo-lan") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(word, replacement) },
+                enabled = word.isNotBlank() && replacement.isNotBlank()
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
     )
 }
 

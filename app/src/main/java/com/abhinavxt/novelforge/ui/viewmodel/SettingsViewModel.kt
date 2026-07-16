@@ -42,6 +42,7 @@ class SettingsViewModel(
     val appFont: StateFlow<AppFont> = themePreferences.appFont
     val customPrimaryColor: StateFlow<Long> = themePreferences.customPrimaryColor
     val customAppBackground: StateFlow<Long> = themePreferences.customAppBackground
+    val customAppTextColor: StateFlow<Long> = themePreferences.customAppTextColor
     val dictionaryLanguage: StateFlow<DictionaryLanguage> = themePreferences.dictionaryLanguage
 
     fun setThemeMode(mode: ThemeMode) {
@@ -62,6 +63,10 @@ class SettingsViewModel(
 
     fun setCustomAppBackground(color: Long) {
         themePreferences.setCustomAppBackground(color)
+    }
+
+    fun setCustomAppTextColor(color: Long) {
+        themePreferences.setCustomAppTextColor(color)
     }
 
     fun setCustomPrimaryColor(color: Long) {

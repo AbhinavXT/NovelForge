@@ -124,6 +124,12 @@ class ThemePreferences(context: Context) {
     private val _customAppBackground = MutableStateFlow(loadCustomAppBackground())
     val customAppBackground: StateFlow<Long> = _customAppBackground.asStateFlow()
 
+    // Text color for AppTheme.CUSTOM. CUSTOM_APP_TEXT_AUTO (0L) means
+    // “derive from background luminance” — the pre-existing behavior —
+    // so users who never touch the picker see no change.
+    private val _customAppTextColor = MutableStateFlow(loadCustomAppTextColor())
+    val customAppTextColor: StateFlow<Long> = _customAppTextColor.asStateFlow()
+
     // Seed color for ColorScheme.CUSTOM. Stored as an ARGB Long, same
     // convention as ReaderSettings.customBackgroundColor.
     private val _customPrimaryColor = MutableStateFlow(loadCustomPrimaryColor())
@@ -158,6 +164,11 @@ class ThemePreferences(context: Context) {
     fun setCustomAppBackground(color: Long) {
         prefs.edit().putLong(KEY_CUSTOM_APP_BACKGROUND, color).apply()
         _customAppBackground.value = color
+    }
+
+    fun setCustomAppTextColor(color: Long) {
+        prefs.edit().putLong(KEY_CUSTOM_APP_TEXT, color).apply()
+        _customAppTextColor.value = color
     }
 
     fun setCustomPrimaryColor(color: Long) {
@@ -215,6 +226,10 @@ class ThemePreferences(context: Context) {
         return prefs.getLong(KEY_CUSTOM_APP_BACKGROUND, DEFAULT_CUSTOM_APP_BACKGROUND)
     }
 
+    private fun loadCustomAppTextColor(): Long {
+        return prefs.getLong(KEY_CUSTOM_APP_TEXT, CUSTOM_APP_TEXT_AUTO)
+    }
+
     private fun loadCustomPrimaryColor(): Long {
         // Default seed = the app's original purple, so switching to
         // CUSTOM before ever picking a swatch still looks intentional.
@@ -249,8 +264,12 @@ class ThemePreferences(context: Context) {
         private const val KEY_APP_THEME = "app_theme"
         private const val KEY_CUSTOM_PRIMARY = "custom_primary_color"
         private const val KEY_CUSTOM_APP_BACKGROUND = "custom_app_background"
+        private const val KEY_CUSTOM_APP_TEXT = "custom_app_text_color"
 
         const val DEFAULT_CUSTOM_PRIMARY = 0xFF6650A4L  // original purple
         const val DEFAULT_CUSTOM_APP_BACKGROUND = 0xFF1E2127L  // soft charcoal
+
+        /** Sentinel: text color follows background luminance (default). */
+        const val CUSTOM_APP_TEXT_AUTO = 0L
     }
 }

@@ -368,14 +368,23 @@ private fun paletteColorScheme(p: AppPalette): androidx.compose.material3.ColorS
 }
 
 /**
- * Custom app theme: user-picked background + accent seed. Text and
- * derived roles follow background luminance — same rule the reader
+ * Custom app theme: user-picked background + accent seed + optional
+ * text color. When textColor is CUSTOM_APP_TEXT_AUTO the text (and
+ * derived roles) follow background luminance — same rule the reader
  * uses (secondary text = text at reduced strength).
  */
-private fun customAppColorScheme(background: Long, primarySeed: Long): androidx.compose.material3.ColorScheme {
+private fun customAppColorScheme(
+    background: Long,
+    primarySeed: Long,
+    textColor: Long = com.abhinavxt.novelforge.data.ThemePreferences.CUSTOM_APP_TEXT_AUTO
+): androidx.compose.material3.ColorScheme {
     val bg = Color(background)
     val isDark = bg.luminance() < 0.5f
-    val text = if (isDark) Color(0xFFE3E0DA) else Color(0xFF24211D)
+    val text = if (textColor == com.abhinavxt.novelforge.data.ThemePreferences.CUSTOM_APP_TEXT_AUTO) {
+        if (isDark) Color(0xFFE3E0DA) else Color(0xFF24211D)
+    } else {
+        Color(textColor)
+    }
     val palette = AppPalette(
         bg = bg,
         surface = lift(bg, if (isDark) 0.05f else -0.03f),
@@ -433,6 +442,7 @@ fun NovelReaderTheme(
     appFont: AppFont = AppFont.DEFAULT,
     customPrimaryColor: Long = com.abhinavxt.novelforge.data.ThemePreferences.DEFAULT_CUSTOM_PRIMARY,
     customAppBackground: Long = com.abhinavxt.novelforge.data.ThemePreferences.DEFAULT_CUSTOM_APP_BACKGROUND,
+    customAppTextColor: Long = com.abhinavxt.novelforge.data.ThemePreferences.CUSTOM_APP_TEXT_AUTO,
     content: @Composable () -> Unit
 ) {
     val darkTheme = resolveDarkTheme(
@@ -470,10 +480,10 @@ fun NovelReaderTheme(
                 }
         }
 
-        // CUSTOM — user background + accent seed
+        // CUSTOM — user background + accent seed + optional text color
         AppTheme.CUSTOM ->
-            remember(customAppBackground, customPrimaryColor) {
-                customAppColorScheme(customAppBackground, customPrimaryColor)
+            remember(customAppBackground, customPrimaryColor, customAppTextColor) {
+                customAppColorScheme(customAppBackground, customPrimaryColor, customAppTextColor)
             }
 
         // Palette themes — fixed complete schemes

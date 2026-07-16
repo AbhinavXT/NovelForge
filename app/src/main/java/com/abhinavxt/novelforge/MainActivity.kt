@@ -179,6 +179,7 @@ class MainActivity : ComponentActivity() {
             val appFont by themePreferences.appFont.collectAsState()
             val customPrimaryColor by themePreferences.customPrimaryColor.collectAsState()
             val customAppBackground by themePreferences.customAppBackground.collectAsState()
+            val customAppTextColor by themePreferences.customAppTextColor.collectAsState()
 
             // Resolve dark mode the same way NovelReaderTheme does, so
             // system-bar icon contrast follows the IN-APP theme setting —
@@ -210,7 +211,8 @@ class MainActivity : ComponentActivity() {
                 appTheme = appTheme,
                 appFont = appFont,
                 customPrimaryColor = customPrimaryColor,
-                customAppBackground = customAppBackground
+                customAppBackground = customAppBackground,
+                customAppTextColor = customAppTextColor
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),

@@ -550,6 +550,7 @@ fun NavigationHost(
                         targetParagraph = targetParagraph,
                         repository = repository,
                         ttsManager = ttsManager,
+                        pronunciationManager = pronunciationManager,
                         themePreferences = themePreferences,
                         statsTracker = readingStatsTracker,
                         chapterPrefetcher = chapterPrefetcher,

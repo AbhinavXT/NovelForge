@@ -24,6 +24,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,12 +32,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.abhinavxt.novelforge.data.NovelRepository
+import com.abhinavxt.novelforge.data.PronunciationManager
 import com.abhinavxt.novelforge.data.TTSManager
 import com.abhinavxt.novelforge.data.ThemePreferences
 import com.abhinavxt.novelforge.ui.viewmodel.ReaderUiState
 import com.abhinavxt.novelforge.ui.viewmodel.ReaderViewModel
 import com.abhinavxt.novelforge.ui.components.ModelDownloadDialog
 import com.abhinavxt.novelforge.data.ChapterPrefetcher
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,6 +50,7 @@ fun ReaderScreen(
     novelUrl: String,
     repository: NovelRepository,
     ttsManager: TTSManager,
+    pronunciationManager: PronunciationManager? = null,
     themePreferences: ThemePreferences? = null,
     statsTracker: com.abhinavxt.novelforge.data.ReadingStatsTracker? = null,
     chapterPrefetcher: ChapterPrefetcher? = null,
@@ -58,6 +62,7 @@ fun ReaderScreen(
     )
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val scope = rememberCoroutineScope()
 
     // TTS state
     val ttsState by ttsManager.state.collectAsState()
@@ -213,7 +218,15 @@ fun ReaderScreen(
                         .coerceAtMost(paragraphText.length)
                     viewModel.addHighlight(paragraphIndex, startOffset, endOffset, selectedText)
                 },
-                onHighlightSavedShown = { highlightSavedFlag = false }
+                onHighlightSavedShown = { highlightSavedFlag = false },
+                // Pronunciation: selection toolbar → dialog → dictionary.
+                // addEntry trims + rejects blanks; the dialog already
+                // guards blanks, so fire-and-forget is safe here.
+                onSavePronunciation = { word, replacement ->
+                    scope.launch {
+                        pronunciationManager?.addEntry(word, replacement)
+                    }
+                }
             )
         }
     }

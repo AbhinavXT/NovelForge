@@ -741,19 +741,31 @@ private fun SectionDivider() {
 // Reader Polish: custom theme swatches + toggle row
 // ─────────────────────────────────────────────────────────────────
 
-// Curated backgrounds: warm papers, cool greys, true darks — spans the
-// useful reading range without a full color wheel.
+// Curated backgrounds: warm papers, cool greys, tinted lights and
+// darks, true darks — spans the useful reading range without a full
+// color wheel. Keep in sync with appBackgroundSwatches in Color.kt.
 private val customBackgroundSwatches = listOf(
-    0xFFFFFFFF, 0xFFF5F0E8, 0xFFFBF0D9, 0xFFEDE7D9, 0xFFE8EDF2,
-    0xFFDCE3EA, 0xFFC9D1C8, 0xFF3A3A3A, 0xFF2B2B2B, 0xFF1E2127,
-    0xFF16181D, 0xFF101216, 0xFF0B0D10, 0xFF000000,
+    // Whites & warm papers
+    0xFFFFFFFF, 0xFFF5F0E8, 0xFFFBF0D9, 0xFFFDF6E3, 0xFFF0EAD6,
+    0xFFF2E2C9, 0xFFEDE7D9,
+    // Cool & tinted lights (eye-care green, lavender, blush)
+    0xFFE8EDF2, 0xFFDCE3EA, 0xFFE3EDCD, 0xFFC9D1C8, 0xFFEAE4F2,
+    0xFFF7E6E3,
+    // Dark greys & true darks
+    0xFF3A3A3A, 0xFF2B2B2B, 0xFF1E2127, 0xFF16181D, 0xFF101216,
+    0xFF0B0D10, 0xFF000000,
+    // Tinted darks (navy, forest, violet, nord)
+    0xFF0D1B2A, 0xFF1B2621, 0xFF241B2F, 0xFF2E3440,
 )
 
 // Text colors: warm inks for light backgrounds, muted lights for dark.
 private val customTextSwatches = listOf(
+    // Inks for light backgrounds
     0xFF000000, 0xFF2D2A26, 0xFF3B3630, 0xFF5F4B32, 0xFF37474F,
-    0xFF263238, 0xFFBFC7CF, 0xFFC5C1B8, 0xFFD8D4CC, 0xFFE6E1D6,
-    0xFFECEFF1, 0xFFFFFFFF,
+    0xFF263238, 0xFF1B4332, 0xFF1E3A5F, 0xFF4A2C2A, 0xFF3E2C41,
+    // Muted lights for dark backgrounds
+    0xFFBFC7CF, 0xFFC5C1B8, 0xFFD8D4CC, 0xFFE6E1D6, 0xFFECEFF1,
+    0xFFFFFFFF, 0xFFE8D5B0, 0xFFA8C5A0, 0xFFA9BCD4, 0xFFC9ADA7,
 )
 
 @Composable

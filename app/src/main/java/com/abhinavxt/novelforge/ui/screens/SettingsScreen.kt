@@ -175,6 +175,7 @@ fun SettingsScreen(
             // the open sheet.
             val currentAppTheme by viewModel.appTheme.collectAsState()
             val currentCustomAppBackground by viewModel.customAppBackground.collectAsState()
+            val currentCustomAppText by viewModel.customAppTextColor.collectAsState()
             var showThemeSheet by remember { mutableStateOf(false) }
             var showColorSheet by remember { mutableStateOf(false) }
             var showFontSheet by remember { mutableStateOf(false) }
@@ -234,10 +235,12 @@ fun SettingsScreen(
                     currentTheme = currentAppTheme,
                     currentMode = currentThemeMode,
                     customBackground = currentCustomAppBackground,
+                    customText = currentCustomAppText,
                     customAccent = currentCustomPrimary,
                     onThemeSelected = { viewModel.setAppTheme(it) },
                     onModeSelected = { viewModel.setThemeMode(it) },
                     onBackgroundPicked = { viewModel.setCustomAppBackground(it) },
+                    onTextPicked = { viewModel.setCustomAppTextColor(it) },
                     onAccentPicked = { viewModel.setCustomPrimaryColor(it) },
                     onDismiss = { showThemeSheet = false }
                 )
@@ -1026,10 +1029,12 @@ private fun ThemePickerSheet(
     currentTheme: AppTheme,
     currentMode: ThemeMode,
     customBackground: Long,
+    customText: Long,
     customAccent: Long,
     onThemeSelected: (AppTheme) -> Unit,
     onModeSelected: (ThemeMode) -> Unit,
     onBackgroundPicked: (Long) -> Unit,
+    onTextPicked: (Long) -> Unit,
     onAccentPicked: (Long) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1131,6 +1136,13 @@ private fun ThemePickerSheet(
                         swatches = appBackgroundSwatches,
                         selected = customBackground,
                         onPick = onBackgroundPicked
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextSwatchRow(
+                        label = "Text",
+                        swatches = appTextSwatches,
+                        selected = customText,
+                        onPick = onTextPicked
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     SwatchRow(
@@ -1377,6 +1389,75 @@ private fun SwatchRow(
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
     ) {
+        swatches.forEach { colorLong ->
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Color(colorLong))
+                    .border(
+                        width = if (selected == colorLong) 3.dp else 1.dp,
+                        color = if (selected == colorLong)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                        shape = CircleShape
+                    )
+                    .clickable { onPick(colorLong) }
+            )
+        }
+    }
+}
+
+// ── Text swatch row (custom app theme) ───────────────────────────
+// Same as SwatchRow but with a leading "Auto" option that maps to
+// ThemePreferences.CUSTOM_APP_TEXT_AUTO — text derived from the
+// background's luminance, the pre-picker behavior.
+
+@Composable
+private fun TextSwatchRow(
+    label: String,
+    swatches: List<Long>,
+    selected: Long,
+    onPick: (Long) -> Unit
+) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.outline
+    )
+    Spacer(modifier = Modifier.height(6.dp))
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+    ) {
+        // "Auto" — follow background luminance
+        val autoSelected = selected == ThemePreferences.CUSTOM_APP_TEXT_AUTO
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .border(
+                    width = if (autoSelected) 3.dp else 1.dp,
+                    color = if (autoSelected)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                    shape = CircleShape
+                )
+                .clickable { onPick(ThemePreferences.CUSTOM_APP_TEXT_AUTO) },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "A",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         swatches.forEach { colorLong ->
             Box(
                 modifier = Modifier
