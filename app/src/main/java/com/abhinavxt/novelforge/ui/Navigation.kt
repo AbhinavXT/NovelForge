@@ -173,6 +173,12 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
         icon = Icons.Default.MenuBook
     )
 
+    object Browse : Screen(
+        route = "browse",
+        title = "Browse",
+        icon = Icons.Default.MenuBook
+    )
+
     object ImportFromUrl : Screen(
         route = "import_from_url/{url}",
         title = "Add Novel",
@@ -309,6 +315,22 @@ fun NavigationHost(
                             networkMonitor = networkMonitor,
                             onAnnasArchiveClick = {
                                 navController.navigate(Screen.AnnasArchive.route)
+                            },
+                            onBrowseClick = {
+                                navController.navigate(Screen.Browse.route)
+                            }
+                        )
+                    }
+
+                    // ── Filterable per-source catalog browsing ───────────
+                    composable(Screen.Browse.route) {
+                        BrowseScreen(
+                            onBackClick = { navController.popBackStack() },
+                            onNovelClick = { novelPreview ->
+                                val url = constructNovelUrl(novelPreview.id)
+                                navController.navigate(
+                                    Screen.Detail.createRoute(novelPreview.id, url)
+                                )
                             }
                         )
                     }

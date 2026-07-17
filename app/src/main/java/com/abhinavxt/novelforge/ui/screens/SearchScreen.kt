@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -60,6 +62,7 @@ fun SearchScreen(
     onNovelClick: (NovelPreview) -> Unit,
     networkMonitor: NetworkMonitor,
     onAnnasArchiveClick: () -> Unit = {},
+    onBrowseClick: () -> Unit = {},
     viewModel: SearchViewModel = viewModel(
         factory = SearchViewModel.provideFactory(
             repository,
@@ -99,8 +102,16 @@ fun SearchScreen(
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
             ) {
+                // Browse leads to the filterable per-source catalog screen.
+                FilterChip(
+                    selected = false,
+                    onClick = onBrowseClick,
+                    label = { Text("Browse") }
+                )
                 FilterChip(
                     selected = allSourcesMode,
                     onClick = { viewModel.selectAllSources() },
