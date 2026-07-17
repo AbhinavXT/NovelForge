@@ -38,8 +38,13 @@ sealed interface SearchUiState {
 }
 
 class SearchViewModel(
-    private val repository: NovelRepository
+    private val repository: NovelRepository,
+    appContext: android.content.Context
 ) : ViewModel() {
+
+    // Application context only (provided by the factory) — safe to hold.
+    private val prefs = appContext.applicationContext
+        .getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
 
     private val _uiState = MutableStateFlow<SearchUiState>(SearchUiState.Initial)
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
@@ -58,6 +63,37 @@ class SearchViewModel(
     val selectedSource: StateFlow<Source> = _selectedSource.asStateFlow()
 
     val availableSources: List<Source> = SourceManager.getAllSources()
+
+    // ── Source picker: pinned + recently used (persisted) ────────
+    // Stored ids are filtered against availableSources at read time, so
+    // entries for removed sources are silently dropped.
+    private val _pinnedSourceIds = MutableStateFlow(
+        prefs.getStringSet(PREF_PINNED, emptySet())!!.toSet()
+    )
+    val pinnedSourceIds: StateFlow<Set<String>> = _pinnedSourceIds.asStateFlow()
+
+    private val _recentSourceIds = MutableStateFlow(loadRecents())
+    val recentSourceIds: StateFlow<List<String>> = _recentSourceIds.asStateFlow()
+
+    fun togglePin(sourceId: String) {
+        val updated = _pinnedSourceIds.value.toMutableSet().apply {
+            if (!add(sourceId)) remove(sourceId)
+        }
+        _pinnedSourceIds.value = updated
+        prefs.edit().putStringSet(PREF_PINNED, updated).apply()
+    }
+
+    private fun loadRecents(): List<String> =
+        prefs.getString(PREF_RECENTS, "")!!
+            .split(',')
+            .filter { it.isNotBlank() }
+
+    private fun recordRecent(sourceId: String) {
+        val updated = (listOf(sourceId) + _recentSourceIds.value.filter { it != sourceId })
+            .take(MAX_RECENTS)
+        _recentSourceIds.value = updated
+        prefs.edit().putString(PREF_RECENTS, updated.joinToString(",")).apply()
+    }
 
     // ── Global search mode (Phase 7) ─────────────────────────────
     // When true, searches fan out to every source concurrently and
@@ -80,6 +116,9 @@ class SearchViewModel(
     }
 
     fun selectSource(source: Source) {
+        // Track recency even for a re-select — "used" is what matters.
+        recordRecent(source.id)
+
         // Re-selecting the same source is a no-op — unless we're leaving
         // all-sources mode, where it's a real mode switch.
         if (!_allSourcesMode.value && _selectedSource.value.id == source.id) return
@@ -227,11 +266,19 @@ class SearchViewModel(
     }
 
     companion object {
-        fun provideFactory(repository: NovelRepository): ViewModelProvider.Factory {
+        private const val PREFS_NAME = "source_picker_prefs"
+        private const val PREF_PINNED = "pinned_source_ids"
+        private const val PREF_RECENTS = "recent_source_ids"
+        private const val MAX_RECENTS = 5
+
+        fun provideFactory(
+            repository: NovelRepository,
+            appContext: android.content.Context
+        ): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return SearchViewModel(repository) as T
+                    return SearchViewModel(repository, appContext.applicationContext) as T
                 }
             }
         }

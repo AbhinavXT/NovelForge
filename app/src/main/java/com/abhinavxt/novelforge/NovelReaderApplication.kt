@@ -118,6 +118,10 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
 
+        // Give the QuickNovel-ported source layer an application context
+        // (needed by the Cloudflare WebView resolver).
+        com.abhinavxt.novelforge.data.source.nf.NfBridge.init(this)
+
         // Load pronunciation cache so substitutions work immediately
         appScope.launch {
             pronunciationManager.loadCache()
@@ -142,6 +146,13 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
 
         // Restore auto-backup schedule if it was enabled (Phase 7)
         AutoBackupWorker.schedule(this, AutoBackupWorker.isEnabled(this))
+
+        // Source health check: preload persisted results (off-main) so the
+        // source picker has badges immediately, then keep probing daily.
+        appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            com.abhinavxt.novelforge.data.source.health.SourceHealthStore.load(this@NovelReaderApplication)
+        }
+        com.abhinavxt.novelforge.worker.SourceHealthWorker.schedule(this, true)
 
         networkMonitor.start()
 

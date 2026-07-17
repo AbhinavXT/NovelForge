@@ -29,6 +29,13 @@ object SourceManager {
         registerSource(NovelFullNetSource())
         registerSource(PawReadSource())
         registerSource(PrimordialTranslationSource())
+        registerSource(WtrLabSource())
+
+        // Sources ported from QuickNovel via the nf compatibility layer.
+        // Their Source.id doubles as the novel-id prefix, so the generic
+        // fallbacks in getSourceFromNovelId()/constructNovelUrl() resolve them
+        // without any per-source hardcoding here.
+        com.abhinavxt.novelforge.data.source.nf.NfSources.all().forEach { registerSource(it) }
     }
 
     private fun registerSource(source: Source) {
@@ -52,7 +59,10 @@ object SourceManager {
             "nfn" -> sources["nfn"]
             "pr" -> sources["pr"]
             "pt" -> sources["pt"]
-            else -> null
+            "wtr" -> sources["wtr"]
+            // Adapter-backed sources use their Source.id as the prefix directly
+            // (e.g. "qanv_..." -> sources["qanv"]), so no mapping table is needed.
+            else -> sources[sourceId]
         }
     }
 
@@ -78,9 +88,24 @@ object SourceManager {
             }
             novelId.startsWith("pt_") ->
                 "https://primodialtranslation.com/series/${novelId.removePrefix("pt_")}/"
+            novelId.startsWith("wtr_") -> {
+                // "wtr_{rawId}~{slug}" -> /en/novel/{rawId}/{slug}
+                val body = novelId.removePrefix("wtr_")
+                val rawId = body.substringBefore("~")
+                val slug = body.substringAfter("~", "")
+                "https://wtr-lab.com/en/novel/$rawId/$slug"
+            }
             novelId.startsWith("local_") ->
                 "local://$novelId"
-            else -> ""
+            else -> {
+                // Adapter-backed sources encode the full novel URL into the id
+                // (base64url), so the adapter itself can reverse it. This keeps
+                // constructNovelUrl() free of per-source cases for all ~40
+                // ported sources.
+                (getSourceFromNovelId(novelId) as? com.abhinavxt.novelforge.data.source.nf.NfSourceAdapter)
+                    ?.novelUrlFromId(novelId)
+                    ?: ""
+            }
         }
     }
 }

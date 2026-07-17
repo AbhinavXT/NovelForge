@@ -167,6 +167,12 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
         icon = Icons.Default.MenuBook
     )
 
+    object AnnasArchive : Screen(
+        route = "annas_archive",
+        title = "Anna's Archive",
+        icon = Icons.Default.MenuBook
+    )
+
     object ImportFromUrl : Screen(
         route = "import_from_url/{url}",
         title = "Add Novel",
@@ -300,7 +306,22 @@ fun NavigationHost(
                                 val url = constructNovelUrl(novelPreview.id)
                                 navController.navigate(Screen.Detail.createRoute(novelPreview.id, url))
                             },
-                            networkMonitor = networkMonitor
+                            networkMonitor = networkMonitor,
+                            onAnnasArchiveClick = {
+                                navController.navigate(Screen.AnnasArchive.route)
+                            }
+                        )
+                    }
+
+                    // ── Anna's Archive: EPUB download -> local import ────
+                    composable(Screen.AnnasArchive.route) {
+                        AnnasArchiveScreen(
+                            onBackClick = { navController.popBackStack() },
+                            onOpenNovel = { novelId ->
+                                navController.navigate(
+                                    Screen.Detail.createRoute(novelId, constructNovelUrl(novelId))
+                                )
+                            }
                         )
                     }
 

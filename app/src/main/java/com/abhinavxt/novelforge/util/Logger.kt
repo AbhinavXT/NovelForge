@@ -12,7 +12,7 @@ import android.util.Log
  */
 object Logger {
     private const val DEFAULT_TAG = "NovelForge"
-    private var isDebug: Boolean = true
+    private var isDebug: Boolean = false
 
     fun init(context: Context) {
         isDebug = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0

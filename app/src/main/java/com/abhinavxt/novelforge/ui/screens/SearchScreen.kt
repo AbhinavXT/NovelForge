@@ -14,11 +14,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
@@ -33,8 +33,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,7 +47,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.abhinavxt.novelforge.data.NovelRepository
 import com.abhinavxt.novelforge.data.model.NovelPreview
+import com.abhinavxt.novelforge.data.source.health.SourceHealthStore
 import com.abhinavxt.novelforge.ui.components.OfflineBanner
+import com.abhinavxt.novelforge.ui.components.SourcePickerSheet
 import com.abhinavxt.novelforge.ui.viewmodel.SearchUiState
 import com.abhinavxt.novelforge.ui.viewmodel.SearchViewModel
 import com.abhinavxt.novelforge.util.NetworkMonitor
@@ -53,8 +59,12 @@ fun SearchScreen(
     repository: NovelRepository,
     onNovelClick: (NovelPreview) -> Unit,
     networkMonitor: NetworkMonitor,
+    onAnnasArchiveClick: () -> Unit = {},
     viewModel: SearchViewModel = viewModel(
-        factory = SearchViewModel.provideFactory(repository)
+        factory = SearchViewModel.provideFactory(
+            repository,
+            LocalContext.current.applicationContext
+        )
     )
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -79,26 +89,63 @@ fun SearchScreen(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            // Source selection chips
-            LazyRow(
+            // Source selection: [All sources] [<current source> v]
+            // The full list moved into SourcePickerSheet — a 36-chip LazyRow
+            // was unscannable and the selected chip could sit off-screen.
+            var showSourcePicker by rememberSaveable { mutableStateOf(false) }
+            val pinnedIds by viewModel.pinnedSourceIds.collectAsState()
+            val recentIds by viewModel.recentSourceIds.collectAsState()
+            val sourceHealth by SourceHealthStore.health.collectAsState()
+
+            Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Global search across every source (Phase 7)
-                item {
-                    FilterChip(
-                        selected = allSourcesMode,
-                        onClick = { viewModel.selectAllSources() },
-                        label = { Text("All sources") }
-                    )
-                }
-                items(viewModel.availableSources) { source ->
-                    FilterChip(
-                        selected = !allSourcesMode && selectedSource.id == source.id,
-                        onClick = { viewModel.selectSource(source) },
-                        label = { Text(source.name) }
-                    )
-                }
+                FilterChip(
+                    selected = allSourcesMode,
+                    onClick = { viewModel.selectAllSources() },
+                    label = { Text("All sources") }
+                )
+                FilterChip(
+                    selected = !allSourcesMode,
+                    onClick = { showSourcePicker = true },
+                    label = {
+                        Text(
+                            text = selectedSource.name,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    trailingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "Choose source"
+                        )
+                    }
+                )
+                // Anna's Archive is not a chapter source — it opens its own
+                // EPUB download/import screen, hence a chip that navigates.
+                FilterChip(
+                    selected = false,
+                    onClick = onAnnasArchiveClick,
+                    label = { Text("Anna's") }
+                )
+            }
+
+            if (showSourcePicker) {
+                SourcePickerSheet(
+                    sources = viewModel.availableSources,
+                    selectedSourceId = if (allSourcesMode) null else selectedSource.id,
+                    pinnedIds = pinnedIds,
+                    recentIds = recentIds,
+                    health = sourceHealth,
+                    onSelect = { source ->
+                        viewModel.selectSource(source)
+                        showSourcePicker = false
+                    },
+                    onTogglePin = { viewModel.togglePin(it) },
+                    onDismiss = { showSourcePicker = false }
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
