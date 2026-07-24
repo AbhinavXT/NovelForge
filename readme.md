@@ -65,9 +65,9 @@ The project is built on weekends. Reviews aren't instant. Be patient.
 
 ## Disclaimer 
 
-NovelForge does not own or have any affiliation with the books available through the app. All books are the property of their respective owners and are protected by copyright law. NovelForge is not responsible for any infringement of copyright or other intellectual property rights that may result from the use of the books available through the app. By using the app, you agree to use the books only for personal, non-commercial purposes and in compliance with all applicable laws and regulations.
-NovelForge is a reading tool, not a piracy tool. It connects to publicly-accessible sites you'd otherwise visit in a browser, fetches the page, and renders it cleanly. No content is hosted by NovelForge.
-If a site has a paid tier or Patreon, please support the author. Web novelists rely on it.
+NovelForge is a reader. It does not host, store, or distribute any content. It renders pages from sources you choose to add, the same pages your browser would load.
+All content accessed through the app belongs to its respective authors and rightsholders. You are responsible for how you use the app and for complying with the terms of the sites you connect to and the laws of your jurisdiction.
+If a work is available through an official platform, Patreon, or paid tier, please support the author there. Web novelists depend on it.
 
 ## License
 
