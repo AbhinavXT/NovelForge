@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.ManageSearch
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
@@ -47,6 +48,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -74,6 +77,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import android.widget.Toast
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import com.abhinavxt.novelforge.util.AnnotationExporter
 import com.abhinavxt.novelforge.util.EpubExporter
@@ -104,6 +108,8 @@ fun LibraryScreen(
     themePreferences: ThemePreferences,
     onNovelClick: (String) -> Unit,
     onTextSearchClick: () -> Unit = {},
+    /** Hands a pasted URL to the add-from-URL screen. */
+    onImportUrlClick: (String) -> Unit = {},
     networkMonitor: NetworkMonitor,
     viewModel: LibraryViewModel = viewModel(
         factory = LibraryViewModel.provideFactory(repository, LocalContext.current)
@@ -128,6 +134,11 @@ fun LibraryScreen(
     var categoriesNovel by remember { mutableStateOf<Novel?>(null) }
     var removeNovel by remember { mutableStateOf<Novel?>(null) }
     var showManageCategories by remember { mutableStateOf(false) }
+
+    // ── Add-to-library entry points ──────────────────────────────
+    // The FAB now offers two: an EPUB file, or any web page URL.
+    var addMenuExpanded by remember { mutableStateOf(false) }
+    var showUrlDialog by remember { mutableStateOf(false) }
 
     val exportScope = rememberCoroutineScope()
     val exportContext = LocalContext.current
@@ -270,18 +281,54 @@ fun LibraryScreen(
         }
     }
 
+    if (showUrlDialog) {
+        SaveWebPageDialog(
+            onDismiss = { showUrlDialog = false },
+            onConfirm = { url ->
+                showUrlDialog = false
+                onImportUrlClick(url)
+            }
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    epubPickerLauncher.launch(arrayOf("application/epub+zip"))
+            // Two ways to add a book now, so the FAB opens a menu instead
+            // of firing the file picker directly. Box is the anchor —
+            // DropdownMenu positions itself against its parent.
+            Box {
+                FloatingActionButton(onClick = { addMenuExpanded = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Add to library"
+                    )
                 }
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Import EPUB"
-                )
+                DropdownMenu(
+                    expanded = addMenuExpanded,
+                    onDismissRequest = { addMenuExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Import EPUB file") },
+                        leadingIcon = {
+                            Icon(Icons.Default.FileOpen, contentDescription = null)
+                        },
+                        onClick = {
+                            addMenuExpanded = false
+                            epubPickerLauncher.launch(arrayOf("application/epub+zip"))
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Save a web page") },
+                        leadingIcon = {
+                            Icon(Icons.Default.Link, contentDescription = null)
+                        },
+                        onClick = {
+                            addMenuExpanded = false
+                            showUrlDialog = true
+                        }
+                    )
+                }
             }
         }
     ) { paddingValues ->
@@ -1093,4 +1140,65 @@ private fun ManageCategoriesDialog(
         }
     )
 }
-    
+
+/**
+ * URL entry for "save a web page". Pre-fills from the clipboard when it
+ * holds something that looks like a link — the overwhelmingly common
+ * case is that the user just copied the address from a browser, and
+ * typing a URL on a phone keyboard is miserable.
+ *
+ * Validation here is deliberately loose: it only guards against an empty
+ * or obviously non-URL entry. NovelUrlResolver.normalize and the fetcher
+ * do the real work, and they report failures with much better messages
+ * than a dialog can.
+ */
+@Composable
+private fun SaveWebPageDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    val clipboard = LocalClipboardManager.current
+    var url by remember {
+        val pasted = clipboard.getText()?.text?.trim().orEmpty()
+        mutableStateOf(if (looksLikeUrl(pasted)) pasted else "")
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Save a web page") },
+        text = {
+            Column {
+                Text(
+                    text = "Paste a link and NovelForge will pull out the " +
+                            "readable text and add it to your library.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text("Page address") },
+                    placeholder = { Text("https://…") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(url.trim()) },
+                enabled = looksLikeUrl(url.trim())
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+/** Cheap sanity check: has a dot, no spaces, not empty. */
+private fun looksLikeUrl(text: String): Boolean =
+    text.isNotBlank() && !text.contains(' ') && text.contains('.')

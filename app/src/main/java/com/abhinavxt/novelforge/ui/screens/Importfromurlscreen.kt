@@ -35,28 +35,36 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.abhinavxt.novelforge.data.NovelRepository
+import com.abhinavxt.novelforge.data.source.SourceManager
+import com.abhinavxt.novelforge.data.web.WebArticle
 import com.abhinavxt.novelforge.ui.components.OfflineBanner
 import com.abhinavxt.novelforge.ui.viewmodel.ImportFromUrlViewModel
 import com.abhinavxt.novelforge.util.NetworkMonitor
 
 /**
- * Screen shown when the user shares a URL into NovelForge.
+ * Screen shown when the user shares or pastes a URL into NovelForge.
  *
  * States (rendered via when-on-uiState):
- *   - Resolving: normalizing URL + matching it to a source.
- *   - Fetching:  source matched, hitting the network for novel details.
- *   - Ready:     got the novel; shows a preview with "Add to library" CTA.
- *   - Unsupported: URL didn't match any known source.
- *   - Error:     network failure or novel not found at the URL.
+ *   - Resolving:    normalizing URL + matching it to a source.
+ *   - Fetching:     source matched, hitting the network for novel details.
+ *   - Ready:        got the novel; shows a preview with "Add to library" CTA.
+ *   - ReadingPage:  no source matched — extracting the page as an article.
+ *   - ArticleReady: extraction worked; preview with "Add to library" CTA.
+ *   - Saving/Saved: writing the article to the library.
+ *   - Error:        network failure, unreadable page, or novel not found.
  *
  * UX intent: one-screen flow, no modal-on-modal. The user shares from
  * their browser, sees a preview, taps Add. Adding jumps them into the
- * novel's detail screen so they can start reading immediately.
+ * novel's detail screen so they can start reading immediately. An
+ * unrecognised site is no longer a dead end — it falls through to the
+ * article path, which saves the page as a one-chapter book (and from
+ * there the detail screen's Export EPUB turns it into a real .epub).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,7 +75,7 @@ fun ImportFromUrlScreen(
     onBackClick: () -> Unit,
     onOpenNovel: (novelId: String, novelUrl: String) -> Unit,
     viewModel: ImportFromUrlViewModel = viewModel(
-        factory = ImportFromUrlViewModel.Factory(repository)
+        factory = ImportFromUrlViewModel.Factory(repository, LocalContext.current)
     )
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -121,15 +129,34 @@ fun ImportFromUrlScreen(
                     is ImportFromUrlViewModel.UiState.Fetching -> {
                         LoadingBlock("Getting novel details from ${s.sourceName}…")
                     }
-                    is ImportFromUrlViewModel.UiState.Unsupported -> {
-                        ErrorBlock(
-                            title = "Source not supported",
-                            message = "NovelForge doesn't support this website yet. " +
-                                    "You can search for the novel manually if another " +
-                                    "source has it.",
-                            url = s.url,
-                            onBack = onBackClick
+                    is ImportFromUrlViewModel.UiState.ReadingPage -> {
+                        LoadingBlock(
+                            if (s.host.isBlank()) "Reading the page…"
+                            else "Reading the page from ${s.host}…"
                         )
+                    }
+                    is ImportFromUrlViewModel.UiState.ArticleReady -> {
+                        ArticleReadyBlock(
+                            article = s.article,
+                            onSave = { viewModel.saveArticle() },
+                            onCancel = onBackClick
+                        )
+                    }
+                    is ImportFromUrlViewModel.UiState.Saving -> {
+                        LoadingBlock("Saving to your library…")
+                    }
+                    is ImportFromUrlViewModel.UiState.Saved -> {
+                        // Terminal state: hop straight to the new book. Done in
+                        // a LaunchedEffect rather than inside saveArticle() so
+                        // navigation stays out of the ViewModel, and keyed on
+                        // novelId so it fires exactly once.
+                        LaunchedEffect(s.novelId) {
+                            onOpenNovel(
+                                s.novelId,
+                                SourceManager.constructNovelUrl(s.novelId)
+                            )
+                        }
+                        LoadingBlock("Opening \"${s.title}\"…")
                     }
                     is ImportFromUrlViewModel.UiState.Error -> {
                         ErrorBlock(
@@ -137,7 +164,9 @@ fun ImportFromUrlScreen(
                             message = s.message,
                             url = s.url,
                             onBack = onBackClick,
-                            onRetry = { viewModel.retry() }
+                            onRetry = if (s.retryable) {
+                                { viewModel.retry() }
+                            } else null
                         )
                     }
                     is ImportFromUrlViewModel.UiState.Ready -> {
@@ -321,6 +350,100 @@ private fun ReadyBlock(
             Button(onClick = onAdd) {
                 Text(if (state.alreadyInLibrary) "Open" else "Add to library")
             }
+        }
+
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+/**
+ * Preview for the web-article path. Deliberately shows the first two
+ * extracted paragraphs rather than a description: extraction is
+ * heuristic, and seeing the actual opening text is how a user tells at
+ * a glance whether we grabbed the article or grabbed the cookie banner.
+ */
+@Composable
+private fun ArticleReadyBlock(
+    article: WebArticle,
+    onSave: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(24.dp))
+
+        // Lead image, if the page declared one. Wide rather than
+        // book-shaped — this is an article header, not a cover.
+        if (!article.coverImageUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = article.coverImageUrl,
+                contentDescription = article.title,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+                    .clip(RoundedCornerShape(12.dp))
+            )
+            Spacer(Modifier.height(20.dp))
+        }
+
+        Text(
+            text = article.title,
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(horizontal = 8.dp)
+        )
+        if (article.author.isNotBlank()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "by ${article.author}",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (article.siteName.isNotBlank()) {
+                InfoChip(label = article.siteName)
+            }
+            InfoChip(label = "${article.wordCount} words")
+            InfoChip(label = "${article.paragraphs.size} paragraphs")
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                article.paragraphs.take(2).forEachIndexed { index, paragraph ->
+                    if (index > 0) Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = paragraph,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 6,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            OutlinedButton(onClick = onCancel) { Text("Cancel") }
+            Spacer(Modifier.size(12.dp))
+            Button(onClick = onSave) { Text("Add to library") }
         }
 
         Spacer(Modifier.height(24.dp))

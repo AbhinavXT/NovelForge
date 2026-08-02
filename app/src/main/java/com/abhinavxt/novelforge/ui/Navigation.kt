@@ -398,6 +398,9 @@ fun NavigationHost(
                             onTextSearchClick = {
                                 navController.navigate(Screen.TextSearch.route)
                             },
+                            onImportUrlClick = { url ->
+                                navController.navigate(Screen.ImportFromUrl.createRoute(url))
+                            },
                             networkMonitor = networkMonitor
                         )
 

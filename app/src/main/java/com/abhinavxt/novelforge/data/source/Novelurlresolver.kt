@@ -56,6 +56,14 @@ object NovelUrlResolver {
         return match.value
     }
 
+    /**
+     * Public view of [normalizeUrl]. The web-page import path accepts URLs
+     * from sites we don't have patterns for, but it still wants the exact
+     * same canonicalisation (missing scheme, zero-width chars, scheme case)
+     * — duplicating those rules would let the two paths drift apart.
+     */
+    fun normalize(raw: String): String? = normalizeUrl(raw)
+
     // ─── Normalisation ─────────────────────────────────────────────
 
     /**
