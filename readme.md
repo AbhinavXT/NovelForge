@@ -6,7 +6,7 @@ NovelForge is a privacy-respecting Android reader for web novels and EPUBs. No a
 
 | Home | Library | Novel details | Reader | Audio | Quick settings |
 | --- | --- | --- | --- | --- | --- |
-| <img src="docs/images/homescreen.jpg" alt="Home screen" width="140"> | <img src="docs/images/libraryscreen.jpg" alt="Library screen" width="140"> | <img src="docs/images/noveldetailscreen.jpg" alt="Novel details screen" width="140"> | <img src="docs/images/readerscreen.jpg" alt="Reader screen" width="140"> | <img src="docs/images/audioscreen.jpg" alt="Audio screen" width="140"> | <img src="docs/images/quicksetting.jpg" alt="Quick settings screen" width="140"> |
+| <img src="docs/images/homescreen.png" alt="Home screen" width="140"> | <img src="docs/images/libraryscreen.png" alt="Library screen" width="140"> | <img src="docs/images/noveldetailscreen.png" alt="Novel details screen" width="140"> | <img src="docs/images/readerscreen.png" alt="Reader screen" width="140"> | <img src="docs/images/audioscreen.png" alt="Audio screen" width="140"> | <img src="docs/images/quicksetting.png" alt="Quick settings screen" width="140"> |
 
 ## What it does
 
