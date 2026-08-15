@@ -10,13 +10,14 @@ NovelForge is a privacy-respecting Android reader for web novels and EPUBs. No a
 
 ## What it does
 
-- Imports `.epub` files — and exports any novel back out as a clean EPUB
+- Imports `.epub`, `.txt`, and `.md` files — and exports any novel back out as a clean EPUB
 - **Character codex** — every recurring character, place, and faction indexed on-device, spoiler-safe: it only ever shows you what you've read
 - **Relationship graph** — who appears with whom, drawn as a live map that grows with your reading position
 - Full-text search across every downloaded chapter, plus in-chapter find with match highlighting
 - 11 themes, 8 reading fonts, configurable margins and line spacing
 - Scroll mode, paged mode, a teleprompter-style auto-scroll, and four tap-zone layouts
 - Neural text-to-speech with Piper, Kokoro, and your device's TTS
+- A pronunciation dictionary that can also *silence* symbols and words the engine reads aloud
 - Generates M4B audiobooks with chapter markers
 - Tracks reading stats locally (streaks, words, chapters, time)
 - Bookmarks and highlights with notes, exportable as JSON
@@ -28,7 +29,9 @@ NovelForge is a privacy-respecting Android reader for web novels and EPUBs. No a
 
 [Download the latest APK from Releases](https://github.com/abhinavxt/novelforge/releases/latest).
 
-Requires Android 8.0 (API 26) or later. Not on the Play Store.
+Requires Android 7.0 (API 24) or later. Not on the Play Store.
+
+Note: the APK ships `arm64-v8a` and `x86_64` only, so 32-bit ARM devices are not supported despite the API level.
 
 ```
 1. Download the APK
@@ -46,9 +49,14 @@ cd novelforge
 ./gradlew assembleRelease
 ```
 
-The signed APK lands in `app/build/outputs/apk/release/`.
+The APK lands in `app/build/outputs/apk/release/`. It is **unsigned** — there is
+no release `signingConfig` in the build, so you'll need to sign it yourself
+(or use `assembleDebug`) before it will install.
 
-Requirements: Android Studio Hedgehog or later, JDK 17, Android SDK 34.
+Requirements: Android Studio Ladybug or later, JDK 21, Android SDK 36.
+
+Gradle 8.14 does not run on JDK 25 — if Android Studio picks it up, set
+**Settings → Build Tools → Gradle → Gradle JDK** to 21.
 
 ## Stack
 
@@ -62,6 +70,8 @@ Bug reports and feature suggestions go in [Issues](https://github.com/abhinavxt/
 
 The project is built on weekends. Reviews aren't instant. Be patient.
 
+Contributions are accepted under GPL-3.0, the same license as the project.
+
 ## Disclaimer 
 
 NovelForge is a reader. It does not host, store, or distribute any content. It renders pages from sources you choose to add, the same pages your browser would load.
@@ -70,6 +80,16 @@ If a work is available through an official platform, Patreon, or paid tier, plea
 
 ## License
 
-[MIT](LICENSE) — do what you want with the code.
+[GPL-3.0](LICENSE).
 
-The novel content fetched by the app belongs to its authors. The MIT license covers NovelForge itself, not anything it reads.
+Use it, read it, fork it, ship it. If you distribute a modified version, that
+version has to be GPL-3.0 too, with its source available. That's the whole
+deal — it keeps forks open rather than closing them off.
+
+The scraper layer is derived from
+[QuickNovel](https://github.com/LagradOst/QuickNovel) by LagradOst, which is
+GPL-3.0; NovelForge inherits that license. Full attribution for every bundled
+dependency is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+The novel content fetched by the app belongs to its authors. The license
+covers NovelForge itself, not anything it reads.

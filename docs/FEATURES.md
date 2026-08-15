@@ -39,7 +39,7 @@ If you just want a quick summary, see the [README](../README.md).
     - [Currently supported sources](#currently-supported-sources)
     - [Downloading chapters for offline](#downloading-chapters-for-offline)
     - [Update checking](#update-checking)
-  - [EPUB import and export](#epub-import-and-export)
+  - [Importing and exporting books](#epub-import-and-export)
     - [Import](#import)
     - [Export](#export)
   - [Text-to-speech](#text-to-speech)
@@ -364,14 +364,33 @@ Quietly checks for new chapters in the background when you're on wifi. Off by de
 
 ## EPUB import and export
 
+<!-- anchor kept as #epub-import-and-export so existing links still resolve -->
+
 ### Import
 
-Drag any `.epub` file into the app, or use the system file picker (Library → top bar → "Import EPUB"). The app extracts:
+Use the system file picker (Library → top bar → "Import a book"). Three formats are supported: `.epub`, `.txt`, and `.md`.
+
+**EPUB.** The app extracts:
 
 - Cover image
-- Chapters (split by EPUB's navigation, not by manual splitting)
+- Chapters, one per spine entry
+- Chapter titles, taken from the chapter's own first heading (falling back to its `<title>`)
 - Author and title metadata
 - Description (if present in the EPUB metadata)
+
+**Plain text and Markdown.** There's no conversion step to EPUB — text files are parsed straight into the same internal shape an EPUB produces, so they behave identically once imported. Chapters are detected by trying five strategies in descending confidence, and the first one that yields at least two chapters wins:
+
+1. **Markdown headings** (`##`) — splits on the shallowest heading level that appears more than once, so a file with one `#` title and many `##` chapters splits on the chapters and uses the `#` as the book title
+2. **Setext headings** — a line underlined with `===` or `---`
+3. **Chapter lines** — `Chapter 12`, `CHAPTER XIV`, `Part Two`, `Prologue`, `Epilogue`, matched only when they occupy a whole line
+4. **Thematic breaks** — `***` or `* * *`, producing numbered parts
+5. **Size split** — a file with no structure at all stays one chapter unless it's very long, in which case it breaks at blank lines so no paragraph is ever cut in half
+
+YAML front matter is read for `title`, `author`, and `description`. Markdown formatting (emphasis, links, code spans, list markers) is stripped. Hard-wrapped lines are joined back into paragraphs — without that, a 70-column `.txt` would import as hundreds of one-line paragraphs.
+
+Text before the first heading — a dedication or epigraph — is kept and prepended to chapter one rather than discarded.
+
+**PDF is not supported.** Android has no built-in PDF text extraction, and the standard third-party library has been unmaintained since 2023 with known CVEs. PDF also stores page layout rather than text, so extraction produces markedly worse results than `.txt` or `.md`. Converting to EPUB first (Calibre does this well) gives a much better import.
 
 EPUBs and online novels live side-by-side in the same library. There's no separate "local books" section. The app distinguishes them internally for chapter-update logic (EPUBs don't get update checks).
 
@@ -429,7 +448,13 @@ The reader auto-scrolls to keep the currently-spoken paragraph in view, and high
 
 ### Foreground service
 
-TTS runs as a foreground service so it keeps playing when the screen is off or you switch apps. The notification has standard media controls (play/pause/skip). Audio focus is requested properly so phone calls pause TTS, and TTS pauses when other media (podcasts, music) starts.
+TTS runs as a foreground service so it keeps playing when the screen is off or you switch apps — including when you leave the reader screen entirely. Playback stops only when you stop it: the reader's stop button, the notification's stop action, or backing out of the reader.
+
+The notification is a full media player: novel cover as artwork, chapter as the title, novel as the byline, and previous / play-pause / next / stop controls. It's bound to a `MediaSession`, so on Android 13 and later the system renders its own player UI from it — the one with the output switcher — and hardware media keys, headset buttons, Bluetooth controls, and Android Auto all work.
+
+Audio focus is requested properly, so phone calls pause TTS and TTS pauses when other media starts. A partial wake lock is held while playing: a foreground service keeps the process alive but not the CPU, and `AudioTrack` has no equivalent of `MediaPlayer.setWakeMode()`, so without one the device could suspend between sentences while the next was being generated.
+
+There's no seek bar. Sentence count isn't time, and presenting it as a clock would be inaccurate; progress is shown as text instead.
 
 ---
 
@@ -442,9 +467,15 @@ Neural TTS engines sometimes mangle proper nouns - character names, place names,
 **Add an entry:**
 
 - _Word_ - what's in the text
-- _Pronunciation_ - how the engine should say it (try phonetic spellings, e.g. "AY-lin-druh" for "Aelindra")
+- _Speak as_ - how the engine should say it (try phonetic spellings, e.g. "AY-lin-druh" for "Aelindra")
 
-The dictionary applies before text reaches the TTS engine. Replacements are case-insensitive but preserve word boundaries (so "Lin" doesn't get replaced inside "Linda").
+The dictionary applies before text reaches the TTS engine. Replacements are case-insensitive but preserve word boundaries (so "Lin" doesn't get replaced inside "Linda"). All rules are applied in a single pass, so a replacement can never be re-matched by another rule, and longer entries win over shorter ones — "Li Wei" beats "Li".
+
+**Skipping instead of substituting.** Leave _Speak as_ empty and the word is removed from the spoken text rather than replaced. This is how you silence things the engine reads aloud by name — scraped chapters are full of `*emphasis*` markers, scene-break rules, and mojibake that come out as "asterisk" or worse.
+
+Rules whose entry contains no letters or digits are treated as symbols and matched anywhere, not just at word boundaries — necessary because a symbol usually sits flush against a letter, as in `*emphasis*`.
+
+**Skip common symbols** adds a preset covering `*`, `_`, `~`, `^`, `|`, backtick, `#`, bullets, arrows, and the Unicode replacement character. It deliberately excludes `.` `,` `!` `?` `;` `:` and quotes: engines don't verbalise those, they use them for intonation and pauses. Removing `?` doesn't silence anything — it flattens the rising pitch of a question. You can still add them by hand if you want.
 
 **Per-engine override:** some entries work better for system TTS than for Piper, or vice versa. The dictionary is currently shared across engines - entries you add affect all of them. If this becomes a problem in practice, per-engine dictionaries are on the roadmap.
 
@@ -604,7 +635,9 @@ Whatever's set here is the starting point for new novels; per-novel changes are 
 - **Source code** - opens the GitHub repo
 - **Report a bug** - opens GitHub Issues
 - **Pronunciation Dictionary** - separate screen for managing entries (also reachable from Quick Settings)
-- **License** - MIT
+- **License** - GPL-3.0, with a link to the full text and to the source repository
+
+GPL-3.0 §5(d) requires an interactive program that displays legal notices to keep displaying them, so this entry isn't decorative — it's how the app satisfies that. It must show the license and point users to the corresponding source.
 
 ---
 
