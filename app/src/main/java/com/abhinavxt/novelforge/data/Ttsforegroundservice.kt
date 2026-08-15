@@ -18,6 +18,8 @@ import com.abhinavxt.novelforge.MainActivity
 import com.abhinavxt.novelforge.R
 import com.abhinavxt.novelforge.data.tts.AudioFocusHelper
 import com.abhinavxt.novelforge.util.Logger
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * Foreground Service for TTS playback.
@@ -39,16 +41,57 @@ class TTSForegroundService : Service() {
         private const val ACTION_STOP = "STOP_TTS"
         private const val ACTION_PREV = "PREV_TTS"
         private const val ACTION_NEXT = "NEXT_TTS"
+        private const val ACTION_REFRESH_META = "REFRESH_META_TTS"
 
         // Track latest notification state for rebuilds
         @Volatile var lastTitle: String = "Novel Forge"
             private set
         @Volatile var lastSubtitle: String = "Playing..."
             private set
+        @Volatile var lastChapter: String = ""
+            private set
+        @Volatile var lastCoverUrl: String? = null
+            private set
 
-        fun start(context: Context, title: String = "Reading...") {
+        /**
+         * Decoded cover art, keyed by the URL it came from.
+         *
+         * updateNotification() fires once per SENTENCE, so decoding here would
+         * mean a full image decode several times a minute for a picture that
+         * only changes when the novel does. One entry is enough: only one book
+         * plays at a time.
+         */
+        @Volatile private var artCache: Pair<String, android.graphics.Bitmap>? = null
+
+        /**
+         * Compat token for the platform MediaSession, published by the running
+         * service. buildNotification is in the companion (it is called
+         * statically from updateNotification) so it cannot read the instance
+         * field directly.
+         */
+        @Volatile private var compatToken:
+                android.support.v4.media.session.MediaSessionCompat.Token? = null
+
+        fun cachedArt(url: String?): android.graphics.Bitmap? =
+            artCache?.takeIf { it.first == url }?.second
+
+        fun putArt(url: String, bitmap: android.graphics.Bitmap) {
+            artCache = url to bitmap
+        }
+
+        fun start(
+            context: Context,
+            title: String = "Reading...",
+            chapter: String = "",
+            coverUrl: String? = null
+        ) {
+            lastTitle = title
+            lastChapter = chapter
+            lastCoverUrl = coverUrl
             val intent = Intent(context, TTSForegroundService::class.java).apply {
                 putExtra("title", title)
+                putExtra("chapter", chapter)
+                putExtra("cover", coverUrl)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -57,13 +100,36 @@ class TTSForegroundService : Service() {
             }
         }
 
+        /**
+         * Ask the running service to republish session metadata and reload
+         * cover art. Sent as an intent because the caller (TTSManager) holds
+         * no reference to the service instance.
+         */
+        fun refreshMetadata(context: Context) {
+            runCatching {
+                context.startService(
+                    Intent(context, TTSForegroundService::class.java)
+                        .apply { action = ACTION_REFRESH_META }
+                )
+            }
+        }
+
         fun stop(context: Context) {
             context.stopService(Intent(context, TTSForegroundService::class.java))
         }
 
-        fun updateNotification(context: Context, title: String, progress: String, isPlaying: Boolean = true) {
+        fun updateNotification(
+            context: Context,
+            title: String,
+            progress: String,
+            isPlaying: Boolean = true,
+            chapter: String = lastChapter,
+            coverUrl: String? = lastCoverUrl
+        ) {
             lastTitle = title
             lastSubtitle = progress
+            lastChapter = chapter
+            lastCoverUrl = coverUrl
             try {
                 val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 notificationManager.notify(NOTIFICATION_ID, buildNotification(context, title, progress, isPlaying))
@@ -86,29 +152,50 @@ class TTSForegroundService : Service() {
             val nextPending = actionPending(context, ACTION_NEXT, 4)
             val stopPending = actionPending(context, ACTION_STOP, 1)
 
-            return NotificationCompat.Builder(context, CHANNEL_ID)
-                .setContentTitle(title)
-                .setContentText(subtitle)
-                .setSubText("Novel Forge")
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+            // Media-notification convention: the TRACK goes in the title and
+            // the ARTIST underneath. The chapter is the track here, the novel
+            // is the artist -- the reverse of what this used to do.
+            val headline = lastChapter.ifBlank { title }
+            val byline = if (lastChapter.isBlank()) subtitle else "$title  •  $subtitle"
+
+            val style = androidx.media.app.NotificationCompat.MediaStyle()
+                // THE important line. From Android 13 the system discards the
+                // app's notification layout for media and renders its own
+                // player built from the MediaSession -- artwork, seek area,
+                // output switcher. Without the token there is no session to
+                // build from, so it fell back to a plain text notification.
+                // targetSdk is 36, so this path is the normal one.
+                .setShowActionsInCompactView(0, 1, 2)
+                .setShowCancelButton(true)
+                .setCancelButtonIntent(stopPending)
+            compatToken?.let { style.setMediaSession(it) }
+
+            val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setContentTitle(headline)
+                .setContentText(byline)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setLargeIcon(cachedArt(lastCoverUrl))
                 .setOngoing(true)
                 .setContentIntent(openPending)
-                .addAction(android.R.drawable.ic_media_previous, "Prev", prevPending)
+                .addAction(R.drawable.ic_media_prev, "Previous", prevPending)
                 .addAction(
-                    if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+                    if (isPlaying) R.drawable.ic_media_pause else R.drawable.ic_media_play,
                     if (isPlaying) "Pause" else "Play",
                     togglePending
                 )
-                .addAction(android.R.drawable.ic_media_next, "Next", nextPending)
-                .addAction(android.R.drawable.ic_delete, "Stop", stopPending)
-                .setStyle(
-                    androidx.media.app.NotificationCompat.MediaStyle()
-                        .setShowActionsInCompactView(0, 1, 2)
-                )
+                .addAction(R.drawable.ic_media_next, "Next", nextPending)
+                .addAction(R.drawable.ic_media_close, "Stop", stopPending)
+                .setStyle(style)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .build()
+                // Rebuilt once per sentence. Without this the notification can
+                // re-alert on every rebuild on some OEM skins.
+                .setOnlyAlertOnce(true)
+                // "3 minutes ago" on a player is noise.
+                .setShowWhen(false)
+
+            return builder.build()
         }
 
         private fun actionPending(context: Context, action: String, requestCode: Int): PendingIntent {
@@ -131,6 +218,21 @@ class TTSForegroundService : Service() {
     // use from onStartCommand / onCreate.
     private var audioFocusHelper: AudioFocusHelper? = null
 
+    // ── CPU wake lock ───────────────────────────────────────────
+    // A foreground service keeps the PROCESS alive; it does not keep the CPU
+    // awake. MediaPlayer has setWakeMode() for this; AudioTrack, which the
+    // Sherpa engine writes to, has no equivalent -- so the device could
+    // suspend in the gap between sentences while the next one was being
+    // generated, stalling playback until something else woke the CPU.
+    //
+    // PARTIAL_WAKE_LOCK: CPU stays on, screen and keyboard do not.
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
+
+    // Cover art loading only. Cancelled in onDestroy.
+    private val serviceScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+    )
+
     inner class LocalBinder : Binder() {
         fun getService(): TTSForegroundService = this@TTSForegroundService
     }
@@ -140,6 +242,37 @@ class TTSForegroundService : Service() {
         createNotificationChannel()
         setupMediaSession()
         setupAudioFocus()
+    }
+
+    /**
+     * Held only while actually playing, and always released in [onDestroy].
+     *
+     * The timeout is a safety net, not the intended lifetime: if this service
+     * is ever killed in a way that skips onDestroy, an un-timed wake lock
+     * would keep the CPU awake until reboot and drain the battery flat. Two
+     * hours comfortably exceeds any single listening session while bounding
+     * the worst case.
+     */
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        runCatching {
+            val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            wakeLock = pm.newWakeLock(
+                android.os.PowerManager.PARTIAL_WAKE_LOCK,
+                "NovelForge::TTSPlayback"
+            ).apply {
+                setReferenceCounted(false)
+                acquire(2 * 60 * 60 * 1000L)
+            }
+            Logger.d(TAG, "Wake lock acquired")
+        }.onFailure { Logger.e(TAG, "Wake lock acquire failed", it) }
+    }
+
+    private fun releaseWakeLock() {
+        runCatching {
+            wakeLock?.takeIf { it.isHeld }?.release()
+        }.onFailure { Logger.e(TAG, "Wake lock release failed", it) }
+        wakeLock = null
     }
 
     /**
@@ -160,8 +293,15 @@ class TTSForegroundService : Service() {
         val ttsManager = getTtsManager()
 
         when (intent?.action) {
+            ACTION_REFRESH_META -> {
+                updateMetadata()
+                lastCoverUrl?.takeIf { it.isNotBlank() }?.let { loadCoverArt(it) }
+                return START_NOT_STICKY
+            }
+
             ACTION_STOP -> {
                 ttsManager?.stop()
+                releaseWakeLock()
                 // User-initiated stop. Release focus entirely — we're done.
                 audioFocusHelper?.abandon()
                 updatePlaybackState(PlaybackState.STATE_STOPPED)
@@ -175,6 +315,7 @@ class TTSForegroundService : Service() {
                         // can have it while we're paused. If/when the user
                         // resumes, we re-request.
                         ttsManager.pause()
+                        releaseWakeLock()
                         audioFocusHelper?.abandon()
                         updatePlaybackState(PlaybackState.STATE_PAUSED)
                         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -185,21 +326,22 @@ class TTSForegroundService : Service() {
                         // denying playback on tap would be worse UX than
                         // playing over whatever's happening.
                         audioFocusHelper?.request()
+                        acquireWakeLock()
                         ttsManager.resume()
                         updatePlaybackState(PlaybackState.STATE_PLAYING)
                         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                         nm.notify(NOTIFICATION_ID, buildNotification(this, lastTitle, lastSubtitle, true))
                     }
                 }
-                return START_STICKY
+                return START_NOT_STICKY
             }
             ACTION_PREV -> {
                 ttsManager?.skipToPrevious()
-                return START_STICKY
+                return START_NOT_STICKY
             }
             ACTION_NEXT -> {
                 ttsManager?.skipToNext()
-                return START_STICKY
+                return START_NOT_STICKY
             }
         }
 
@@ -207,18 +349,30 @@ class TTSForegroundService : Service() {
         lastTitle = title
         startForeground(NOTIFICATION_ID, buildNotification(this, title, "Starting...", true))
         updatePlaybackState(PlaybackState.STATE_PLAYING)
+        acquireWakeLock()
+        updateMetadata()
+        lastCoverUrl?.takeIf { it.isNotBlank() }?.let { loadCoverArt(it) }
 
         // Initial focus request on playback start. If TTSManager wasn't
         // available when setupAudioFocus ran, try again now.
         if (audioFocusHelper == null) setupAudioFocus()
         audioFocusHelper?.request()
 
-        return START_STICKY
+        // NOT sticky. With START_STICKY the system restarts this service after
+        // a process kill with a null Intent -- so it fell through to here and
+        // called startForeground(), posting a "Reading..." notification for
+        // playback that no longer exists and cannot be resumed. There is no
+        // state to restore from a null Intent, so declining the restart is
+        // both honest and less confusing.
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onDestroy() {
+        serviceScope.cancel()
+        releaseWakeLock()
+
         // Release audio focus — if service dies while we hold focus,
         // the system thinks NovelForge is still a contender and won't
         // give full focus to the next app cleanly.
@@ -314,6 +468,14 @@ class TTSForegroundService : Service() {
             isActive = true
         }
 
+        // Bridge the platform token to the AndroidX one MediaStyle needs.
+        // Assigned OUT here rather than inside the apply block above, where
+        // `sessionToken` would resolve to MediaSession's own read-only
+        // property instead of the companion field.
+        compatToken = mediaSession?.sessionToken?.let {
+            android.support.v4.media.session.MediaSessionCompat.Token.fromToken(it)
+        }
+
         updatePlaybackState(PlaybackState.STATE_PLAYING)
     }
 
@@ -326,6 +488,77 @@ class TTSForegroundService : Service() {
             Logger.w(TAG, "Failed to refresh notification: ${e.message}")
         }
     }
+
+    /**
+     * Publish metadata to the MediaSession.
+     *
+     * From Android 13 the system media player reads TITLE / ARTIST / ART from
+     * here, not from the notification's own fields — so with no metadata set
+     * the player rendered blank regardless of what the notification said.
+     *
+     * Cheap to call: the bitmap is cached and everything else is short
+     * strings. Called when the chapter changes, not per sentence.
+     */
+    private fun updateMetadata() {
+        val chapter = lastChapter.ifBlank { lastTitle }
+        val art = cachedArt(lastCoverUrl)
+        mediaSession?.setMetadata(
+            android.media.MediaMetadata.Builder()
+                .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, chapter)
+                .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, lastTitle)
+                .putString(android.media.MediaMetadata.METADATA_KEY_ALBUM, "NovelForge")
+                .putString(
+                    android.media.MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,
+                    lastSubtitle
+                )
+                .apply {
+                    if (art != null) {
+                        putBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART, art)
+                    }
+                }
+                // Deliberately NO METADATA_KEY_DURATION. Supplying one makes
+                // the system draw a time scrubber, and TTS has no meaningful
+                // millisecond duration — sentence count is not time, and
+                // faking it would render as a wrong, un-seekable clock.
+                // Progress stays in the subtitle where it is honest.
+                .build()
+        )
+    }
+
+    /**
+     * Fetch the novel cover for use as album art.
+     *
+     * Coil rather than BitmapFactory: covers are either a local file path
+     * (EPUB imports) or a remote URL (scraped sources), and Coil already
+     * handles both plus disk caching. allowHardware(false) is required —
+     * hardware bitmaps cannot cross the Binder boundary into a notification.
+     */
+    private fun loadCoverArt(url: String) {
+        if (cachedArt(url) != null) return
+        serviceScope.launch {
+            runCatching {
+                val request = coil.request.ImageRequest.Builder(this@TTSForegroundService)
+                    .data(url)
+                    .size(512)
+                    .allowHardware(false)
+                    .build()
+                val result = coil.Coil.imageLoader(this@TTSForegroundService).execute(request)
+                (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+            }.onSuccess { bitmap ->
+                if (bitmap != null) {
+                    putArt(url, bitmap)
+                    updateMetadata()
+                    refreshNotification(isCurrentlyPlaying())
+                    Logger.d(TAG, "Cover art loaded")
+                }
+            }.onFailure {
+                Logger.w(TAG, "Cover art load failed: ${it.message}")
+            }
+        }
+    }
+
+    private fun isCurrentlyPlaying(): Boolean =
+        getTtsManager()?.state?.value == com.abhinavxt.novelforge.data.TTSState.PLAYING
 
     private fun updatePlaybackState(state: Int) {
         val actions = PlaybackState.ACTION_PLAY or

@@ -169,17 +169,49 @@ object EpubExporter {
 
     private fun chapterFileName(index: Int) = "chapter_%04d.xhtml".format(index + 1)
 
+    /**
+     * Escape the five XML entities AND drop characters that are illegal in
+     * XML 1.0 regardless of escaping.
+     *
+     * Chapter text is scraped from arbitrary web sources, which do carry stray
+     * control characters (form feed, NUL, unit separator) and occasionally lone
+     * surrogates from bad UTF-8 handling upstream. There is no escape sequence
+     * for these -- &#12; is itself invalid -- so a single one made the exported
+     * EPUB malformed XML. Verified: a reader rejects the chapter with
+     * "An invalid XML character (Unicode: 0xc) was found in the element
+     * content", and the export looked like it succeeded.
+     *
+     * Legal per XML 1.0 §2.2: tab, LF, CR, U+0020..U+D7FF, U+E000..U+FFFD, and
+     * the supplementary planes U+10000..U+10FFFF (as surrogate PAIRS).
+     */
     private fun escapeXml(s: String): String = buildString(s.length) {
-        for (c in s) {
-            when (c) {
-                '&' -> append("&amp;")
-                '<' -> append("&lt;")
-                '>' -> append("&gt;")
-                '"' -> append("&quot;")
-                '\'' -> append("&apos;")
-                else -> append(c)
+        var i = 0
+        while (i < s.length) {
+            val c = s[i]
+            when {
+                c == '&' -> append("&amp;")
+                c == '<' -> append("&lt;")
+                c == '>' -> append("&gt;")
+                c == '"' -> append("&quot;")
+                c == '\'' -> append("&apos;")
+                // Valid surrogate pair: emit both halves together.
+                Character.isHighSurrogate(c) && i + 1 < s.length &&
+                        Character.isLowSurrogate(s[i + 1]) -> {
+                    append(c); append(s[i + 1]); i++
+                }
+                isXmlLegal(c) -> append(c)
+                // Illegal: drop it. Replacing with U+FFFD would render as a
+                // visible tofu box in the middle of the prose.
+                else -> Unit
             }
+            i++
         }
+    }
+
+    private fun isXmlLegal(c: Char): Boolean {
+        val cp = c.code
+        return cp == 0x9 || cp == 0xA || cp == 0xD ||
+                (cp in 0x20..0xD7FF) || (cp in 0xE000..0xFFFD)
     }
 
     // ── Documents ────────────────────────────────────────────────

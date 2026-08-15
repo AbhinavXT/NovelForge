@@ -18,7 +18,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -104,12 +103,21 @@ fun ReaderScreen(
         }
     }
 
-    // Stop TTS when leaving screen
-    DisposableEffect(Unit) {
-        onDispose {
-            ttsManager.stop()
-        }
-    }
+    // NOTE: there is deliberately NO DisposableEffect stopping TTS here.
+    //
+    // There used to be one, and it was the cause of "playback stops and the
+    // novel closes when the screen is off". onDispose cannot distinguish
+    //   (a) the user navigated away            -- stop is correct
+    //   (b) Android destroyed the Activity      -- stop is very wrong
+    // and (b) is exactly what happens under memory pressure with the screen
+    // off. The composition was disposed, TTS was stopped, the foreground
+    // service was torn down, and on unlock the Activity came back recreated
+    // with no reader on it.
+    //
+    // Stopping is now user-initiated only: the back handler below, the stop
+    // button in the TTS panel, and the notification's stop action. Continuing
+    // to play while the screen is off is the entire point of running a
+    // media-playback foreground service.
 
     // Auto-continue TTS when chapter changes
     LaunchedEffect(uiState) {
@@ -120,7 +128,8 @@ fun ReaderScreen(
             ttsManager.autoContinueIfNeeded(
                 text = state.chapter.content,
                 novelTitle = state.chapter.novelTitle,
-                chapterTitle = state.chapter.chapterTitle
+                chapterTitle = state.chapter.chapterTitle,
+                coverUrl = state.chapter.novelCoverUrl
             ) {
                 // On this chapter complete, go to next with auto-retry
                 // enabled — relative to the chapter being READ, which
@@ -310,4 +319,3 @@ private fun ErrorScreen(
         }
     }
 }
-

@@ -15,7 +15,9 @@ import com.abhinavxt.novelforge.data.model.Novel
 import com.abhinavxt.novelforge.data.tts.AudioExporter
 import com.abhinavxt.novelforge.data.tts.M4BAudiobookBuilder
 import com.abhinavxt.novelforge.util.Logger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -66,7 +68,13 @@ class NovelDetailViewModel(
 
     // ============ AUDIO EXPORT STATE ============
 
-    val audioExporter: AudioExporter = AudioExporter(appContext, ttsManager)
+    // Shared application-scoped instance -- NOT a fresh AudioExporter per
+    // ViewModel. The exporter's scope intentionally outlives this VM so
+    // exports continue in the background; constructing a new one here meant
+    // that on returning to this screen the UI observed a fresh Idle state
+    // while the real export ran on an orphaned, uncancellable instance.
+    val audioExporter: AudioExporter =
+        (appContext as NovelReaderApplication).audioExporter
     val exportState: StateFlow<AudioExporter.ExportState> = audioExporter.exportState
     val exportingChapters: StateFlow<Set<String>> = audioExporter.exportingChapters
 
@@ -522,6 +530,9 @@ class NovelDetailViewModel(
             // Pre-fetch content for all unexported chapters
             val chaptersToExport = mutableListOf<AudioExporter.ExportChapterInfo>()
             for (chapter in novel.chapters) {
+                // See note on the catch below: without this the loop runs to
+                // completion after the ViewModel is cleared.
+                ensureActive()
                 if (chapter.id in exported) continue
                 try {
                     val content = repository.getChapterContent(novelId, chapter.id, chapter.url)
@@ -534,8 +545,18 @@ class NovelDetailViewModel(
                             )
                         )
                     }
+                } catch (e: CancellationException) {
+                    // Must rethrow. viewModelScope is cancelled the moment the
+                    // user leaves this screen; swallowing it here let the loop
+                    // spin through every remaining chapter and then still reach
+                    // audioExporter.launchExportAll() below -- which is a plain
+                    // (non-suspending) call, so it ran even though the coroutine
+                    // was already cancelled. Result: a background export the
+                    // user never asked for, from a screen they already left,
+                    // built from whatever partial content had been collected.
+                    throw e
                 } catch (e: Exception) {
-                    Logger.w("NovelDetailVM", "Failed to fetch content for ${chapter.title}")
+                    Logger.w("NovelDetailVM", "Failed to fetch content for ${chapter.title}", e)
                 }
             }
 
@@ -573,6 +594,7 @@ class NovelDetailViewModel(
 
             val chaptersToExport = mutableListOf<AudioExporter.ExportChapterInfo>()
             for (chapter in novel.chapters) {
+                ensureActive()
                 if (chapter.number !in fromChapter..toChapter) continue
                 if (chapter.id in exported) continue
                 try {
@@ -586,8 +608,18 @@ class NovelDetailViewModel(
                             )
                         )
                     }
+                } catch (e: CancellationException) {
+                    // Must rethrow. viewModelScope is cancelled the moment the
+                    // user leaves this screen; swallowing it here let the loop
+                    // spin through every remaining chapter and then still reach
+                    // audioExporter.launchExportAll() below -- which is a plain
+                    // (non-suspending) call, so it ran even though the coroutine
+                    // was already cancelled. Result: a background export the
+                    // user never asked for, from a screen they already left,
+                    // built from whatever partial content had been collected.
+                    throw e
                 } catch (e: Exception) {
-                    Logger.w("NovelDetailVM", "Failed to fetch content for ${chapter.title}")
+                    Logger.w("NovelDetailVM", "Failed to fetch content for ${chapter.title}", e)
                 }
             }
 

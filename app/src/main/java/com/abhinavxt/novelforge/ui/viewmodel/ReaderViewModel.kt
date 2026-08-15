@@ -68,6 +68,8 @@ data class ActiveChapterInfo(
 data class ReaderChapterData(
     val novelId: String,
     val novelTitle: String,
+    // Local file path or remote URL — used as media-notification album art.
+    val novelCoverUrl: String? = null,
     val chapterId: String,
     val chapterTitle: String,
     val chapterNumber: Int,
@@ -118,6 +120,11 @@ class ReaderViewModel(
     // Cache the chapter list for navigation
     private var chapterList: List<Chapter> = emptyList()
     private var novelTitle: String = ""
+
+    // Cached for the media notification's album art. Held as a field rather
+    // than re-queried in loadChapter(), which has no `novel` in scope and
+    // runs on every chapter turn — one lookup per novel is enough.
+    private var novelCoverUrl: String? = null
 
     // Track retry count
     private var retryCount = 0
@@ -219,6 +226,7 @@ class ReaderViewModel(
                     chapterList = dbChapters
                     val novel = repository.getNovelById(novelId)
                     novelTitle = novel?.title ?: ""
+                    novelCoverUrl = novel?.coverUrl
                 } else {
                     fetchChapterListFromNetwork()
                 }
@@ -240,6 +248,7 @@ class ReaderViewModel(
             if (novel != null) {
                 chapterList = novel.chapters
                 novelTitle = novel.title
+                novelCoverUrl = novel.coverUrl
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -317,6 +326,7 @@ class ReaderViewModel(
                     val chapterData = ReaderChapterData(
                         novelId = novelId,
                         novelTitle = novelTitle,
+                        novelCoverUrl = novelCoverUrl,
                         chapterId = currentChapterId,
                         chapterTitle = currentChapter?.title ?: "Chapter",
                         chapterNumber = currentChapter?.number ?: (currentIndex + 1).coerceAtLeast(1),
@@ -875,9 +885,11 @@ class ReaderViewModel(
     override fun onCleared() {
         super.onCleared()
         prefetcher?.clear()
-        viewModelScope.launch {
-            statsTracker?.endSession()
-        }
+        // NOT viewModelScope: ViewModel.clear() cancels it BEFORE calling
+        // onCleared(), so a coroutine launched here would be dead on arrival
+        // and the session would never reach the DB. endSessionDetached()
+        // runs on the tracker's own process-lifetime scope instead.
+        statsTracker?.endSessionDetached()
     }
 
     companion object {

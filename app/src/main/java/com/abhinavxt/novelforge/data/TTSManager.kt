@@ -139,6 +139,12 @@ class TTSManager(private val context: Context) {
     // Now-playing metadata for notification
     private var nowPlayingNovelTitle: String = ""
     private var nowPlayingChapterTitle: String = ""
+    private var nowPlayingCoverUrl: String? = null
+
+    // The chapter last pushed to the media session. updateNotification runs
+    // once per SENTENCE; session metadata only needs rewriting when the
+    // chapter actually changes, so this guards against redundant churn.
+    private var lastPushedChapter: String? = null
 
     // ── Backward compatibility ───────────────────────────────────
     // These expose the Android Voice objects for the existing voice picker UI.
@@ -384,6 +390,7 @@ class TTSManager(private val context: Context) {
         startFromParagraph: Int = 0,
         novelTitle: String = "",
         chapterTitle: String = "",
+        coverUrl: String? = null,
         onComplete: (() -> Unit)? = null
     ) {
         if (!activeEngine.isReady) {
@@ -400,6 +407,7 @@ class TTSManager(private val context: Context) {
         // Save metadata for notification
         if (novelTitle.isNotBlank()) nowPlayingNovelTitle = novelTitle
         if (chapterTitle.isNotBlank()) nowPlayingChapterTitle = chapterTitle
+        if (coverUrl != null) nowPlayingCoverUrl = coverUrl
 
         segments = parseTextIntoSegments(text)
 
@@ -426,7 +434,13 @@ class TTSManager(private val context: Context) {
         onChapterComplete = onComplete
         _state.value = TTSState.LOADING
 
-        TTSForegroundService.start(context, nowPlayingNovelTitle.ifBlank { "Novel Forge" })
+        lastPushedChapter = null
+        TTSForegroundService.start(
+            context,
+            nowPlayingNovelTitle.ifBlank { "Novel Forge" },
+            nowPlayingChapterTitle,
+            nowPlayingCoverUrl
+        )
 
         speakCurrentSentence()
     }
@@ -436,11 +450,21 @@ class TTSManager(private val context: Context) {
         startFromParagraph: Int = 0,
         novelTitle: String = "",
         chapterTitle: String = "",
+        coverUrl: String? = null,
         onComplete: (() -> Unit)? = null
     ) {
         if (_shouldAutoContinue.value) {
             Logger.d("TTSManager", "Auto-continuing TTS for new chapter")
-            speakText(text, startFromParagraph, novelTitle, chapterTitle, onComplete)
+            // Named args: speakText gained a coverUrl parameter before
+            // onComplete, so a positional call would bind the lambda to it.
+            speakText(
+                text = text,
+                startFromParagraph = startFromParagraph,
+                novelTitle = novelTitle,
+                chapterTitle = chapterTitle,
+                coverUrl = coverUrl,
+                onComplete = onComplete
+            )
         }
     }
 
@@ -476,8 +500,15 @@ class TTSManager(private val context: Context) {
                 TTSForegroundService.updateNotification(
                     context,
                     nowPlayingNovelTitle.ifBlank { "Novel Forge" },
-                    subtitle
+                    subtitle,
+                    isPlaying = true,
+                    chapter = nowPlayingChapterTitle,
+                    coverUrl = nowPlayingCoverUrl
                 )
+                if (lastPushedChapter != nowPlayingChapterTitle) {
+                    lastPushedChapter = nowPlayingChapterTitle
+                    TTSForegroundService.refreshMetadata(context)
+                }
                 // Pre-generate the next sentence while this one plays
                 pregenerateNextSentences()
             },
@@ -597,6 +628,8 @@ class TTSManager(private val context: Context) {
         _shouldAutoContinue.value = false
         nowPlayingNovelTitle = ""
         nowPlayingChapterTitle = ""
+        nowPlayingCoverUrl = null
+        lastPushedChapter = null
         TTSForegroundService.stop(context)
     }
 
@@ -615,6 +648,8 @@ class TTSManager(private val context: Context) {
         _shouldAutoContinue.value = false
         nowPlayingNovelTitle = ""
         nowPlayingChapterTitle = ""
+        nowPlayingCoverUrl = null
+        lastPushedChapter = null
 
         TTSForegroundService.stop(context)
     }

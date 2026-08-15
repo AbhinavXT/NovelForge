@@ -959,6 +959,7 @@ internal fun ReaderContent(
                     chapterContent = activeSegment.content,
                     novelTitle = chapter.novelTitle,
                     chapterTitle = activeSegment.title,
+                    novelCoverUrl = chapter.novelCoverUrl,
                     canGoNext = canGoNext,
                     startFromParagraph = if (settings.readingMode == ReadingMode.SCROLL) {
                         (listState.firstVisibleItemIndex - activeSegment.startIndex)

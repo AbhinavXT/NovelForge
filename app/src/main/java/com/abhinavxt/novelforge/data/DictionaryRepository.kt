@@ -111,6 +111,29 @@ object DictionaryRepository {
         }
     }
 
+    /**
+     * Read a string field as a real nullable String.
+     *
+     * Android's `JSONObject.optString(name, fallback)` does NOT return the
+     * fallback for a JSON null. It calls `JSON.toString(JSONObject.NULL)`,
+     * which is `String.valueOf(...)` on the NULL sentinel — yielding the
+     * four-character string "null". So `optString("phonetic", null)` returned
+     * "null" rather than null, `takeIf { it.isNotBlank() }` let it through,
+     * and the definition popup rendered the word with "null" underneath it.
+     *
+     * The `it != "null"` guard that was already on the `example` field is the
+     * same bug, patched at one site only.
+     *
+     * `isNull()` is the correct test: true for both an absent key and an
+     * explicit JSON null.
+     */
+    private fun JSONObject.stringOrNull(key: String): String? {
+        if (isNull(key)) return null
+        return optString(key, "")
+            .trim()
+            .takeIf { it.isNotEmpty() && it != "null" }
+    }
+
     private fun parseEnglishResponse(word: String, json: String): DictionaryResult? {
         return try {
             val array = JSONArray(json)
@@ -118,12 +141,11 @@ object DictionaryRepository {
 
             val entry = array.getJSONObject(0)
 
-            val phonetic = entry.optString("phonetic", null)
+            val phonetic = entry.stringOrNull("phonetic")
                 ?: entry.optJSONArray("phonetics")?.let { phonetics ->
                     (0 until phonetics.length())
                         .map { phonetics.getJSONObject(it) }
-                        .firstOrNull { it.optString("text", "").isNotBlank() }
-                        ?.optString("text")
+                        .firstNotNullOfOrNull { it.stringOrNull("text") }
                 }
 
             val definitions = mutableListOf<DictionaryDefinition>()
@@ -131,7 +153,7 @@ object DictionaryRepository {
 
             for (i in 0 until meanings.length()) {
                 val meaning = meanings.getJSONObject(i)
-                val partOfSpeech = meaning.optString("partOfSpeech", "")
+                val partOfSpeech = meaning.stringOrNull("partOfSpeech").orEmpty()
                 val defs = meaning.optJSONArray("definitions") ?: continue
 
                 val limit = minOf(2, defs.length())
@@ -140,9 +162,8 @@ object DictionaryRepository {
                     definitions.add(
                         DictionaryDefinition(
                             partOfSpeech = partOfSpeech,
-                            definition = def.optString("definition", ""),
-                            example = def.optString("example", null)
-                                ?.takeIf { it.isNotBlank() && it != "null" }
+                            definition = def.stringOrNull("definition").orEmpty(),
+                            example = def.stringOrNull("example")
                         )
                     )
                 }
@@ -152,7 +173,7 @@ object DictionaryRepository {
             if (definitions.isEmpty()) return null
 
             DictionaryResult(
-                word = entry.optString("word", word),
+                word = entry.stringOrNull("word") ?: word,
                 phonetic = phonetic?.takeIf { it.isNotBlank() },
                 definitions = definitions,
                 language = "English"
@@ -228,7 +249,7 @@ object DictionaryRepository {
 
             for (i in 0 until languageEntries.length()) {
                 val entry = languageEntries.getJSONObject(i)
-                val partOfSpeech = entry.optString("partOfSpeech", "")
+                val partOfSpeech = entry.stringOrNull("partOfSpeech").orEmpty()
                     .replace("_", " ")
                     .replaceFirstChar { it.uppercase() }
                 val defs = entry.optJSONArray("definitions") ?: continue
@@ -236,7 +257,7 @@ object DictionaryRepository {
                 val limit = minOf(2, defs.length())
                 for (j in 0 until limit) {
                     val def = defs.getJSONObject(j)
-                    val definitionHtml = def.optString("definition", "")
+                    val definitionHtml = def.stringOrNull("definition").orEmpty()
                     val definitionText = stripHtml(definitionHtml)
 
                     if (definitionText.isBlank()) continue
@@ -278,7 +299,7 @@ object DictionaryRepository {
         val parsedExamples = def.optJSONArray("parsedExamples")
         if (parsedExamples != null && parsedExamples.length() > 0) {
             val example = parsedExamples.getJSONObject(0)
-            val text = example.optString("example", "")
+            val text = example.stringOrNull("example").orEmpty()
             val clean = stripHtml(text).trim()
             if (clean.isNotBlank()) return clean
         }
@@ -286,8 +307,9 @@ object DictionaryRepository {
         // Try examples (plain array of strings)
         val examples = def.optJSONArray("examples")
         if (examples != null && examples.length() > 0) {
-            val text = examples.optString(0, "")
-            val clean = stripHtml(text).trim()
+            // JSONArray, not JSONObject — same JSON-null hazard, own guard.
+            val text = if (examples.isNull(0)) "" else examples.optString(0, "")
+            val clean = stripHtml(text).trim().takeIf { it != "null" }.orEmpty()
             if (clean.isNotBlank()) return clean
         }
 

@@ -29,6 +29,8 @@ import com.abhinavxt.novelforge.data.source.BrowseFilters
 import com.abhinavxt.novelforge.data.source.BrowseSource
 import com.abhinavxt.novelforge.data.source.FilterOption
 import com.abhinavxt.novelforge.util.Logger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import java.security.MessageDigest
 
@@ -37,6 +39,29 @@ class NfSourceAdapter(
     /** Short, stable, underscore-free prefix. Becomes part of DB keys — never change it. */
     override val id: String,
 ) : BrowseSource {
+
+    // ── Threading contract ──────────────────────────────────────────────
+    // Every suspend override below wraps its body in withContext(IO).
+    //
+    // This is the ONLY dispatch boundary for all 18 adapter-backed sources.
+    // NovelRepository's network functions are plain `suspend` with no
+    // withContext, and none of the ported MainAPI providers dispatch either,
+    // so without this the whole chain inherits the caller's dispatcher --
+    // which for viewModelScope.launch { } is Dispatchers.Main.immediate.
+    //
+    // Two things then run on the main thread:
+    //   1. NfResponse.text -> okhttpResponse.body.string(). Call.await() uses
+    //      enqueue(), so OkHttp resumes us as soon as HEADERS arrive; the body
+    //      is still unread. .string() therefore blocks on a socket read, which
+    //      trips BlockGuard -> NetworkOnMainThreadException. That lands in the
+    //      broad `catch (e: Exception)` below and is logged as a generic
+    //      "failed", so it looks like a dead source rather than a threading bug.
+    //   2. Jsoup.parse() -- once in the provider (.document) and twice more
+    //      here (stripHtml + htmlToPlainText). Pure CPU on a full HTML page.
+    //
+    // IO rather than Default because the block is network-dominated; the Jsoup
+    // parses ride along rather than paying a second dispatch hop.
+    // ────────────────────────────────────────────────────────────────────
 
     override val canBrowse: Boolean = api.hasMainPage
 
@@ -90,26 +115,27 @@ class NfSourceAdapter(
         source = this@NfSourceAdapter.name,
     )
 
-    override suspend fun search(query: String): List<NovelPreview> {
-        return try {
-            rateLimited { api.search(query) }
-                .orEmpty()
-                .distinctBy { it.url }
-                .map { it.toPreview() }
-        } catch (e: Exception) {
-            Logger.e("NfSource", "[$id] search failed: ${e.message}")
-            emptyList()
+    override suspend fun search(query: String): List<NovelPreview> =
+        withContext(Dispatchers.IO) {
+            try {
+                rateLimited { api.search(query) }
+                    .orEmpty()
+                    .distinctBy { it.url }
+                    .map { it.toPreview() }
+            } catch (e: Exception) {
+                Logger.e("NfSource", "[$id] search failed: ${e.message}")
+                emptyList()
+            }
         }
-    }
 
     override suspend fun browse(
         page: Int,
         category: String?,
         orderBy: String?,
         tag: String?,
-    ): List<NovelPreview> {
-        if (!api.hasMainPage) return emptyList()
-        return try {
+    ): List<NovelPreview> = withContext(Dispatchers.IO) {
+        if (!api.hasMainPage) return@withContext emptyList()
+        try {
             rateLimited {
                 api.loadMainPage(
                     page = page,
@@ -135,50 +161,62 @@ class NfSourceAdapter(
             tag = api.tags.firstOrNull()?.second,
         )
 
-    override suspend fun getNovelDetails(novelUrl: String): Novel? {
-        return try {
-            val response = rateLimited { api.load(novelUrl) } as? StreamResponse ?: return null
-            // Derive the id from the URL the app asked for, so it round-trips
-            // exactly with what search()/getPopular() produced.
-            val novelId = novelIdFromUrl(novelUrl)
+    override suspend fun getNovelDetails(novelUrl: String): Novel? =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = rateLimited { api.load(novelUrl) } as? StreamResponse
+                    ?: return@withContext null
+                // Derive the id from the URL the app asked for, so it round-trips
+                // exactly with what search()/getPopular() produced.
+                val novelId = novelIdFromUrl(novelUrl)
 
-            val chapters = response.data
-                .distinctBy { it.url }
-                .mapIndexed { index, chapterData ->
-                    Chapter(
-                        id = chapterIdFor(novelId, chapterData.url),
-                        number = index + 1,
-                        title = chapterData.name.ifBlank { "Chapter ${index + 1}" },
-                        url = chapterData.url,
-                    )
-                }
+                val chapters = response.data
+                    .distinctBy { it.url }
+                    .mapIndexed { index, chapterData ->
+                        Chapter(
+                            id = chapterIdFor(novelId, chapterData.url),
+                            number = index + 1,
+                            title = chapterData.name.ifBlank { "Chapter ${index + 1}" },
+                            url = chapterData.url,
+                        )
+                    }
 
-            Novel(
-                id = novelId,
-                title = response.name,
-                author = response.author ?: "",
-                coverUrl = response.posterUrl,
-                description = response.synopsis ?: "",
-                source = name,
-                status = response.status?.displayName ?: "Unknown",
-                chapters = chapters,
-            )
-        } catch (e: Exception) {
-            Logger.e("NfSource", "[$id] getNovelDetails failed: ${e.message}")
-            null
+                Novel(
+                    id = novelId,
+                    title = response.name,
+                    author = response.author ?: "",
+                    coverUrl = response.posterUrl,
+                    description = response.synopsis ?: "",
+                    source = name,
+                    status = response.status?.displayName ?: "Unknown",
+                    chapters = chapters,
+                )
+            } catch (e: Exception) {
+                Logger.e("NfSource", "[$id] getNovelDetails failed: ${e.message}")
+                null
+            }
         }
-    }
 
-    override suspend fun getChapterContent(chapterUrl: String): String? {
-        return try {
-            val html = rateLimited { api.loadHtml(chapterUrl) } ?: return null
-            val cleaned = stripHtml(html, chapterName = null, chapterIndex = null, stripAuthorNotes = true)
-            htmlToPlainText(cleaned).ifBlank { null }
-        } catch (e: Exception) {
-            Logger.e("NfSource", "[$id] getChapterContent failed: ${e.message}")
-            null
+    override suspend fun getChapterContent(chapterUrl: String): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                val html = rateLimited { api.loadHtml(chapterUrl) }
+                    ?: return@withContext null
+                // Both stripHtml() and htmlToPlainText() run a full Jsoup.parse.
+                // Kept inside the IO block deliberately -- they are the two most
+                // expensive CPU operations in a chapter load.
+                val cleaned = stripHtml(
+                    html,
+                    chapterName = null,
+                    chapterIndex = null,
+                    stripAuthorNotes = true
+                )
+                htmlToPlainText(cleaned).ifBlank { null }
+            } catch (e: Exception) {
+                Logger.e("NfSource", "[$id] getChapterContent failed: ${e.message}")
+                null
+            }
         }
-    }
 
     /**
      * NovelForge's reader consumes plain text with paragraphs separated by blank

@@ -40,7 +40,14 @@ object HtmlText {
             .replace("&#39;", "'")
             .replace("&apos;", "'")
             .replace(Regex("&#(\\d+);")) { m ->
-                m.groupValues[1].toIntOrNull()?.toChar()?.toString() ?: ""
+                // appendCodePoint, NOT toChar(). Char is 16-bit, so toChar()
+                // silently truncated anything above U+FFFF: &#128512; (emoji)
+                // decoded to code point 62976, a private-use glyph that renders
+                // as tofu. Publishers do put emoji in <dc:description>.
+                m.groupValues[1].toIntOrNull()
+                    ?.takeIf { it in 1..0x10FFFF }
+                    ?.let { cp -> StringBuilder().appendCodePoint(cp).toString() }
+                    ?: ""
             }
             // Normalize whitespace: collapse spaces and blank-line runs
             .replace(Regex("[ \\t]+"), " ")

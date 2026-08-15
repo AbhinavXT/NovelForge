@@ -13,6 +13,7 @@ import com.abhinavxt.novelforge.data.TTSManager
 import com.abhinavxt.novelforge.data.ThemePreferences
 import com.abhinavxt.novelforge.data.UpdateChecker
 import com.abhinavxt.novelforge.data.database.AppDatabase
+import com.abhinavxt.novelforge.data.tts.AudioExporter
 import com.abhinavxt.novelforge.data.tts.M4BAudiobookBuilder
 import com.abhinavxt.novelforge.util.Logger
 import com.abhinavxt.novelforge.util.NetworkMonitor
@@ -99,6 +100,19 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
 
     // M4B audiobook builder — encodes WAV chapters into chaptered M4B
     val m4bBuilder by lazy { M4BAudiobookBuilder(this) }
+
+    // ── Audio exporter ──────────────────────────────────────────
+    // App-scoped, same as m4bBuilder above, and for the same reason: it
+    // owns a CoroutineScope that deliberately outlives the ViewModel so
+    // exports keep running in the background.
+    //
+    // It used to be constructed per NovelDetailViewModel, which meant a
+    // user who navigated away mid-export got a FRESH exporter on return --
+    // showing Idle while the old one was still writing files, with its
+    // scope orphaned and its cancel() unreachable. Two exporters could
+    // also fight over the shared progress notification (id 2001).
+    // One instance = state survives navigation and cancel() always works.
+    val audioExporter by lazy { AudioExporter(this, ttsManager) }
 
     // ── Volume key event bus ────────────────────────────────────
     // MainActivity posts here on volume key press; ReaderScreen collects.

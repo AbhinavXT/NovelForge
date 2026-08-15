@@ -177,7 +177,10 @@ object PronunciationIO {
                 }
                 val word = obj.optString("word", "").trim()
                 val replacement = obj.optString("replacement", "").trim()
-                if (word.isEmpty() || replacement.isEmpty()) {
+                // An empty replacement is a SKIP rule ("do not speak this"),
+                // not a malformed row. Rejecting it here silently dropped
+                // every symbol-skip entry from any shared dictionary.
+                if (word.isEmpty()) {
                     malformed++
                     continue
                 }

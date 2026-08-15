@@ -58,6 +58,18 @@ object Logger {
         if (isDebug) Log.w(DEFAULT_TAG, message)
     }
 
+    // Throwable overloads, mirroring e(). Without these, callers that had an
+    // exception in hand could only log e.message -- and several exception types
+    // worth seeing here (NetworkOnMainThreadException among them) carry a null
+    // message, so those failures logged as literally nothing.
+    fun w(tag: String, message: String, throwable: Throwable) {
+        if (isDebug) Log.w(tag, message, throwable)
+    }
+
+    fun w(message: String, throwable: Throwable) {
+        if (isDebug) Log.w(DEFAULT_TAG, message, throwable)
+    }
+
     fun v(tag: String, message: String) {
         if (isDebug) Log.v(tag, message)
     }

@@ -24,9 +24,10 @@ class PronunciationManager(private val dao: PronunciationDao) {
     private val _entries = MutableStateFlow<List<PronunciationEntry>>(emptyList())
     val entries: StateFlow<List<PronunciationEntry>> = _entries.asStateFlow()
 
-    // Pre-compiled patterns (#26) — rebuilt when cache changes
+    // Pre-compiled rules — rebuilt when cache changes
     @Volatile
-    private var compiledPatterns: List<Pair<Regex, String>> = emptyList()
+    private var compiled: PronunciationRules.Compiled =
+        PronunciationRules.compile(emptyList())
 
     // Flow for UI observation
     fun getAllEntries(): Flow<List<PronunciationEntry>> = dao.getAllEntries()
@@ -44,41 +45,38 @@ class PronunciationManager(private val dao: PronunciationDao) {
     }
 
     /**
-     * Pre-compile regex patterns from entries.
-     * Uses Unicode-aware word boundaries (#27) instead of \b
-     * so accented names (Naëlith) and CJK names match correctly.
+     * Pre-compile the dictionary into a single matcher.
+     *
+     * Matching semantics live in [PronunciationRules] so they can be unit
+     * tested without Room. Notably it compiles ONE combined pattern rather
+     * than one per entry: the old per-entry loop ran each pattern over the
+     * previous result, so a replacement could be re-matched by a later rule
+     * (Li→Lee plus Lee→Leigh turned "Li" into "Leigh").
      */
     private fun rebuildPatterns(entries: List<PronunciationEntry>) {
-        compiledPatterns = entries.map { entry ->
-            val escaped = Regex.escape(entry.word)
-            // Unicode-aware boundaries: match at start/end of string, whitespace, or punctuation
-            val pattern = Regex(
-                "(?<=^|[\\s\\p{Punct}])$escaped(?=$|[\\s\\p{Punct}])",
-                RegexOption.IGNORE_CASE
-            )
-            pattern to entry.replacement
-        }
+        compiled = PronunciationRules.compile(
+            entries.map { PronunciationRules.Rule(it.word, it.replacement) }
+        )
     }
 
     /**
      * Apply all pronunciation replacements to the given text.
-     * Uses pre-compiled patterns — no regex compilation per call.
+     * Uses the pre-compiled matcher — no regex compilation per call.
+     *
+     * An entry with an empty replacement is removed from the spoken text
+     * rather than substituted, which is how symbol skipping works.
      */
-    fun applyReplacements(text: String): String {
-        val patterns = compiledPatterns
-        if (patterns.isEmpty()) return text
+    fun applyReplacements(text: String): String = compiled.apply(text)
 
-        var result = text
-        for ((pattern, replacement) in patterns) {
-            result = pattern.replace(result, replacement)
-        }
-        return result
-    }
-
+    /**
+     * @param replacement empty means "do not speak this at all". Only [word]
+     *   is required -- the old guard rejected a blank replacement, which made
+     *   it impossible to silence a symbol or an unwanted word.
+     */
     suspend fun addEntry(word: String, replacement: String): Long {
         val trimmedWord = word.trim()
         val trimmedReplacement = replacement.trim()
-        if (trimmedWord.isBlank() || trimmedReplacement.isBlank()) return -1
+        if (trimmedWord.isBlank()) return -1
 
         val id = withContext(Dispatchers.IO) {
             dao.insertEntry(
@@ -117,6 +115,29 @@ class PronunciationManager(private val dao: PronunciationDao) {
             _entries.value = entries
             rebuildPatterns(entries)
         }
+    }
+
+    /**
+     * Add every symbol in [PronunciationRules.SKIPPABLE_SYMBOLS] as a skip
+     * rule, leaving any the user already configured untouched.
+     *
+     * @return how many rules were actually added
+     */
+    suspend fun addSymbolSkipPreset(): Int {
+        val existing = withContext(Dispatchers.IO) { dao.getAllEntriesOnce() }
+            .map { it.word }
+            .toSet()
+        val missing = PronunciationRules.SKIPPABLE_SYMBOLS.filter { it !in existing }
+        if (missing.isEmpty()) return 0
+
+        withContext(Dispatchers.IO) {
+            missing.forEach { symbol ->
+                dao.insertEntry(PronunciationEntry(word = symbol, replacement = ""))
+            }
+        }
+        refreshCache()
+        Logger.d("PronunciationMgr", "Added ${missing.size} symbol skip rules")
+        return missing.size
     }
 
     // Backup/restore

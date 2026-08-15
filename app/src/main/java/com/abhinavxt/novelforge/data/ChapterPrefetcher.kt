@@ -1,10 +1,12 @@
 package com.abhinavxt.novelforge.data
 
 import com.abhinavxt.novelforge.util.Logger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
 /**
@@ -88,6 +90,12 @@ class ChapterPrefetcher(
             val endIndex = (startIndex + PREFETCH_COUNT).coerceAtMost(chapters.size)
 
             for (i in startIndex until endIndex) {
+                // clear() cancels prefetchJob, but the catch blocks below used
+                // to swallow the resulting CancellationException and let the
+                // loop run to completion. Check explicitly at the top of each
+                // iteration so cancellation takes effect immediately.
+                ensureActive()
+
                 val chapter = chapters[i]
 
                 // Skip if already cached
@@ -99,6 +107,8 @@ class ChapterPrefetcher(
                         Logger.d(TAG, "Skip prefetch ${chapter.id} — already downloaded")
                         continue
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     // DB check failed, try fetching anyway
                 }
@@ -112,6 +122,11 @@ class ChapterPrefetcher(
                         }
                         Logger.d(TAG, "Prefetched ${chapter.id} (${content.length} chars)")
                     }
+                } catch (e: CancellationException) {
+                    // Cancellation is NOT a prefetch failure — it means the
+                    // reader was closed. Rethrow so the job actually stops
+                    // instead of spinning through the remaining chapters.
+                    throw e
                 } catch (e: Exception) {
                     // Prefetch is best-effort — don't crash on failure
                     Logger.e(TAG, "Prefetch failed for ${chapter.id}", e)

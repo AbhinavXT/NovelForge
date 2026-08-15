@@ -87,6 +87,21 @@ class PronunciationViewModel(
         viewModelScope.launch { manager.addEntry(word, replacement) }
     }
 
+    /**
+     * One-tap: silence the symbols TTS engines tend to read aloud by name
+     * ("asterisk", "underscore"). Skips any the user already has.
+     */
+    fun addSymbolSkipPreset() {
+        viewModelScope.launch {
+            val added = manager.addSymbolSkipPreset()
+            _transientMessage.value = when (added) {
+                0 -> "Symbol skip rules are already set up"
+                1 -> "Added 1 symbol skip rule"
+                else -> "Added $added symbol skip rules"
+            }
+        }
+    }
+
     fun updateEntry(id: Long, word: String, replacement: String) {
         viewModelScope.launch { manager.updateEntry(id, word, replacement) }
     }

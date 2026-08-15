@@ -26,6 +26,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -190,6 +191,17 @@ fun PronunciationScreen(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
+                    text = "Leave \"Speak as\" empty to skip something instead — " +
+                            "useful for symbols like * that get read aloud by name.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedButton(onClick = { viewModel.addSymbolSkipPreset() }) {
+                    Text("Skip common symbols")
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
                     text = "Tap the import icon above to load a shared dictionary.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -208,6 +220,18 @@ fun PronunciationScreen(
                         onEdit = { editingEntry = entry },
                         onDelete = { viewModel.deleteEntry(entry.id) }
                     )
+                }
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { viewModel.addSymbolSkipPreset() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                    ) {
+                        Text("Skip common symbols")
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
             }
         }
@@ -415,11 +439,16 @@ private fun PronunciationEntryItem(
                     text = entry.word,
                     style = MaterialTheme.typography.bodyLarge
                 )
+                val isSkip = entry.replacement.isBlank()
                 Text(
-                    text = "→ ${entry.replacement}",
+                    text = if (isSkip) "skipped — not spoken" else "→ ${entry.replacement}",
                     style = MaterialTheme.typography.bodyMedium,
                     fontStyle = FontStyle.Italic,
-                    color = MaterialTheme.colorScheme.primary
+                    color = if (isSkip) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
                 )
             }
             IconButton(onClick = onEdit) {
@@ -490,12 +519,24 @@ private fun PronunciationEntryDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = if (replacement.isBlank() && word.isNotBlank()) {
+                        "\"$word\" will be skipped and not spoken aloud."
+                    } else {
+                        "Leave \"Speak as\" empty to skip a symbol or word entirely."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         },
         confirmButton = {
             TextButton(
                 onClick = { onConfirm(word, replacement) },
-                enabled = word.isNotBlank() && replacement.isNotBlank()
+                // Only the word is required. An empty replacement is the
+                // meaningful "skip this" case, not invalid input.
+                enabled = word.isNotBlank()
             ) { Text("Save") }
         },
         dismissButton = {

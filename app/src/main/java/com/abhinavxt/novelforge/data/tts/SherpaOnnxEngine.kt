@@ -72,11 +72,33 @@ class SherpaOnnxEngine(
     // Pre-generates the next sentence's audio while current one plays,
     // eliminating the gap between sentences.
 
-    private val audioCache = java.util.concurrent.ConcurrentHashMap<String, GeneratedAudioData>()
     private var pregenerateJob: Job? = null
     private val lookAheadCount = 3  // pre-generate this many sentences ahead
     private val maxCacheSize = 5
     private val generateMutex = Mutex()  // native tts.generate() is NOT thread-safe
+
+    /**
+     * Look-ahead cache, insertion-ordered (eldest first).
+     *
+     * Ordering is load-bearing. This was a ConcurrentHashMap, which has NO
+     * defined iteration order, so the old "evict oldest" loop actually
+     * evicted whatever the bucket layout happened to yield -- sometimes the
+     * sentence that was about to play. That forced a synchronous regenerate
+     * and reintroduced exactly the inter-sentence gap this cache exists to
+     * remove, intermittently and unreproducibly.
+     *
+     * LinkedHashMap.removeEldestEntry evicts the true eldest on put, in
+     * O(1). synchronizedMap because the pre-generation coroutine and
+     * speak() both touch it from different threads.
+     */
+    private val audioCache: MutableMap<String, GeneratedAudioData> =
+        java.util.Collections.synchronizedMap(
+            object : LinkedHashMap<String, GeneratedAudioData>(16, 0.75f, false) {
+                override fun removeEldestEntry(
+                    eldest: MutableMap.MutableEntry<String, GeneratedAudioData>
+                ): Boolean = size > maxCacheSize
+            }
+        )
 
     /**
      * Pre-generate audio for multiple upcoming sentences. Called by TTSManager
@@ -127,13 +149,10 @@ class SherpaOnnxEngine(
             Logger.d(TAG, "Pre-generating: ${text.take(40)}...")
             val audio = ttsWrapper?.generate(text, speakerId, speed)
             if (audio != null && audio.samples.isNotEmpty()) {
+                // Eviction is automatic (removeEldestEntry) and correctly
+                // drops the eldest entry, never the imminent one.
                 audioCache[cacheKey] = audio
                 Logger.d(TAG, "Cached audio (${audioCache.size}/$maxCacheSize): ${text.take(40)}...")
-                // Evict oldest if cache too large
-                while (audioCache.size > maxCacheSize) {
-                    val oldest = audioCache.keys.firstOrNull() ?: break
-                    audioCache.remove(oldest)
-                }
             }
         } catch (e: Exception) {
             Logger.w(TAG, "Pre-generation failed (non-fatal): ${e.message}")

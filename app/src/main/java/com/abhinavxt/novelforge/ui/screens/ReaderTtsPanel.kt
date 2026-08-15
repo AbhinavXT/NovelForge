@@ -78,6 +78,7 @@ internal fun TTSControlsPanel(
     chapterContent: String,
     novelTitle: String,
     chapterTitle: String,
+    novelCoverUrl: String?,
     canGoNext: Boolean,
     startFromParagraph: Int,
     onNextChapter: () -> Unit,
@@ -299,7 +300,8 @@ internal fun TTSControlsPanel(
                                     text = chapterContent,
                                     startFromParagraph = startFromParagraph,
                                     novelTitle = novelTitle,
-                                    chapterTitle = chapterTitle
+                                    chapterTitle = chapterTitle,
+                                    coverUrl = novelCoverUrl
                                 ) {
                                     if (canGoNext) {
                                         onNextChapterWithRetry()
@@ -631,4 +633,3 @@ private fun VoiceItem(
         }
     }
 }
-

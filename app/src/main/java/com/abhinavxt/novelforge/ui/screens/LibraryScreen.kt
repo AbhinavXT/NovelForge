@@ -79,6 +79,7 @@ import android.widget.Toast
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import com.abhinavxt.novelforge.data.epub.DocumentFormat
 import com.abhinavxt.novelforge.util.AnnotationExporter
 import com.abhinavxt.novelforge.util.EpubExporter
 import kotlinx.coroutines.launch
@@ -246,11 +247,11 @@ fun LibraryScreen(
         )
     }
 
-    // File picker launcher for EPUB files
+    // File picker launcher for importable documents (.epub, .txt, .md)
     val epubPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
-        uri?.let { viewModel.importEpub(it) }
+        uri?.let { viewModel.importDocument(it) }
     }
 
     // Snackbar for import results
@@ -309,13 +310,13 @@ fun LibraryScreen(
                     onDismissRequest = { addMenuExpanded = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Import EPUB file") },
+                        text = { Text("Import book file") },
                         leadingIcon = {
                             Icon(Icons.Default.FileOpen, contentDescription = null)
                         },
                         onClick = {
                             addMenuExpanded = false
-                            epubPickerLauncher.launch(arrayOf("application/epub+zip"))
+                            epubPickerLauncher.launch(DocumentFormat.PICKER_MIME_TYPES)
                         }
                     )
                     DropdownMenuItem(
@@ -580,7 +581,7 @@ fun LibraryScreen(
                                     EmptyLibraryState(
                                         onImportClick = {
                                             epubPickerLauncher.launch(
-                                                arrayOf("application/epub+zip")
+                                                DocumentFormat.PICKER_MIME_TYPES
                                             )
                                         }
                                     )
@@ -725,7 +726,7 @@ private fun EmptyLibraryState(
                 modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Import EPUB")
+            Text("Import a book")
         }
     }
 }

@@ -290,13 +290,17 @@ class LibraryViewModel(
         ).apply()
     }
 
-    fun importEpub(uri: Uri) {
+    /**
+     * Import any supported document (.epub, .txt, .md). The importer picks the
+     * parser; all formats converge on the same persistence path.
+     */
+    fun importDocument(uri: Uri) {
         if (epubImporter == null) return
 
         viewModelScope.launch {
             _importState.value = ImportState.Importing
 
-            when (val result = epubImporter.importEpub(uri)) {
+            when (val result = epubImporter.importDocument(uri)) {
                 is EpubImporter.ImportResult.Success -> {
                     _importState.value = ImportState.Success(
                         title = result.title,
@@ -338,13 +342,19 @@ class LibraryViewModel(
             repository: NovelRepository,
             context: Context
         ): ViewModelProvider.Factory {
+            // Unwrap to applicationContext HERE rather than trusting the call
+            // site. LibraryScreen passes LocalContext.current, which is the
+            // Activity -- and this ViewModel survives configuration changes,
+            // so holding it would leak a destroyed Activity and its whole
+            // view tree on every rotation.
+            val appContext = context.applicationContext
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     return LibraryViewModel(
                         repository = repository,
-                        epubImporter = EpubImporter(context),
-                        appContext = context
+                        epubImporter = EpubImporter(appContext),
+                        appContext = appContext
                     ) as T
                 }
             }

@@ -3,7 +3,10 @@ package com.abhinavxt.novelforge.data
 import com.abhinavxt.novelforge.data.database.ReadingStatDao
 import com.abhinavxt.novelforge.data.database.ReadingStatEvent
 import com.abhinavxt.novelforge.util.Logger
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -34,6 +37,17 @@ class ReadingStatsTracker(private val dao: ReadingStatDao) {
     @Volatile private var activeSession: Session? = null
 
     /**
+     * Process-lifetime scope for flush-on-teardown work.
+     *
+     * [endSessionDetached] is called from ViewModel.onCleared(), at which
+     * point viewModelScope is ALREADY cancelled -- anything launched into
+     * it dies before the DB write happens. This tracker is an application
+     * singleton (NovelReaderApplication.readingStatsTracker), so its own
+     * scope outlives every ViewModel and the write actually lands.
+     */
+    private val trackerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
      * Start tracking a reading session for a chapter.
      * Automatically ends any previous session first.
      */
@@ -62,6 +76,17 @@ class ReadingStatsTracker(private val dao: ReadingStatDao) {
             recordSession(session)
             activeSession = null
         }
+    }
+
+    /**
+     * Fire-and-forget variant of [endSession] for teardown paths where the
+     * caller's scope is already cancelled (notably ViewModel.onCleared()).
+     *
+     * Safe to call from any thread; the mutex still serialises it against
+     * a concurrent startSession from a newly-opened chapter.
+     */
+    fun endSessionDetached() {
+        trackerScope.launch { endSession() }
     }
 
     /**
