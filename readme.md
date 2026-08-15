@@ -10,7 +10,6 @@ NovelForge is a privacy-respecting Android reader for web novels and EPUBs. No a
 
 ## What it does
 
-- Reads web novels from 7+ sources, with offline downloads
 - Imports `.epub` files — and exports any novel back out as a clean EPUB
 - **Character codex** — every recurring character, place, and faction indexed on-device, spoiler-safe: it only ever shows you what you've read
 - **Relationship graph** — who appears with whom, drawn as a live map that grows with your reading position
