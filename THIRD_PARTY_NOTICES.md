@@ -12,12 +12,11 @@ The scraper layer is derived from
 **GPL-3.0**. `data/source/nf/` is a QuickNovel compatibility layer, built so
 QuickNovel providers run essentially unmodified.
 
-| Component | Lines | Relationship |
-|---|---:|---|
-| `data/source/nf/` — `MainAPI`, `NfHttp`, `NfCloudflare`, `NfTools` | 1,424 | Compatibility layer for QuickNovel providers |
-| `data/source/providers/*Provider.kt` (17 files) | 5,655 | Ported providers |
-| `data/annas/Annasarchiveapi.kt` | 233 | Selectors ported from QuickNovel's `AnnasArchive.kt` |
-| **Total** | **~7,300** | ≈18% of the codebase |
+| Component                                                          |      Lines | Relationship                                 |
+| ------------------------------------------------------------------ | ---------: | -------------------------------------------- |
+| `data/source/nf/` — `MainAPI`, `NfHttp`, `NfCloudflare`, `NfTools` |      1,424 | Compatibility layer for QuickNovel providers |
+| `data/source/providers/*Provider.kt` (17 files)                    |      5,655 | Ported providers                             |
+| **Total**                                                          | **~7,100** | ≈17% of the codebase                         |
 
 The seven `*Source.kt` providers (2,535 lines) are original work.
 
@@ -33,16 +32,16 @@ makes NovelForge able to read anything at all came from their work.
 
 ## Bundled libraries
 
-| Project | License | Use |
-|---|---|---|
-| [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx) | Apache-2.0 | On-device neural TTS (bundled `.aar` + JNI native libs) |
-| [OkHttp](https://square.github.io/okhttp/) | Apache-2.0 | HTTP client |
-| [Okio](https://square.github.io/okio/) | Apache-2.0 | I/O (via OkHttp) |
-| [Jsoup](https://jsoup.org/) | MIT | HTML parsing |
-| [Gson](https://github.com/google/gson) | Apache-2.0 | JSON serialization for backup/restore |
-| [Coil](https://coil-kt.github.io/coil/) | Apache-2.0 | Image loading |
-| [AndroidX / Jetpack Compose](https://developer.android.com/jetpack) | Apache-2.0 | UI, Room, WorkManager, Glance, DataStore, Media |
-| [Kotlin & kotlinx.coroutines](https://kotlinlang.org/) | Apache-2.0 | Language and concurrency |
+| Project                                                             | License    | Use                                                     |
+| ------------------------------------------------------------------- | ---------- | ------------------------------------------------------- |
+| [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx)                | Apache-2.0 | On-device neural TTS (bundled `.aar` + JNI native libs) |
+| [OkHttp](https://square.github.io/okhttp/)                          | Apache-2.0 | HTTP client                                             |
+| [Okio](https://square.github.io/okio/)                              | Apache-2.0 | I/O (via OkHttp)                                        |
+| [Jsoup](https://jsoup.org/)                                         | MIT        | HTML parsing                                            |
+| [Gson](https://github.com/google/gson)                              | Apache-2.0 | JSON serialization for backup/restore                   |
+| [Coil](https://coil-kt.github.io/coil/)                             | Apache-2.0 | Image loading                                           |
+| [AndroidX / Jetpack Compose](https://developer.android.com/jetpack) | Apache-2.0 | UI, Room, WorkManager, Glance, DataStore, Media         |
+| [Kotlin & kotlinx.coroutines](https://kotlinlang.org/)              | Apache-2.0 | Language and concurrency                                |
 
 Apache-2.0 requires preserving copyright and license notices, and forwarding
 any `NOTICE` file the dependency ships. Sherpa-ONNX is the one to check
@@ -56,22 +55,22 @@ repository — Gradle's license tooling will not see it.
 Shipped in `res/font/`. Redistribution terms differ, so these are listed
 individually:
 
-| Font | License |
-|---|---|
-| Literata | SIL Open Font License 1.1 |
-| Merriweather | SIL Open Font License 1.1 |
-| Lora | SIL Open Font License 1.1 |
-| Crimson Text | SIL Open Font License 1.1 |
-| Source Sans | SIL Open Font License 1.1 |
-| Noto Sans | SIL Open Font License 1.1 |
+| Font           | License                   |
+| -------------- | ------------------------- |
+| Literata       | SIL Open Font License 1.1 |
+| Merriweather   | SIL Open Font License 1.1 |
+| Lora           | SIL Open Font License 1.1 |
+| Crimson Text   | SIL Open Font License 1.1 |
+| Source Sans    | SIL Open Font License 1.1 |
+| Noto Sans      | SIL Open Font License 1.1 |
 | JetBrains Mono | SIL Open Font License 1.1 |
-| Outfit | SIL Open Font License 1.1 |
+| Outfit         | SIL Open Font License 1.1 |
 | Dancing Script | SIL Open Font License 1.1 |
-| OpenDyslexic | SIL Open Font License 1.1 |
+| OpenDyslexic   | SIL Open Font License 1.1 |
 
 The OFL requires the license text to accompany the fonts and forbids selling
 the fonts on their own — both fine for a bundled app. It also requires that
-any *modified* version be renamed. If any of these were subset or otherwise
+any _modified_ version be renamed. If any of these were subset or otherwise
 altered, confirm the Reserved Font Name rules still hold.
 
 **Verify these before publishing.** The list is inferred from the font names,
@@ -118,6 +117,6 @@ Practical checklist, not a restatement of the license:
 - **Contributions are GPL-3.0.** Worth stating in the README so contributors
   know what they're agreeing to.
 
-One thing GPL-3.0 does *not* require: making the app free of charge, or
+One thing GPL-3.0 does _not_ require: making the app free of charge, or
 accepting every contribution. It constrains distribution terms, not the
 project's direction.

@@ -61,7 +61,6 @@ fun SearchScreen(
     repository: NovelRepository,
     onNovelClick: (NovelPreview) -> Unit,
     networkMonitor: NetworkMonitor,
-    onAnnasArchiveClick: () -> Unit = {},
     onBrowseClick: () -> Unit = {},
     viewModel: SearchViewModel = viewModel(
         factory = SearchViewModel.provideFactory(
@@ -133,13 +132,6 @@ fun SearchScreen(
                             contentDescription = "Choose source"
                         )
                     }
-                )
-                // Anna's Archive is not a chapter source — it opens its own
-                // EPUB download/import screen, hence a chip that navigates.
-                FilterChip(
-                    selected = false,
-                    onClick = onAnnasArchiveClick,
-                    label = { Text("Anna's") }
                 )
             }
 

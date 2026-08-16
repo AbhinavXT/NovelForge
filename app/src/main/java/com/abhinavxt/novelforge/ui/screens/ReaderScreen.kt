@@ -167,7 +167,14 @@ fun ReaderScreen(
                 showTTSControls = showTTSControls,
                 onToggleTTSControls = { showTTSControls = !showTTSControls },
                 onBackClick = {
-                    ttsManager.stop()
+                    // Explicit exit -- the ONLY place this preference is
+                    // honoured. Deliberately not a DisposableEffect: onDispose
+                    // also fires when Android destroys the Activity under
+                    // memory pressure with the screen off, which would kill
+                    // playback for reasons the user never chose.
+                    if (!ttsSettings.continueOnExit) {
+                        ttsManager.stop()
+                    }
                     onBackClick()
                 },
                 // Active-relative: with stitching, "next/previous" means

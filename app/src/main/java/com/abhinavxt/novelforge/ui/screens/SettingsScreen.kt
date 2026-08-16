@@ -73,6 +73,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.abhinavxt.novelforge.NovelReaderApplication
 import com.abhinavxt.novelforge.data.BackupInfo
 import com.abhinavxt.novelforge.data.BackupManager
 import com.abhinavxt.novelforge.worker.AutoBackupWorker
@@ -568,6 +569,46 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Read through the app-scoped TTSManager rather than touching
+            // SharedPreferences directly, so its in-memory settings stay in
+            // sync -- a raw pref write here would be invisible to the running
+            // manager until the process restarted.
+            val ttsManager = remember(context) {
+                (context.applicationContext as NovelReaderApplication).ttsManager
+            }
+            val ttsSettingsState by ttsManager.settings.collectAsState()
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Keep playing when you leave a chapter",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = if (ttsSettingsState.continueOnExit) {
+                            "Playback continues in the background. Stop it from " +
+                                    "the notification or the reader's stop button."
+                        } else {
+                            "Playback stops when you go back from the reader."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = ttsSettingsState.continueOnExit,
+                    onCheckedChange = { ttsManager.setContinueOnExit(it) }
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 

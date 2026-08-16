@@ -44,7 +44,23 @@ data class TTSSettings(
     val sentencePauseMs: Long = 0L,
     val paragraphPauseMs: Long = 0L,
     val volume: Float = 1.0f,
-    val engineId: String = GoogleTTSEngine.ENGINE_ID  // NEW: persisted engine choice
+    val engineId: String = GoogleTTSEngine.ENGINE_ID,  // NEW: persisted engine choice
+
+    /**
+     * Keep speaking after the user leaves the reader screen.
+     *
+     * Default true: the foreground service exists precisely so playback can
+     * outlive the screen, which is how audiobook players behave. Off suits
+     * people who treat TTS as read-along and expect leaving to stop it.
+     *
+     * IMPORTANT for whoever wires this up next: check this ONLY on an explicit
+     * exit, i.e. the back handler. Never from a DisposableEffect/onDispose.
+     * onDispose cannot tell "user navigated away" apart from "Android
+     * destroyed the Activity under memory pressure", and the second happens
+     * routinely with the screen off -- that was the bug where playback died
+     * and the reader vanished mid-chapter.
+     */
+    val continueOnExit: Boolean = true
 )
 
 private data class TextSegment(
@@ -326,6 +342,7 @@ class TTSManager(private val context: Context) {
         val volume = prefs.getFloat("tts_volume", 1.0f)
         val engineId = prefs.getString("tts_engine", GoogleTTSEngine.ENGINE_ID)
             ?: GoogleTTSEngine.ENGINE_ID
+        val continueOnExit = prefs.getBoolean("tts_continue_on_exit", true)
 
         _settings.value = TTSSettings(
             speed = speed,
@@ -334,7 +351,8 @@ class TTSManager(private val context: Context) {
             sentencePauseMs = sentencePause,
             paragraphPauseMs = paragraphPause,
             volume = volume,
-            engineId = engineId
+            engineId = engineId,
+            continueOnExit = continueOnExit
         )
     }
 
@@ -347,6 +365,7 @@ class TTSManager(private val context: Context) {
             .putLong("tts_paragraph_pause", _settings.value.paragraphPauseMs)
             .putFloat("tts_volume", _settings.value.volume)
             .putString("tts_engine", _settings.value.engineId)
+            .putBoolean("tts_continue_on_exit", _settings.value.continueOnExit)
             .apply()
     }
 
@@ -685,6 +704,16 @@ class TTSManager(private val context: Context) {
     }
 
     // ── Settings setters ─────────────────────────────────────────
+
+    /**
+     * Persisted immediately so the value survives even if the process is
+     * killed before the next save, which for a background-audio app is a
+     * realistic thing to happen.
+     */
+    fun setContinueOnExit(enabled: Boolean) {
+        _settings.value = _settings.value.copy(continueOnExit = enabled)
+        saveSettings()
+    }
 
     fun setSpeed(speed: Float) {
         _settings.value = _settings.value.copy(speed = speed.coerceIn(0.5f, 2.0f))

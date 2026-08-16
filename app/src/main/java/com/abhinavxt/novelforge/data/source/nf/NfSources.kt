@@ -9,7 +9,7 @@ package com.abhinavxt.novelforge.data.source.nf
 // Already native in NovelForge (NOT registered again):
 //   RoyalRoad, ReadNovelFull, FreeWebNovel, LibRead, NovelFull.net, PawRead, WtrLab
 // Excluded (EPUB-download model, incompatible with the chapter-based Source
-// interface): AnnasArchive, PlanetaEpub
+// interface): PlanetaEpub
 // Excluded (disabled upstream as dead/broken): BestLightNovel, Comrademao,
 //   Efremnet, LightNovelPub, ReadAnyBook, ReadLightNovel
 //
