@@ -13,6 +13,8 @@ import com.abhinavxt.novelforge.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.io.File
 
 enum class TTSState {
@@ -127,6 +129,50 @@ class TTSManager(private val context: Context) {
 
     private val _shouldAutoContinue = MutableStateFlow(false)
     val shouldAutoContinue: StateFlow<Boolean> = _shouldAutoContinue.asStateFlow()
+
+    /**
+     * What playback is currently reading, by identity rather than by
+     * text. Chapter advance and progress writes both used to live in
+     * the reader composable, which meant they stopped existing the
+     * moment Android destroyed the Activity — playback would finish
+     * the current chapter in the background and then go silent with
+     * nowhere to go next, and nothing along the way was ever saved.
+     * Holding the identity here lets this class do both itself.
+     */
+    data class PlaybackSession(
+        val novelId: String,
+        val chapterId: String,
+        val chapterUrl: String,
+        val chapterNumber: Int
+    )
+
+    @Volatile
+    private var session: PlaybackSession? = null
+
+    /**
+     * Published so the reader, when it happens to be on screen, can
+     * follow a chapter change this class made on its own.
+     */
+    private val _nowPlaying = MutableStateFlow<PlaybackSession?>(null)
+    val nowPlaying: StateFlow<PlaybackSession?> = _nowPlaying.asStateFlow()
+
+    /**
+     * Resolved lazily rather than injected: TTSManager is built by the
+     * Application, and reaching back for the repository at first use
+     * avoids ordering constraints between the two lazy fields. Same
+     * route TTSForegroundService already uses to find this class.
+     */
+    private val repository: com.abhinavxt.novelforge.data.NovelRepository? by lazy {
+        (context.applicationContext as? com.abhinavxt.novelforge.NovelReaderApplication)?.repository
+    }
+
+    /** Chapter lookups and progress writes. Cancelled in [shutdown]. */
+    private val managerScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+    )
+
+    /** Last paragraph written, so a save happens per paragraph, not per sentence. */
+    private var lastPersistedParagraph = -1
 
     private val _activeEngineId = MutableStateFlow(GoogleTTSEngine.ENGINE_ID)
     val activeEngineId: StateFlow<String> = _activeEngineId.asStateFlow()
@@ -410,6 +456,15 @@ class TTSManager(private val context: Context) {
         novelTitle: String = "",
         chapterTitle: String = "",
         coverUrl: String? = null,
+        /**
+         * Identity of the chapter being spoken. Optional so exporting
+         * and preview callers can pass text alone, but without it this
+         * class can neither advance nor save — the reader supplies it.
+         */
+        novelId: String? = null,
+        chapterId: String? = null,
+        chapterUrl: String? = null,
+        chapterNumber: Int = 0,
         onComplete: (() -> Unit)? = null
     ) {
         if (!activeEngine.isReady) {
@@ -432,6 +487,10 @@ class TTSManager(private val context: Context) {
 
         if (segments.isEmpty()) {
             Logger.e("TTSManager", "No sentences to speak")
+            // Reset rather than fall out: auto-advance sets LOADING before
+            // calling in, and leaving it there on an empty chapter would
+            // show a spinner over playback that is never going to start.
+            _state.value = TTSState.IDLE
             return
         }
 
@@ -449,6 +508,14 @@ class TTSManager(private val context: Context) {
         val startSegment = segments.getOrNull(currentIndex)
         _currentParagraphIndex.value = startSegment?.paragraphIndex ?: 0
         _currentSentenceInParagraph.value = startSegment?.sentenceIndexInParagraph ?: 0
+
+        session = if (novelId != null && chapterId != null) {
+            PlaybackSession(novelId, chapterId, chapterUrl.orEmpty(), chapterNumber)
+        } else {
+            null
+        }
+        _nowPlaying.value = session
+        lastPersistedParagraph = -1
 
         onChapterComplete = onComplete
         _state.value = TTSState.LOADING
@@ -470,6 +537,10 @@ class TTSManager(private val context: Context) {
         novelTitle: String = "",
         chapterTitle: String = "",
         coverUrl: String? = null,
+        novelId: String? = null,
+        chapterId: String? = null,
+        chapterUrl: String? = null,
+        chapterNumber: Int = 0,
         onComplete: (() -> Unit)? = null
     ) {
         if (_shouldAutoContinue.value) {
@@ -482,6 +553,10 @@ class TTSManager(private val context: Context) {
                 novelTitle = novelTitle,
                 chapterTitle = chapterTitle,
                 coverUrl = coverUrl,
+                novelId = novelId,
+                chapterId = chapterId,
+                chapterUrl = chapterUrl,
+                chapterNumber = chapterNumber,
                 onComplete = onComplete
             )
         }
@@ -573,6 +648,7 @@ class TTSManager(private val context: Context) {
             val nextSegment = segments[currentIndex]
             _currentParagraphIndex.value = nextSegment.paragraphIndex
             _currentSentenceInParagraph.value = nextSegment.sentenceIndexInParagraph
+            persistProgress(nextSegment.paragraphIndex)
 
             // Apply pause between sentences/paragraphs
             val pauseMs = if (currentSegment?.isParagraphEnd == true) {
@@ -599,10 +675,113 @@ class TTSManager(private val context: Context) {
                 cancelSleepTimer()
                 stop()
             } else {
-                _state.value = TTSState.IDLE
-                _shouldAutoContinue.value = true
-                onChapterComplete?.invoke()
+                advanceToNextChapter()
             }
+        }
+    }
+
+    /**
+     * Moves to the next downloaded chapter without any help from the UI.
+     *
+     * The reader composable used to own this, so playback died at the
+     * first chapter boundary after Android destroyed the Activity —
+     * the service, wake lock, and session were all still healthy, but
+     * the only code that knew how to fetch the next chapter had been
+     * torn down with the composition.
+     *
+     * Three outcomes: the next chapter is downloaded and plays; there
+     * is no next chapter, so the novel is finished and the service
+     * shuts down cleanly; or the next chapter exists but isn't
+     * downloaded, which is the one case this class can't resolve on
+     * its own — [handOffToUi] leaves the auto-continue flag raised so
+     * the reader can fetch it if it happens to be on screen.
+     */
+    private fun advanceToNextChapter() {
+        val current = session
+        val repo = repository
+        if (current == null || repo == null) {
+            handOffToUi()
+            return
+        }
+        _state.value = TTSState.LOADING
+        managerScope.launch {
+            val next = runCatching {
+                val chapters = repo.getChaptersOnce(current.novelId)
+                val idx = chapters.indexOfFirst { it.id == current.chapterId }
+                if (idx >= 0) chapters.getOrNull(idx + 1) else null
+            }.getOrNull()
+
+            val content = next?.let {
+                runCatching { repo.getDownloadedChapterContent(it.id) }.getOrNull()
+            }
+
+            handler.post {
+                when {
+                    next == null -> {
+                        Logger.d("TTSManager", "End of novel reached; stopping playback")
+                        stop()
+                    }
+                    content.isNullOrBlank() -> {
+                        Logger.d("TTSManager", "Next chapter not downloaded; handing off")
+                        handOffToUi()
+                    }
+                    else -> speakText(
+                        text = content,
+                        novelTitle = nowPlayingNovelTitle,
+                        chapterTitle = next.title,
+                        coverUrl = nowPlayingCoverUrl,
+                        novelId = current.novelId,
+                        chapterId = next.id,
+                        chapterUrl = next.url,
+                        chapterNumber = next.number,
+                        onComplete = onChapterComplete
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Stops short of the next chapter and says so. The notification is
+     * refreshed deliberately: leaving it frozen mid-sentence is what
+     * made a stalled queue look like a playing one.
+     */
+    private fun handOffToUi() {
+        _state.value = TTSState.IDLE
+        _shouldAutoContinue.value = true
+        TTSForegroundService.updateNotification(
+            context,
+            nowPlayingNovelTitle.ifBlank { "Novel Forge" },
+            "Waiting for the next chapter",
+            isPlaying = false,
+            chapter = nowPlayingChapterTitle,
+            coverUrl = nowPlayingCoverUrl
+        )
+        onChapterComplete?.invoke()
+    }
+
+    /**
+     * Writes the listening position, at most once per paragraph.
+     *
+     * Forward-only: the reader's scroll observer writes to the same row,
+     * and while both are live they'd otherwise trade the bookmark back
+     * and forth. Whichever is further ahead wins, so glancing back at an
+     * earlier paragraph mid-playback can't rewind what you've heard.
+     */
+    private fun persistProgress(paragraphIndex: Int) {
+        if (paragraphIndex == lastPersistedParagraph) return
+        lastPersistedParagraph = paragraphIndex
+        val current = session ?: return
+        val repo = repository ?: return
+        managerScope.launch {
+            runCatching {
+                repo.saveReadingProgressForward(
+                    novelId = current.novelId,
+                    chapterId = current.chapterId,
+                    chapterNumber = current.chapterNumber,
+                    paragraphIndex = paragraphIndex
+                )
+            }.onFailure { Logger.w("TTSManager", "Progress save failed: ${it.message}") }
         }
     }
 
@@ -645,6 +824,9 @@ class TTSManager(private val context: Context) {
         segments = emptyList()
         _state.value = TTSState.IDLE
         _shouldAutoContinue.value = false
+        session = null
+        _nowPlaying.value = null
+        lastPersistedParagraph = -1
         nowPlayingNovelTitle = ""
         nowPlayingChapterTitle = ""
         nowPlayingCoverUrl = null
@@ -897,6 +1079,7 @@ class TTSManager(private val context: Context) {
 
     fun shutdown() {
         cancelPendingPause()
+        managerScope.cancel()
         googleEngine.shutdown()
         if (sherpaEngine.isReady) {
             sherpaEngine.shutdown()

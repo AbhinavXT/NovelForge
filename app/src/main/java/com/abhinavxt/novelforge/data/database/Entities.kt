@@ -293,7 +293,21 @@ data class CodexNameEntity(
     val occurrences: Int,
     /** Number of distinct chapters the name appears in. */
     val chapterCount: Int,
-    val firstChapterNumber: Int
+    val firstChapterNumber: Int,
+    /**
+     * Highest chapter number this name has been seen in. Drives the
+     * "appears Ch. X–Y" range, and lets the scan prune names that
+     * stopped recurring long ago instead of keeping every one-off
+     * capitalized token forever.
+     */
+    val lastChapterNumber: Int = 0,
+    /**
+     * Accumulated speech-verb adjacency. Stored rather than a derived
+     * type string so classification stays a pure read-time function —
+     * improving the rules then costs nothing, where a persisted type
+     * would need a rescan to correct.
+     */
+    val speechHits: Int = 0
 )
 
 /**

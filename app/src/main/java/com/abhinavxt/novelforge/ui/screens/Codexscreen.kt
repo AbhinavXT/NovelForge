@@ -20,10 +20,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -35,11 +39,14 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,6 +83,7 @@ fun CodexScreen(
     )
 ) {
     val names by viewModel.names.collectAsState()
+    val sections by viewModel.sections.collectAsState()
     val scanState by viewModel.scanState.collectAsState()
     val hasScanned by viewModel.hasScanned.collectAsState()
     val spoilerGuard by viewModel.spoilerGuardEnabled.collectAsState()
@@ -84,6 +92,37 @@ fun CodexScreen(
     val detail by viewModel.detail.collectAsState()
     val maxChapter by viewModel.maxChapterNumber.collectAsState()
     val scope = rememberCoroutineScope()
+
+    // Overflow menu + rebuild confirmation. A rebuild discards no user
+    // data — codex_names is derived from chapter text and nothing in the
+    // app edits it — but on a long novel it re-reads every downloaded
+    // chapter, so it asks first.
+    var menuExpanded by remember { mutableStateOf(false) }
+    var confirmRebuild by remember { mutableStateOf(false) }
+
+    if (confirmRebuild) {
+        AlertDialog(
+            onDismissRequest = { confirmRebuild = false },
+            title = { Text("Rebuild codex?") },
+            text = {
+                Text(
+                    "Every downloaded chapter is scanned again from the " +
+                            "beginning. Existing entries are replaced. Nothing " +
+                            "you've written — bookmarks, highlights, notes — is " +
+                            "affected."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRebuild = false
+                    viewModel.startScan(rebuild = true)
+                }) { Text("Rebuild") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRebuild = false }) { Text("Cancel") }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -106,6 +145,29 @@ fun CodexScreen(
                         enabled = scanState is CodexViewModel.ScanState.Idle
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = "Rescan new chapters")
+                    }
+                    // A full rebuild has to be reachable from the populated
+                    // list, not only from the empty state. The incremental
+                    // scan above skips everything below the watermark, so
+                    // without this an existing codex can never be corrected
+                    // after an extractor change.
+                    IconButton(
+                        onClick = { menuExpanded = true },
+                        enabled = scanState is CodexViewModel.ScanState.Idle
+                    ) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Rebuild from scratch") },
+                            onClick = {
+                                menuExpanded = false
+                                confirmRebuild = true
+                            }
+                        )
                     }
                 }
             )
@@ -201,11 +263,25 @@ fun CodexScreen(
                     }
 
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(names, key = { it.name }) { entry ->
-                            CodexNameRow(
-                                entry = entry,
-                                onClick = { viewModel.selectName(entry) }
-                            )
+                        // Grouped by kind. With one section the heading
+                        // is noise, so it's only drawn once there's an
+                        // actual division to explain.
+                        val showHeadings = sections.size > 1
+                        sections.forEach { section ->
+                            if (showHeadings) {
+                                item(key = "header-${section.type.name}") {
+                                    CodexSectionHeader(
+                                        label = section.type.label,
+                                        count = section.entries.size
+                                    )
+                                }
+                            }
+                            items(section.entries, key = { it.name }) { entry ->
+                                CodexNameRow(
+                                    entry = entry,
+                                    onClick = { viewModel.selectName(entry) }
+                                )
+                            }
                         }
                     }
                 }
@@ -284,11 +360,30 @@ private fun CodexNameRow(
             overflow = TextOverflow.Ellipsis
         )
         Text(
-            text = "${entry.occurrences} mentions · ${entry.chapterCount} chapters · since Ch. ${entry.firstChapterNumber}",
+            // A range beats a start: "since Ch. 4" reads the same for
+            // someone who left in chapter 5 and someone still around.
+            text = buildString {
+                append("${entry.occurrences} mentions · ${entry.chapterCount} chapters · Ch. ")
+                append(entry.firstChapterNumber)
+                if (entry.lastChapterNumber > entry.firstChapterNumber) {
+                    append("–${entry.lastChapterNumber}")
+                }
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+@Composable
+private fun CodexSectionHeader(label: String, count: Int) {
+    Text(
+        text = "$label · $count",
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
+    )
 }
 
 @Composable

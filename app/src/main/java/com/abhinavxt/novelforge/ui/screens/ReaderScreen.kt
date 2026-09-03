@@ -119,21 +119,50 @@ fun ReaderScreen(
     // to play while the screen is off is the entire point of running a
     // media-playback foreground service.
 
-    // Auto-continue TTS when chapter changes
+    // ── Following playback ──────────────────────────────────────
+    // TTSManager advances chapters itself now, so that it keeps working
+    // when this screen doesn't exist. When the screen DOES exist it has
+    // to follow, or you'd be looking at one chapter and hearing the
+    // next. Guarded on the chapter actually differing, so navigating by
+    // hand mid-playback doesn't get yanked back.
+    val nowPlaying by ttsManager.nowPlaying.collectAsState()
+    LaunchedEffect(nowPlaying) {
+        val playing = nowPlaying ?: return@LaunchedEffect
+        if (playing.novelId != novelId) return@LaunchedEffect
+        if (playing.chapterUrl.isBlank()) return@LaunchedEffect
+        val active = viewModel.activeChapterInfo.value?.chapterId
+        if (playing.chapterId != active) {
+            viewModel.goToChapter(playing.chapterId, playing.chapterUrl)
+        }
+    }
+
+    // The one case TTSManager can't resolve alone: the next chapter
+    // exists but isn't downloaded. It raises the auto-continue flag and
+    // stops; if this screen happens to be alive, it can fetch and
+    // resume. Otherwise playback simply ends, which is honest.
     LaunchedEffect(uiState) {
         val state = uiState
         if (state is ReaderUiState.Success && shouldAutoContinue) {
             // Small delay to ensure UI is ready
             kotlinx.coroutines.delay(500)
+            val active = viewModel.activeChapterInfo.value
             ttsManager.autoContinueIfNeeded(
                 text = state.chapter.content,
                 novelTitle = state.chapter.novelTitle,
                 chapterTitle = state.chapter.chapterTitle,
-                coverUrl = state.chapter.novelCoverUrl
+                coverUrl = state.chapter.novelCoverUrl,
+                novelId = novelId,
+                chapterId = active?.chapterId ?: state.chapter.chapterId,
+                // Left blank on purpose. Neither the active-chapter info
+                // nor the loaded chapter carries a URL, and the reader is
+                // already showing this chapter so it has nothing to follow
+                // to — TTSManager fills the URL in from the database on
+                // the chapters it advances to itself.
+                chapterUrl = "",
+                chapterNumber = active?.chapterNumber ?: state.chapter.chapterNumber
             ) {
-                // On this chapter complete, go to next with auto-retry
-                // enabled — relative to the chapter being READ, which
-                // with stitching can be past the anchor.
+                // Fetch-and-retry, relative to the chapter being READ,
+                // which with stitching can be past the anchor.
                 val canNext = viewModel.activeChapterInfo.value?.canGoNext
                     ?: viewModel.canGoNext()
                 if (canNext) {
@@ -198,8 +227,15 @@ fun ReaderScreen(
                 },
                 canGoPrevious = activeChapterInfo?.canGoPrevious ?: viewModel.canGoPrevious(),
                 canGoNext = activeChapterInfo?.canGoNext ?: viewModel.canGoNext(),
+                novelId = novelId,
                 onSaveParagraphIndex = { index ->
-                    viewModel.saveParagraphIndex(index)
+                    // While TTS is playing it writes this row too, so the
+                    // save is forward-only: glancing back at an earlier
+                    // line must not rewind what you've already heard.
+                    viewModel.saveParagraphIndex(
+                        index,
+                        forwardOnly = ttsState == com.abhinavxt.novelforge.data.TTSState.PLAYING
+                    )
                 },
                 // Bookmark parameters
                 isInLibrary = isInLibrary,

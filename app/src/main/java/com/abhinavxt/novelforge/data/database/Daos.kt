@@ -224,8 +224,15 @@ data class ChapterSearchResult(
 @Dao
 interface CodexDao {
 
-    @Query("SELECT * FROM codex_names WHERE novelId = :novelId ORDER BY occurrences DESC LIMIT 300")
-    fun getNamesFlow(novelId: String): Flow<List<CodexNameEntity>>
+    // Display floor lives here, not in the scan: every candidate is
+    // stored so partial counts survive across incremental scans, and
+    // only names that have actually earned an entry are read back.
+    @Query("""
+        SELECT * FROM codex_names
+        WHERE novelId = :novelId AND occurrences >= :minOccurrences
+        ORDER BY occurrences DESC LIMIT 300
+    """)
+    fun getNamesFlow(novelId: String, minOccurrences: Int): Flow<List<CodexNameEntity>>
 
     @Query("SELECT * FROM codex_names WHERE novelId = :novelId")
     suspend fun getNamesOnce(novelId: String): List<CodexNameEntity>
@@ -235,6 +242,9 @@ interface CodexDao {
 
     @Query("DELETE FROM codex_names WHERE novelId = :novelId")
     suspend fun clearNames(novelId: String)
+
+    @Query("DELETE FROM codex_names WHERE novelId = :novelId AND name IN (:names)")
+    suspend fun deleteNames(novelId: String, names: List<String>)
 
     @Query("SELECT * FROM codex_scan_info WHERE novelId = :novelId")
     suspend fun getScanInfo(novelId: String): CodexScanInfoEntity?

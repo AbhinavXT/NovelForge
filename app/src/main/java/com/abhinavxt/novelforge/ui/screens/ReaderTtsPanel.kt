@@ -79,6 +79,12 @@ internal fun TTSControlsPanel(
     novelTitle: String,
     chapterTitle: String,
     novelCoverUrl: String?,
+    // Identity of what's being spoken. Without it TTSManager holds no
+    // session, so it can neither advance chapters on its own nor save
+    // the listening position — it would only know the text.
+    novelId: String,
+    chapterId: String,
+    chapterNumber: Int,
     canGoNext: Boolean,
     startFromParagraph: Int,
     onNextChapter: () -> Unit,
@@ -301,7 +307,10 @@ internal fun TTSControlsPanel(
                                     startFromParagraph = startFromParagraph,
                                     novelTitle = novelTitle,
                                     chapterTitle = chapterTitle,
-                                    coverUrl = novelCoverUrl
+                                    coverUrl = novelCoverUrl,
+                                    novelId = novelId,
+                                    chapterId = chapterId,
+                                    chapterNumber = chapterNumber
                                 ) {
                                     if (canGoNext) {
                                         onNextChapterWithRetry()

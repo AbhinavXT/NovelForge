@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.abhinavxt.novelforge.data.NovelRepository
 import com.abhinavxt.novelforge.data.codex.CodexEngine
+import com.abhinavxt.novelforge.data.codex.NameExtractor
+import com.abhinavxt.novelforge.data.codex.NameExtractor.CodexType
 import com.abhinavxt.novelforge.data.database.CodexMention
 import com.abhinavxt.novelforge.data.database.CodexNameEntity
 import com.abhinavxt.novelforge.data.database.HighlightEntity
@@ -16,6 +18,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -74,6 +77,26 @@ class CodexViewModel(
             .filter { !guard || it.firstChapterNumber <= ceiling }
             .filter { filter.isBlank() || it.name.contains(filter, ignoreCase = true) }
             .toList()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** One list section: a kind of entry and the entries of that kind. */
+    data class CodexSection(val type: CodexType, val entries: List<CodexNameEntity>)
+
+    /**
+     * The same names, grouped for display. Classification is a pure
+     * function of the stored name plus its speech evidence, so it runs
+     * here rather than being persisted — the type can never go stale
+     * against the rules, and sharpening the rules needs no rescan.
+     *
+     * Sections follow enum order (People, Places, Factions, Other) and
+     * empty ones are dropped, so a novel with no detected factions
+     * simply doesn't show that heading.
+     */
+    val sections: StateFlow<List<CodexSection>> = names.map { list ->
+        list.groupBy { NameExtractor.classify(it.name, it.speechHits) }
+            .entries
+            .sortedBy { it.key.ordinal }
+            .map { (type, entries) -> CodexSection(type, entries) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // ── Detail (bottom sheet) ───────────────────────────────────

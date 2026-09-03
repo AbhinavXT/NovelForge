@@ -211,6 +211,36 @@ class NovelRepository(
         }
     }
 
+    /**
+     * Saves reading progress only if it moves the bookmark forward.
+     *
+     * Two things write this row automatically — the reader's scroll
+     * observer and TTS playback — and while both are live they'd
+     * otherwise fight, so glancing back at an earlier paragraph while
+     * listening would rewind the position you'd already heard past.
+     * Comparing chapter first, then paragraph, means whichever is
+     * further ahead wins.
+     *
+     * Deliberately NOT the default: explicit navigation — tapping an
+     * earlier chapter, opening a bookmark — must still be able to move
+     * the pointer back, and those callers use [saveReadingProgress].
+     */
+    suspend fun saveReadingProgressForward(
+        novelId: String,
+        chapterId: String,
+        chapterNumber: Int,
+        paragraphIndex: Int
+    ) {
+        val existing = progressDao.getProgress(novelId)
+        if (existing != null) {
+            val behind = existing.currentChapterNumber > chapterNumber ||
+                    (existing.currentChapterNumber == chapterNumber &&
+                            existing.paragraphIndex >= paragraphIndex)
+            if (behind) return
+        }
+        saveReadingProgress(novelId, chapterId, chapterNumber, paragraphIndex)
+    }
+
     suspend fun getReadingProgress(novelId: String): ReadingProgressEntity? {
         return progressDao.getProgress(novelId)
     }
@@ -705,7 +735,13 @@ class NovelRepository(
 
     // ============ CHARACTER CODEX (v16) ============
 
-    fun getCodexNamesFlow(novelId: String) = codexDao.getNamesFlow(novelId)
+    fun getCodexNamesFlow(novelId: String) =
+        codexDao.getNamesFlow(novelId, com.abhinavxt.novelforge.data.codex.CodexEngine.MIN_OCCURRENCES)
+
+    /** Chunked: SQLite caps variables per statement at 999. */
+    suspend fun deleteCodexNames(novelId: String, names: List<String>) {
+        names.chunked(500).forEach { codexDao.deleteNames(novelId, it) }
+    }
 
     suspend fun getCodexNamesOnce(novelId: String) = codexDao.getNamesOnce(novelId)
 

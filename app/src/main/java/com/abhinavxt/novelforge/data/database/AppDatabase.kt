@@ -7,6 +7,16 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
+/**
+ * Schema versions are deliberately disjoint between the two builds.
+ * Both share history up to 16, then the local-only build jumps to the
+ * 100 range and the sources build continues from 17. They diverged for
+ * real when local-only dropped `updates` and `novels.previousTotalChapters`,
+ * so the same number would mean two different schemas — and a database
+ * carried across builds would be handed a migration written for the
+ * other one's shape. The gap makes that collision impossible rather
+ * than merely unlikely.
+ */
 @Database(
     entities = [
         NovelEntity::class,
@@ -24,7 +34,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CodexNameEntity::class,          // NEW in v16 — character codex
         CodexScanInfoEntity::class       // NEW in v16 — codex scan watermark
     ],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -277,6 +287,29 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration v16 → v17: codex entries gain a range end and
+         * accumulated speech evidence. Two plain ADD COLUMNs — no
+         * table rebuild, since codex_names has no dropped columns and
+         * its index is on novelId, which isn't touched.
+         */
+        private val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `codex_names` " +
+                            "ADD COLUMN `lastChapterNumber` INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE `codex_names` " +
+                            "ADD COLUMN `speechHits` INTEGER NOT NULL DEFAULT 0"
+                )
+                // Backfill the range end from what we already know, so
+                // existing entries read "Ch. 12" rather than "Ch. 12-0"
+                // before their first rescan.
+                db.execSQL("UPDATE `codex_names` SET `lastChapterNumber` = `firstChapterNumber`")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -284,7 +317,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_reader_database"
                 )
-                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
                     // No fallbackToDestructiveMigration() — if a migration is missing,
                     // the app crashes instead of silently wiping the user's library,
                     // bookmarks, reading progress, and stats. Always write migrations.

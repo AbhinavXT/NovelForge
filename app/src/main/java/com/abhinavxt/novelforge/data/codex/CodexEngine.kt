@@ -23,8 +23,28 @@ import kotlinx.coroutines.withContext
  */
 object CodexEngine {
 
-    /** Names below this total count are noise, not codex entries. */
-    private const val MIN_OCCURRENCES = 3
+    /**
+     * Display floor. Applied when the codex is READ, never when it is
+     * written — filtering at write time made the result depend on how
+     * the scan was chunked. A name mentioned once in each of six
+     * chapters totals six if all six are scanned together and zero if
+     * they're scanned one at a time, because each pass discarded its
+     * own sub-threshold count and the watermark guarantees those
+     * chapters are never revisited. Scanning as you download is the
+     * normal pattern, so the common case was the broken one.
+     */
+    const val MIN_OCCURRENCES = 3
+
+    /**
+     * Sub-threshold names are kept while they might still be
+     * accumulating, and dropped once they've gone this many chapters
+     * without recurring. Without it, storing every partial count means
+     * storing every capitalized token in the book forever; with it,
+     * the table holds real entries plus one window's worth of
+     * candidates, which is bounded by chapter content rather than by
+     * novel length.
+     */
+    private const val PRUNE_WINDOW = 150
 
     data class ScanProgress(val scanned: Int, val total: Int)
 
@@ -44,18 +64,26 @@ object CodexEngine {
         if (toScan.isEmpty()) return@withContext 0
 
         // Aggregate for THIS scan pass only; merged with stored rows at the end.
-        data class Agg(var occurrences: Int, var chapterCount: Int, var firstChapter: Int)
+        data class Agg(
+            var occurrences: Int,
+            var chapterCount: Int,
+            var firstChapter: Int,
+            var lastChapter: Int,
+            var speechHits: Int
+        )
         val agg = HashMap<String, Agg>()
 
         toScan.forEachIndexed { idx, chapter ->
             coroutineContext.ensureActive()
             val content = repository.getDownloadedChapterContent(chapter.id) ?: return@forEachIndexed
             val paragraphs = ParagraphSplitter.split(content)
-            for ((name, count) in NameExtractor.extract(paragraphs)) {
-                val a = agg.getOrPut(name) { Agg(0, 0, chapter.number) }
-                a.occurrences += count
+            for ((name, stats) in NameExtractor.extract(paragraphs)) {
+                val a = agg.getOrPut(name) { Agg(0, 0, chapter.number, chapter.number, 0) }
+                a.occurrences += stats.occurrences
                 a.chapterCount += 1
+                a.speechHits += stats.speechHits
                 if (chapter.number < a.firstChapter) a.firstChapter = chapter.number
+                if (chapter.number > a.lastChapter) a.lastChapter = chapter.number
             }
             onProgress(ScanProgress(idx + 1, toScan.size))
         }
@@ -70,11 +98,32 @@ object CodexEngine {
                 name = name,
                 occurrences = (prev?.occurrences ?: 0) + a.occurrences,
                 chapterCount = (prev?.chapterCount ?: 0) + a.chapterCount,
-                firstChapterNumber = minOf(prev?.firstChapterNumber ?: Int.MAX_VALUE, a.firstChapter)
+                firstChapterNumber = minOf(prev?.firstChapterNumber ?: Int.MAX_VALUE, a.firstChapter),
+                lastChapterNumber = maxOf(prev?.lastChapterNumber ?: 0, a.lastChapter),
+                speechHits = (prev?.speechHits ?: 0) + a.speechHits
             )
-        }.filter { it.occurrences >= MIN_OCCURRENCES }
+        }
 
+        // Everything is written, including counts below the display
+        // floor — they're the partial evidence that used to be thrown
+        // away. Nothing is filtered here.
         repository.upsertCodexNames(merged)
+
+        // Then drop the candidates that have clearly gone nowhere:
+        // still under the floor, and last seen a whole window ago.
+        // A name at the floor is safe regardless of how old it is.
+        val watermarkAfter = toScan.last().number
+        // merged first: distinctBy keeps the first hit, and for a name
+        // touched in this pass the merged row is the current one. The
+        // other order would judge a name that just crossed the floor
+        // by its pre-scan count and prune it on the way in.
+        val stale = (merged + existing.values)
+            .distinctBy { it.name }
+            .filter { it.occurrences < MIN_OCCURRENCES && it.lastChapterNumber < watermarkAfter - PRUNE_WINDOW }
+        if (stale.isNotEmpty()) {
+            repository.deleteCodexNames(novelId, stale.map { it.name })
+            Logger.d("CodexEngine", "Pruned ${stale.size} stale candidates for $novelId")
+        }
         repository.saveCodexScanInfo(
             CodexScanInfoEntity(
                 novelId = novelId,
@@ -83,7 +132,12 @@ object CodexEngine {
                 updatedAt = System.currentTimeMillis()
             )
         )
-        Logger.d("CodexEngine", "Scanned ${toScan.size} chapters for $novelId, ${merged.size} entries")
+        Logger.d(
+            "CodexEngine",
+            "Scanned ${toScan.size} chapters for $novelId, " +
+                    "${merged.count { it.occurrences >= MIN_OCCURRENCES }} entries " +
+                    "(${merged.size} tracked)"
+        )
         toScan.size
     }
 

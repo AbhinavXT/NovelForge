@@ -95,6 +95,10 @@ import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 
 
+private const val SOURCE_URL = "https://github.com/abhinavxt/novelforge"
+private const val LICENSE_URL =
+    "https://github.com/abhinavxt/novelforge/blob/main/LICENSE"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -848,7 +852,9 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Novel Forge v1.8.0",
+                // Was hardcoded "v1.8.0", which silently goes stale every
+                // release. BuildConfig is already the source of truth.
+                text = "NovelForge v${BuildConfig.VERSION_NAME}",
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium
             )
@@ -894,6 +900,96 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // ── License notice ───────────────────────────────────
+            // Not decorative. GPL-3.0 §5(d) requires an interactive program
+            // that displays legal notices to keep displaying them, and §0
+            // defines what those notices must contain: the license, the
+            // absence of warranty, and how to obtain the corresponding
+            // source. Both cards below are how NovelForge satisfies that.
+            Card(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                android.net.Uri.parse(LICENSE_URL)
+                            )
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "License — GNU GPL v3.0",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Copyright © 2026 Abhinav\n\n" +
+                                "This program comes with ABSOLUTELY NO WARRANTY. " +
+                                "It is free software, and you are welcome to " +
+                                "redistribute it under the terms of the GNU " +
+                                "General Public License v3 or later.\n\n" +
+                                "Includes code derived from QuickNovel (GPL-3.0). " +
+                                "Tap to read the full license.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Corresponding source, as GPL-3.0 requires alongside binaries.
+            Card(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, android.net.Uri.parse(SOURCE_URL))
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Source code",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Read, fork, or report a bug on GitHub",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 

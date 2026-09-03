@@ -139,6 +139,7 @@ internal fun ReaderContent(
     onUpdateSettings: (ReaderSettings) -> Unit,
     canGoPrevious: Boolean,
     canGoNext: Boolean,
+    novelId: String,
     onSaveParagraphIndex: (Int) -> Unit,
     // Bookmark parameters
     isInLibrary: Boolean,
@@ -960,6 +961,9 @@ internal fun ReaderContent(
                     novelTitle = chapter.novelTitle,
                     chapterTitle = activeSegment.title,
                     novelCoverUrl = chapter.novelCoverUrl,
+                    novelId = novelId,
+                    chapterId = activeSegment.chapterId,
+                    chapterNumber = activeSegment.number,
                     canGoNext = canGoNext,
                     startFromParagraph = if (settings.readingMode == ReadingMode.SCROLL) {
                         (listState.firstVisibleItemIndex - activeSegment.startIndex)

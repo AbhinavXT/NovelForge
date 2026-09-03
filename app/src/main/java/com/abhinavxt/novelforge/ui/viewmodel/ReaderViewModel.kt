@@ -451,20 +451,37 @@ class ReaderViewModel(
         }
     }
 
-    fun saveParagraphIndex(paragraphIndex: Int) {
+    /**
+     * @param forwardOnly set while TTS is playing. Both this and the
+     *   playback loop write the same row, so a scroll back to re-read a
+     *   line would otherwise rewind the position TTS had already passed.
+     *   Off by default, because scrolling back with TTS idle is exactly
+     *   how someone moves their bookmark backwards on purpose.
+     */
+    fun saveParagraphIndex(paragraphIndex: Int, forwardOnly: Boolean = false) {
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
             viewModelScope.launch {
                 try {
-                    repository.saveReadingProgress(
-                        novelId = novelId,
-                        chapterId = currentChapterId,
-                        // Active chapter's number — with stitching the user
-                        // may be several chapters past the anchor.
-                        chapterNumber = if (activeChapterNumber > 0) activeChapterNumber
-                        else currentState.chapter.chapterNumber,
-                        paragraphIndex = paragraphIndex
-                    )
+                    // Active chapter's number — with stitching the user
+                    // may be several chapters past the anchor.
+                    val chapterNumber = if (activeChapterNumber > 0) activeChapterNumber
+                    else currentState.chapter.chapterNumber
+                    if (forwardOnly) {
+                        repository.saveReadingProgressForward(
+                            novelId = novelId,
+                            chapterId = currentChapterId,
+                            chapterNumber = chapterNumber,
+                            paragraphIndex = paragraphIndex
+                        )
+                    } else {
+                        repository.saveReadingProgress(
+                            novelId = novelId,
+                            chapterId = currentChapterId,
+                            chapterNumber = chapterNumber,
+                            paragraphIndex = paragraphIndex
+                        )
+                    }
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
