@@ -9,6 +9,7 @@ import com.abhinavxt.novelforge.data.NovelRepository
 import com.abhinavxt.novelforge.data.database.CategoryEntity
 import com.abhinavxt.novelforge.data.database.ReadingProgressEntity
 import com.abhinavxt.novelforge.data.epub.EpubImporter
+import com.abhinavxt.novelforge.data.epub.LibraryFolder
 import com.abhinavxt.novelforge.data.model.Novel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +21,39 @@ sealed interface ImportState {
     object Importing : ImportState
     data class Success(val title: String, val chapterCount: Int) : ImportState
     data class Error(val message: String) : ImportState
+
+    /**
+     * Walking the library folder, before the file count is known. Distinct
+     * from [ImportingBatch] because enumeration has no denominator to show
+     * progress against, and on a deep folder it is the slow part.
+     */
+    object Scanning : ImportState
+
+    /** Progress while a multi-file selection is being imported one at a time. */
+    data class ImportingBatch(val completed: Int, val total: Int) : ImportState
+
+    /**
+     * A single file was skipped because the library already holds a book
+     * with the same bytes. Its own state rather than an [Error] so the UI
+     * can say what happened plainly instead of dressing a correct outcome
+     * up as a failure.
+     */
+    data class AlreadyInLibrary(val existingTitle: String) : ImportState
+
+    /**
+     * Summary of a multi-file import. [firstError] carries the message from
+     * the first failure so a batch that goes wrong for one reason still
+     * explains itself, rather than reporting a bare count.
+     *
+     * [duplicates] is counted apart from [failed] because a skipped
+     * duplicate is the import working, not the import breaking.
+     */
+    data class BatchDone(
+        val imported: Int,
+        val failed: Int,
+        val firstError: String?,
+        val duplicates: Int = 0
+    ) : ImportState
 }
 
 enum class LibraryFilter {
@@ -310,6 +344,128 @@ class LibraryViewModel(
                 is EpubImporter.ImportResult.Error -> {
                     _importState.value = ImportState.Error(result.message)
                 }
+                is EpubImporter.ImportResult.Duplicate -> {
+                    _importState.value =
+                        ImportState.AlreadyInLibrary(result.existingTitle)
+                }
+            }
+        }
+    }
+
+    /**
+     * Import a whole selection at once. Files are handled sequentially rather
+     * than concurrently: each import parses an entire book into memory and
+     * writes its chapters, so running several at once trades a modest speed
+     * gain for a real risk of OutOfMemoryError on a large selection.
+     *
+     * One bad file never aborts the run — failures are counted and reported
+     * at the end, so importing 200 books does not stop on book 3.
+     */
+    fun importDocuments(uris: List<Uri>) {
+        if (epubImporter == null || uris.isEmpty()) return
+        if (uris.size == 1) {
+            importDocument(uris.first())
+            return
+        }
+
+        viewModelScope.launch {
+            var imported = 0
+            var failed = 0
+            var duplicates = 0
+            var firstError: String? = null
+
+            uris.forEachIndexed { index, uri ->
+                _importState.value = ImportState.ImportingBatch(index, uris.size)
+                when (val result = epubImporter.importDocument(uri)) {
+                    is EpubImporter.ImportResult.Success -> imported++
+                    is EpubImporter.ImportResult.Duplicate -> duplicates++
+                    is EpubImporter.ImportResult.Error -> {
+                        failed++
+                        if (firstError == null) firstError = result.message
+                    }
+                }
+            }
+
+            loadNovelsWithDownloads()
+            _importState.value =
+                ImportState.BatchDone(imported, failed, firstError, duplicates)
+        }
+    }
+
+    /**
+     * Import everything new in the user's library folder.
+     *
+     * The scan is resumable rather than durable: it runs in [viewModelScope],
+     * so leaving the Library screen mid-run stops it. That is acceptable
+     * precisely because each imported book records its own file URI, so
+     * starting the scan again picks up exactly where it stopped instead of
+     * redoing the work. A WorkManager job would survive navigation, but it
+     * would also need progress plumbing and a foreground notification to
+     * earn its keep — worth revisiting if scans routinely run long.
+     */
+    fun scanLibraryFolder() {
+        val importer = epubImporter ?: return
+        val context = appContext ?: return
+
+        viewModelScope.launch {
+            _importState.value = ImportState.Scanning
+
+            val listing = LibraryFolder.listNewBooks(
+                context = context,
+                alreadyImported = repository.getImportedSourceUris()
+            )
+
+            when (listing) {
+                is LibraryFolder.ScanListing.Error -> {
+                    _importState.value = ImportState.Error(listing.message)
+                    return@launch
+                }
+
+                is LibraryFolder.ScanListing.Found -> {
+                    if (listing.newFiles.isEmpty()) {
+                        LibraryFolder.setLastScanTime(context, System.currentTimeMillis())
+                        _importState.value = ImportState.BatchDone(
+                            imported = 0,
+                            failed = 0,
+                            firstError = null
+                        )
+                        return@launch
+                    }
+
+                    var imported = 0
+                    var failed = 0
+                    var duplicates = 0
+                    var firstError: String? = null
+
+                    listing.newFiles.forEachIndexed { index, file ->
+                        _importState.value =
+                            ImportState.ImportingBatch(index, listing.newFiles.size)
+
+                        // rememberSource so the next scan skips this file.
+                        val result = importer.importDocument(
+                            uri = file.uri,
+                            rememberSource = true
+                        )
+                        when (result) {
+                            is EpubImporter.ImportResult.Success -> imported++
+                            // The URI was new but the bytes were not — the
+                            // same book sitting in two folders, or one the
+                            // user picked by hand before the folder existed.
+                            is EpubImporter.ImportResult.Duplicate -> duplicates++
+                            is EpubImporter.ImportResult.Error -> {
+                                failed++
+                                if (firstError == null) {
+                                    firstError = "${file.name}: ${result.message}"
+                                }
+                            }
+                        }
+                    }
+
+                    LibraryFolder.setLastScanTime(context, System.currentTimeMillis())
+                    loadNovelsWithDownloads()
+                    _importState.value =
+                        ImportState.BatchDone(imported, failed, firstError, duplicates)
+                }
             }
         }
     }
@@ -320,6 +476,17 @@ class LibraryViewModel(
 
     fun removeFromLibrary(novelId: String) {
         viewModelScope.launch {
+            // A book that came from the library folder has to be remembered
+            // as unwanted before its row disappears, because the row IS the
+            // record that the file was seen. Without this the next scan
+            // would cheerfully import it again.
+            val context = appContext
+            if (context != null) {
+                repository.getSourceUri(novelId)?.let { uri ->
+                    LibraryFolder.ignoreUri(context, uri)
+                }
+            }
+
             if (novelId.startsWith("local_") && epubImporter != null) {
                 epubImporter.deleteLocalNovel(novelId)
             }

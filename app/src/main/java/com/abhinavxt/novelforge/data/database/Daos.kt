@@ -61,6 +61,61 @@ interface NovelDao {
     // ── NEW: Mark novel as "seen" to clear update badge ─────────
     @Query("UPDATE novels SET previousTotalChapters = totalChapters WHERE id = :novelId")
     suspend fun markUpdateSeen(novelId: String)
+
+    // ── Library-folder scan ─────────────────────────────────────
+
+    /**
+     * Every file URI already represented in the library. The scan subtracts
+     * this from what it finds on disk, so a rescan of a 300-book folder
+     * does one query instead of 300 existence checks.
+     */
+    @Query("SELECT sourceUri FROM novels WHERE sourceUri IS NOT NULL")
+    suspend fun getImportedSourceUris(): List<String>
+
+    @Query("SELECT sourceUri FROM novels WHERE id = :novelId")
+    suspend fun getSourceUri(novelId: String): String?
+
+    /**
+     * Title of the book already holding this file's hash, or null if the
+     * file is new. Returns the title rather than a boolean so the import
+     * can name what it skipped instead of reporting a bare count.
+     */
+    @Query("SELECT title FROM novels WHERE contentHash = :hash LIMIT 1")
+    suspend fun findTitleByContentHash(hash: String): String?
+
+    /**
+     * Fallback duplicate check for books the hash cannot see: anything
+     * imported before `contentHash` existed has none, so an exact-bytes
+     * match will never fire for them.
+     *
+     * NOCASE on both columns because the same book imported from two
+     * differently-cased files should still collide. Deliberately narrow —
+     * title AND author, not title alone — so two unrelated books sharing a
+     * common title are not merged.
+     */
+    @Query(
+        "SELECT * FROM novels " +
+                "WHERE title = :title COLLATE NOCASE " +
+                "AND author = :author COLLATE NOCASE LIMIT 1"
+    )
+    suspend fun findByTitleAndAuthor(title: String, author: String): NovelEntity?
+
+    /**
+     * Attach a file's identity to a book that was already in the library
+     * without one, so the legacy gap closes the first time the file is seen
+     * rather than on every future import.
+     *
+     * COALESCE means this only ever fills a blank: a book that already has
+     * a hash or a source URI keeps the one it has, so re-importing a
+     * different edition can never steal the original's identity.
+     */
+    @Query(
+        "UPDATE novels SET " +
+                "contentHash = COALESCE(contentHash, :hash), " +
+                "sourceUri = COALESCE(sourceUri, :uri) " +
+                "WHERE id = :novelId"
+    )
+    suspend fun linkImportedFile(novelId: String, hash: String?, uri: String?)
 }
 
 /**

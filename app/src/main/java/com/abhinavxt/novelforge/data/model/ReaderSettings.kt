@@ -108,6 +108,15 @@ enum class TapZoneLayout(val displayName: String, val description: String) {
     /** The classic (and previous hardcoded) behavior. */
     SIDES("Sides", "Left back · right forward · middle menu"),
 
+    /**
+     * Vertical mirror of [SIDES]. Bottom advances because that is the
+     * direction the text moves, matching the scroll gesture. Reaching
+     * the left and right edges of a large phone one-handed is not
+     * possible for every reader, so this is the accessible counterpart
+     * rather than a stylistic alternative.
+     */
+    TOP_BOTTOM("Top/Bottom", "Top back · bottom forward · middle menu"),
+
     /** One-handed: either thumb advances; menu via the center box. */
     FORWARD_ONLY("Forward", "Tap anywhere to go forward · middle menu"),
 
@@ -121,6 +130,11 @@ enum class TapZoneLayout(val displayName: String, val description: String) {
         SIDES -> when {
             xFrac < 0.3f -> TapAction.BACK
             xFrac > 0.7f -> TapAction.FORWARD
+            else -> TapAction.MENU
+        }
+        TOP_BOTTOM -> when {
+            yFrac < 0.3f -> TapAction.BACK
+            yFrac > 0.7f -> TapAction.FORWARD
             else -> TapAction.MENU
         }
         FORWARD_ONLY -> when {

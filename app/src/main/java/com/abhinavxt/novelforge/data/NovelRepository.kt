@@ -106,6 +106,17 @@ class NovelRepository(
         }
     }
 
+    /**
+     * Every file URI the library already holds a book for. The library-folder
+     * scan subtracts this from what it finds on disk.
+     */
+    suspend fun getImportedSourceUris(): Set<String> =
+        novelDao.getImportedSourceUris().toSet()
+
+    /** The file a book was imported from, or null if it did not come from one. */
+    suspend fun getSourceUri(novelId: String): String? =
+        novelDao.getSourceUri(novelId)
+
     suspend fun removeFromLibrary(novelId: String) {
         database.withTransaction {
             novelDao.deleteNovelById(novelId)

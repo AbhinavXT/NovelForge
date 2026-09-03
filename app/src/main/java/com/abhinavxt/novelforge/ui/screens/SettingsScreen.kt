@@ -1,6 +1,7 @@
 package com.abhinavxt.novelforge.ui.screens
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -81,6 +82,7 @@ import com.abhinavxt.novelforge.data.AppFont
 import com.abhinavxt.novelforge.data.AppTheme
 import com.abhinavxt.novelforge.data.ColorScheme
 import com.abhinavxt.novelforge.data.DictionaryLanguage
+import com.abhinavxt.novelforge.data.epub.LibraryFolder
 import com.abhinavxt.novelforge.data.ThemeMode
 import com.abhinavxt.novelforge.data.ThemePreferences
 import com.abhinavxt.novelforge.ui.theme.*
@@ -317,6 +319,145 @@ fun SettingsScreen(
                 // Fill empty slots if needed
                 repeat(3 - DictionaryLanguage.entries.drop(3).size) {
                     Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── Library Folder Section ───────────────────────────
+            Text(
+                text = "Library Folder",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Point NovelForge at a folder of .epub, .txt or .md files " +
+                        "you already keep on this device. Scanning imports the ones " +
+                        "it hasn't seen before. Nothing in the folder is moved, " +
+                        "renamed or deleted, so it's safe to share with another " +
+                        "reader app.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            var libraryFolder by remember {
+                mutableStateOf(LibraryFolder.getFolderUri(context))
+            }
+            var libraryFolderAccessible by remember {
+                mutableStateOf(LibraryFolder.hasAccess(context))
+            }
+            // Read once. Recomputing this inside the layout would hit
+            // SharedPreferences on every recomposition, and would also make
+            // the "cleared" confirmation impossible to show: clearing empties
+            // the set, so the branch that renders the message would vanish
+            // in the same frame that earned it.
+            var ignoredCount by remember {
+                mutableStateOf(LibraryFolder.getIgnoredUris(context).size)
+            }
+            var ignoredCleared by remember { mutableStateOf(false) }
+            val libraryFolderPicker = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.OpenDocumentTree()
+            ) { uri ->
+                if (uri != null) {
+                    // Read only — this folder is a source, never a destination.
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                    LibraryFolder.setFolderUri(context, uri.toString())
+                    libraryFolder = uri.toString()
+                    libraryFolderAccessible = true
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = when {
+                            libraryFolder == null -> "No folder chosen"
+                            !libraryFolderAccessible -> "Folder access was revoked"
+                            else -> Uri.decode(
+                                Uri.parse(libraryFolder).lastPathSegment ?: libraryFolder
+                            )
+                        },
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = when {
+                            libraryFolder == null ->
+                                "Choose one, then scan from the + button in your library"
+                            !libraryFolderAccessible ->
+                                "Choose the folder again to restore access"
+                            else -> {
+                                val last = LibraryFolder.getLastScanTime(context)
+                                if (last > 0L) {
+                                    "Last scanned " + android.text.format.DateUtils
+                                        .getRelativeTimeSpanString(last)
+                                } else {
+                                    "Not scanned yet"
+                                }
+                            }
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { libraryFolderPicker.launch(null) }) {
+                            Text(
+                                if (libraryFolder == null) "Choose folder"
+                                else "Change folder"
+                            )
+                        }
+                        if (libraryFolder != null) {
+                            TextButton(
+                                onClick = {
+                                    LibraryFolder.clearFolder(context)
+                                    libraryFolder = null
+                                    libraryFolderAccessible = false
+                                }
+                            ) {
+                                Text("Forget")
+                            }
+                        }
+                    }
+
+                    // Removing a scanned book records its file as unwanted,
+                    // otherwise the next scan would import it straight back.
+                    // This is the escape hatch when that was a mistake.
+                    if (ignoredCount > 0) {
+                        TextButton(
+                            enabled = !ignoredCleared,
+                            onClick = {
+                                LibraryFolder.clearIgnoredUris(context)
+                                ignoredCleared = true
+                            }
+                        ) {
+                            Text(
+                                if (ignoredCleared) {
+                                    "They'll come back on the next scan"
+                                } else {
+                                    val files = if (ignoredCount == 1) "file" else "files"
+                                    "Re-import $ignoredCount removed $files"
+                                }
+                            )
+                        }
+                    }
                 }
             }
 
