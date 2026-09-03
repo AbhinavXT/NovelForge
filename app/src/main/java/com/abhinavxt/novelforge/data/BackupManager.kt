@@ -47,7 +47,29 @@ data class NovelBackup(
     val status: String,
     val totalChapters: Int,
     val addedToLibraryAt: Long,
-    val lastUpdatedAt: Long
+    val lastUpdatedAt: Long,
+
+    /**
+     * Nullable with a default so backups written before this field existed
+     * still deserialize — Gson leaves absent fields alone, and every older
+     * backup simply restores a null.
+     *
+     * Worth carrying: without it, a restore would strip the library-folder
+     * dedupe key from every scanned book, and the next scan would import
+     * the whole folder a second time.
+     */
+    val sourceUri: String? = null,
+
+    /**
+     * Same nullable-with-default treatment as [sourceUri], and for the same
+     * reason: older backups simply restore a null.
+     *
+     * Dropping it would be worse than dropping the URI. A restore that lost
+     * every hash would leave the whole library invisible to duplicate
+     * detection, and the next import of files the user already owns would
+     * sail straight through.
+     */
+    val contentHash: String? = null
 )
 
 data class ChapterBackup(
@@ -174,7 +196,9 @@ class BackupManager(
                     status = novel.status,
                     totalChapters = novel.totalChapters,
                     addedToLibraryAt = novel.addedToLibraryAt,
-                    lastUpdatedAt = novel.lastUpdatedAt
+                    lastUpdatedAt = novel.lastUpdatedAt,
+                    sourceUri = novel.sourceUri,
+                    contentHash = novel.contentHash
                 )
             }
 
@@ -331,7 +355,9 @@ class BackupManager(
                     status = novelBackup.status,
                     totalChapters = novelBackup.totalChapters,
                     addedToLibraryAt = novelBackup.addedToLibraryAt,
-                    lastUpdatedAt = novelBackup.lastUpdatedAt
+                    lastUpdatedAt = novelBackup.lastUpdatedAt,
+                    sourceUri = novelBackup.sourceUri,
+                    contentHash = novelBackup.contentHash
                 )
                 repository.insertNovelForRestore(novelEntity)
                 novelsRestored++

@@ -1,5 +1,6 @@
 package com.abhinavxt.novelforge.ui.screens
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Link
@@ -80,6 +82,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import com.abhinavxt.novelforge.data.epub.DocumentFormat
+import com.abhinavxt.novelforge.data.epub.LibraryFolder
 import com.abhinavxt.novelforge.util.AnnotationExporter
 import com.abhinavxt.novelforge.util.EpubExporter
 import kotlinx.coroutines.launch
@@ -247,11 +250,36 @@ fun LibraryScreen(
         )
     }
 
-    // File picker launcher for importable documents (.epub, .txt, .md)
+    // File picker launcher for importable documents (.epub, .txt, .md).
+    // Multi-select, because the realistic case is a reader who already
+    // owns a shelf of books and wants them all in, not one at a time.
     val epubPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        uri?.let { viewModel.importDocument(it) }
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) viewModel.importDocuments(uris)
+    }
+
+    // Library folder — the reader keeps books on disk for other apps and
+    // wants them here without copying anything. Read permission only: this
+    // folder is a source, and NovelForge never writes into it.
+    val context = LocalContext.current
+    var libraryFolderUri by remember {
+        mutableStateOf(LibraryFolder.getFolderUri(context))
+    }
+    val libraryFolderPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            // Without persisting, the grant dies with the process and the
+            // next scan finds a folder it can no longer open.
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+            LibraryFolder.setFolderUri(context, uri.toString())
+            libraryFolderUri = uri.toString()
+            viewModel.scanLibraryFolder()
+        }
     }
 
     // Snackbar for import results
@@ -275,6 +303,41 @@ fun LibraryScreen(
                 snackbarHostState.showSnackbar(
                     message = state.message,
                     duration = SnackbarDuration.Long
+                )
+                viewModel.clearImportState()
+            }
+            is ImportState.AlreadyInLibrary -> {
+                snackbarHostState.showSnackbar(
+                    message = "Already in your library as \"${state.existingTitle}\"",
+                    duration = SnackbarDuration.Short
+                )
+                viewModel.clearImportState()
+            }
+            is ImportState.BatchDone -> {
+                val books = if (state.imported == 1) "book" else "books"
+                // Duplicates are reported, never buried, but they read as
+                // part of a successful run rather than as failures — the
+                // import did the right thing by skipping them.
+                val dupeNote = when (state.duplicates) {
+                    0 -> ""
+                    1 -> " · 1 already in your library"
+                    else -> " · ${state.duplicates} already in your library"
+                }
+                val message = when {
+                    state.imported == 0 && state.failed == 0 && state.duplicates > 0 ->
+                        "Nothing new — ${state.duplicates} already in your library"
+                    state.imported == 0 && state.failed == 0 ->
+                        "Nothing new — everything in the folder is already here"
+                    state.failed == 0 -> "Imported ${state.imported} $books$dupeNote"
+                    state.imported == 0 -> state.firstError
+                        ?: "None of the ${state.failed} files could be imported"
+                    else -> "Imported ${state.imported} $books$dupeNote · " +
+                            "${state.failed} failed (${state.firstError})"
+                }
+                snackbarHostState.showSnackbar(
+                    message = message,
+                    duration = if (state.failed == 0) SnackbarDuration.Short
+                    else SnackbarDuration.Long
                 )
                 viewModel.clearImportState()
             }
@@ -310,13 +373,32 @@ fun LibraryScreen(
                     onDismissRequest = { addMenuExpanded = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Import book file") },
+                        text = { Text("Import book files") },
                         leadingIcon = {
                             Icon(Icons.Default.FileOpen, contentDescription = null)
                         },
                         onClick = {
                             addMenuExpanded = false
                             epubPickerLauncher.launch(DocumentFormat.PICKER_MIME_TYPES)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                if (libraryFolderUri == null) "Choose library folder"
+                                else "Scan library folder"
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null)
+                        },
+                        onClick = {
+                            addMenuExpanded = false
+                            if (libraryFolderUri == null) {
+                                libraryFolderPicker.launch(null)
+                            } else {
+                                viewModel.scanLibraryFolder()
+                            }
                         }
                     )
                     DropdownMenuItem(
@@ -667,7 +749,11 @@ fun LibraryScreen(
 
             // Loading overlay when importing — sits on top of everything
             // in the PullToRefreshBox, including the banner.
-            if (importState is ImportState.Importing) {
+            val busyState = importState
+            if (busyState is ImportState.Importing ||
+                busyState is ImportState.Scanning ||
+                busyState is ImportState.ImportingBatch
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
@@ -679,10 +765,28 @@ fun LibraryScreen(
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            CircularProgressIndicator()
+                            // A batch has a known length, so it gets a
+                            // determinate bar. A single import does not.
+                            if (busyState is ImportState.ImportingBatch) {
+                                CircularProgressIndicator(
+                                    progress = {
+                                        busyState.completed.toFloat() /
+                                                busyState.total.coerceAtLeast(1)
+                                    }
+                                )
+                            } else {
+                                CircularProgressIndicator()
+                            }
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = "Importing EPUB...",
+                                text = when (busyState) {
+                                    is ImportState.Scanning ->
+                                        "Scanning library folder..."
+                                    is ImportState.ImportingBatch ->
+                                        "Importing ${busyState.completed + 1} " +
+                                                "of ${busyState.total}..."
+                                    else -> "Importing..."
+                                },
                                 style = MaterialTheme.typography.bodyLarge
                             )
                         }

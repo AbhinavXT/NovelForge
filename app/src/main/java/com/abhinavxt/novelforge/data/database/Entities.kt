@@ -26,7 +26,34 @@ data class NovelEntity(
     // but previousTotalChapters stays at the old value. The detail screen
     // uses the delta to show "X new chapters since you last checked."
     // Set to totalChapters when user opens the detail screen.
-    val previousTotalChapters: Int = 0
+    val previousTotalChapters: Int = 0,
+
+    /**
+     * SAF document URI of the file this book came from, for books picked up
+     * by a library-folder scan or a file import. Null for anything fetched
+     * from an online source.
+     *
+     * This is the scan's dedupe key: a rescan skips any file whose URI is
+     * already here. It is a URI rather than a path because SAF gives us no
+     * path, and it is stored per novel rather than in preferences so that
+     * it survives backup and restore.
+     */
+    val sourceUri: String? = null,
+
+    /**
+     * SHA-256 of the imported file's bytes, for books that came off disk.
+     *
+     * Catches the duplicate that [sourceUri] cannot: the same file reached
+     * by a different route. A file picked by hand stores no URI (a picker
+     * grant is transient, so the same file picked twice yields two different
+     * URIs), and the same book can sit in two folders. Identical bytes are
+     * identical bytes regardless of how they were reached.
+     *
+     * Null for online sources, for saved web pages, and for anything
+     * imported before this column existed — those files are often gone, so
+     * there is nothing to backfill from.
+     */
+    val contentHash: String? = null
 )
 
 @Entity(

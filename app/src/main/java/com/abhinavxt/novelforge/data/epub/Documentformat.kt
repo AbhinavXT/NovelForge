@@ -51,15 +51,28 @@ enum class DocumentFormat {
         private val MARKDOWN_EXTENSIONS = setOf("md", "markdown", "mdown", "mkd")
         private val TEXT_EXTENSIONS = setOf("txt", "text", "log")
 
-        fun detect(context: Context, uri: Uri): DocumentFormat {
-            val name = displayName(context, uri).lowercase()
-            when (name.substringAfterLast('.', "")) {
-                "epub" -> return EPUB
-                in MARKDOWN_EXTENSIONS -> return MARKDOWN
-                in TEXT_EXTENSIONS -> return TEXT
-                "pdf" -> return PDF
-                else -> Unit
+        /**
+         * Extension-only detection. Split out from [detect] because a folder
+         * scan already has the display name from its directory cursor, and
+         * re-querying the provider once per file to learn what it just read
+         * would turn one query into hundreds.
+         *
+         * Returns [UNSUPPORTED] when the extension is missing or unknown —
+         * callers that can afford a provider round-trip should fall back to
+         * [detect], which also consults the MIME type.
+         */
+        fun fromFileName(fileName: String): DocumentFormat =
+            when (fileName.lowercase().substringAfterLast('.', "")) {
+                "epub" -> EPUB
+                in MARKDOWN_EXTENSIONS -> MARKDOWN
+                in TEXT_EXTENSIONS -> TEXT
+                "pdf" -> PDF
+                else -> UNSUPPORTED
             }
+
+        fun detect(context: Context, uri: Uri): DocumentFormat {
+            val name = displayName(context, uri)
+            fromFileName(name).let { if (it != UNSUPPORTED) return it }
 
             // Extension missing or unrecognised — fall back to the MIME type.
             return when (val mime = context.contentResolver.getType(uri)) {

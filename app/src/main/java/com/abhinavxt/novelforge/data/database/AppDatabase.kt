@@ -34,7 +34,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CodexNameEntity::class,          // NEW in v16 — character codex
         CodexScanInfoEntity::class       // NEW in v16 — codex scan watermark
     ],
-    version = 17,
+    version = 19,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -310,6 +310,43 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration v17 → v18: `novels.sourceUri` records the file a book
+         * was imported from, so a library-folder scan can tell what it has
+         * already seen. Nullable with no default — existing rows become
+         * null, which is correct: nothing before this point was scanned,
+         * and a null simply means "not from a file I am tracking".
+         *
+         * Books imported by hand before v18 therefore look new to the
+         * first scan. Deduping those would need to compare titles, which
+         * guesses; letting the user delete the odd duplicate does not.
+         */
+        private val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `novels` ADD COLUMN `sourceUri` TEXT")
+            }
+        }
+
+        /**
+         * Migration v18 → v19: `novels.contentHash` holds the SHA-256 of an
+         * imported file, so the same file cannot enter the library twice.
+         *
+         * Nullable and unbackfilled, necessarily: the hash can only be
+         * computed by reading the file, and for books imported before v19
+         * that file may have been moved or deleted. Duplicate detection
+         * therefore only covers books imported from this version onward,
+         * and the gap closes on its own as the old ones are re-imported.
+         *
+         * No index. This is looked up once per imported file against a
+         * table holding hundreds of rows, not millions, where the scan
+         * costs less than maintaining the index would.
+         */
+        private val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `novels` ADD COLUMN `contentHash` TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -317,7 +354,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_reader_database"
                 )
-                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
+                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
                     // No fallbackToDestructiveMigration() — if a migration is missing,
                     // the app crashes instead of silently wiping the user's library,
                     // bookmarks, reading progress, and stats. Always write migrations.
