@@ -451,7 +451,18 @@ class LibraryViewModel(
                             // The URI was new but the bytes were not — the
                             // same book sitting in two folders, or one the
                             // user picked by hand before the folder existed.
-                            is EpubImporter.ImportResult.Duplicate -> duplicates++
+                            //
+                            // Recorded here because a rejected file has
+                            // nowhere else to leave a trace: the novel row
+                            // it collided with is already spoken for. Without
+                            // this the scan would re-open and re-report the
+                            // same file on every run.
+                            is EpubImporter.ImportResult.Duplicate -> {
+                                duplicates++
+                                LibraryFolder.markDuplicate(
+                                    context, file.uri.toString()
+                                )
+                            }
                             is EpubImporter.ImportResult.Error -> {
                                 failed++
                                 if (firstError == null) {
@@ -468,6 +479,20 @@ class LibraryViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * Rescan, deliberately including books the user removed earlier.
+     *
+     * Removing a scanned book records its file as unwanted, which is right
+     * by default — otherwise the next scan drags it straight back. But that
+     * left the only way back through the Settings screen, which is a long
+     * walk for a change of mind about a book you are looking at.
+     */
+    fun rescanIncludingRemoved() {
+        val context = appContext ?: return
+        LibraryFolder.clearIgnoredUris(context)
+        scanLibraryFolder()
     }
 
     fun clearImportState() {

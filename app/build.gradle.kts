@@ -1,6 +1,6 @@
 // ── Version ──────────────────────────────────────────────────────────────
 // Single source of truth. Edit this line only.
-val appVersionName = "1.8.0"
+val appVersionName = "1.8.1"
 
 /**
  * major.minor.patch -> major*10000 + minor*100 + patch

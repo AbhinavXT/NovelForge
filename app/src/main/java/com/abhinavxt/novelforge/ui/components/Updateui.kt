@@ -22,6 +22,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -143,7 +144,8 @@ fun UpdateStatusRow(
 fun UpdateAvailableDialog(
     info: UpdateChecker.UpdateInfo,
     onDismiss: () -> Unit,
-    onUpdate: () -> Unit
+    onUpdate: () -> Unit,
+    onBackUp: (() -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -196,6 +198,25 @@ fun UpdateAvailableDialog(
                         text = info.releaseNotes,
                         style = MaterialTheme.typography.bodyMedium
                     )
+                }
+                if (onBackUp != null) {
+                    Spacer(Modifier.height(20.dp))
+                    Text(
+                        text = "Updating can change how your library is stored, " +
+                                "and there's no way back to an older version " +
+                                "afterwards. A backup takes a moment and means " +
+                                "nothing can be lost.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    // Sits in the content rather than as a third action
+                    // button: a dialog with three equal-weight buttons
+                    // makes the primary choice harder to find, and this is
+                    // an aside rather than an alternative to updating.
+                    OutlinedButton(onClick = onBackUp) {
+                        Text("Back up first")
+                    }
                 }
             }
         },

@@ -479,6 +479,13 @@ fun NovelReaderApp(
                 onUpdate = {
                     openUpdateUrlInBrowser(context, s.info.downloadUrl)
                     showUpdateDialog = false
+                },
+                onBackUp = {
+                    // Deliberately does NOT call dismiss(): the user is
+                    // preparing to update, not declining it, so the prompt
+                    // should still be waiting for them next launch.
+                    showUpdateDialog = false
+                    navController.navigate(Screen.Settings.route)
                 }
             )
         }

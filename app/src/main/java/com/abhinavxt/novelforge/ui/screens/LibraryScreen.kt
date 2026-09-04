@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.ManageSearch
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
@@ -282,6 +283,13 @@ fun LibraryScreen(
         }
     }
 
+    // Recomputed when the menu opens and after any import settles, so the
+    // entry appears as soon as a book is deleted and disappears once the
+    // removed books have been pulled back in.
+    val removedCount by remember(addMenuExpanded, importState) {
+        mutableStateOf(LibraryFolder.getIgnoredUris(context).size)
+    }
+
     // Snackbar for import results
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -401,6 +409,26 @@ fun LibraryScreen(
                             }
                         }
                     )
+                    // Only when there is something to bring back. A book you
+                    // are looking at is the wrong place to learn that undoing
+                    // a deletion lives on the Settings screen.
+                    if (removedCount > 0) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (removedCount == 1) "Re-import 1 removed book"
+                                    else "Re-import $removedCount removed books"
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.Restore, contentDescription = null)
+                            },
+                            onClick = {
+                                addMenuExpanded = false
+                                viewModel.rescanIncludingRemoved()
+                            }
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("Save a web page") },
                         leadingIcon = {

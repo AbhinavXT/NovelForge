@@ -30,6 +30,7 @@ object LibraryFolder {
     private const val PREF_TREE_URI = "tree_uri"
     private const val PREF_LAST_SCAN = "last_scan_time"
     private const val PREF_IGNORED_URIS = "ignored_uris"
+    private const val PREF_DUPLICATE_URIS = "duplicate_uris"
 
     /**
      * Subdirectories are followed, because organising books into
@@ -68,9 +69,14 @@ object LibraryFolder {
     }
 
     fun clearFolder(context: Context) {
+        // Both skip lists hold URIs built from the old tree grant. They are
+        // meaningless against a different folder, so dropping them here
+        // stops a stale entry from silently suppressing a real file later.
         prefs(context).edit()
             .remove(PREF_TREE_URI)
             .remove(PREF_LAST_SCAN)
+            .remove(PREF_IGNORED_URIS)
+            .remove(PREF_DUPLICATE_URIS)
             .apply()
     }
 
@@ -115,6 +121,28 @@ object LibraryFolder {
         prefs(context).edit().remove(PREF_IGNORED_URIS).apply()
     }
 
+    // ── Resolved duplicates ─────────────────────────────────────
+
+    /**
+     * Files a previous scan already judged to be duplicates of something in
+     * the library.
+     *
+     * These need their own record because a rejected file has nowhere else
+     * to leave one. The dedupe key lives on the novel row, and that row is
+     * already spoken for — either by a different file's URI, or by a hash
+     * matched before the file was even parsed. Without this list the scan
+     * re-opens the same rejected files on every run and reports them again
+     * each time, which is noise rather than information: the user was told
+     * once, and nothing has changed since.
+     */
+    fun getDuplicateUris(context: Context): Set<String> =
+        prefs(context).getStringSet(PREF_DUPLICATE_URIS, emptySet()) ?: emptySet()
+
+    fun markDuplicate(context: Context, uri: String) {
+        val updated = getDuplicateUris(context).toMutableSet().apply { add(uri) }
+        prefs(context).edit().putStringSet(PREF_DUPLICATE_URIS, updated).apply()
+    }
+
     // ── Enumeration ─────────────────────────────────────────────
 
     /**
@@ -144,6 +172,7 @@ object LibraryFolder {
 
         try {
             val ignored = getIgnoredUris(context)
+            val knownDuplicates = getDuplicateUris(context)
             val found = mutableListOf<ScannedFile>()
             var skippedImported = 0
             var skippedIgnored = 0
@@ -198,6 +227,10 @@ object LibraryFolder {
                         when {
                             fileUri in alreadyImported -> skippedImported++
                             fileUri in ignored -> skippedIgnored++
+                            // Counted with the already-imported files, not
+                            // reported separately: the user was told about
+                            // this one on the scan that found it.
+                            fileUri in knownDuplicates -> skippedImported++
                             else -> found.add(
                                 ScannedFile(Uri.parse(fileUri), name, format)
                             )

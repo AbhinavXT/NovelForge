@@ -32,7 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 /**
- * Changelog screen — shows version history in reverse chronological order.
+ * Changelog screen - shows version history in reverse chronological order.
  * Navigated to from Settings > About > "Changelog" row.
  *
  * Each version entry has a version number, a date, and a list of changes.
@@ -163,7 +163,7 @@ private fun ChangelogEntry(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Changelog data — add new entries at the top
+// Changelog data - add new entries at the top
 // ═══════════════════════════════════════════════════════════════
 
 private data class VersionEntry(
@@ -174,15 +174,27 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v1.8.1",
+        date = "Sep 2026",
+        changes = listOf(
+            "Library folder - point NovelForge at a folder of books you already keep on this device and scan it for new files. Nothing in the folder is moved, renamed or deleted, so it's safe to share with another reader app",
+            "Import several books at once instead of one file at a time",
+            "Duplicate detection - the same file can no longer be imported twice, and books already in your library are recognised by title and author",
+            "Removed books stay removed on rescan, with a menu entry to bring them back",
+            "New Top/Bottom tap zone layout for page turning, for readers who can't comfortably reach the side edges (reader → tap centre → Tap Zones)",
+            "Update prompt now offers to take you to Backup first"
+        )
+    ),
+    VersionEntry(
         version = "v1.8.0",
         date = "Jul 2026",
         changes = listOf(
-            "App-wide themes — Nord, Dracula, Gruvbox, Catppuccin, AMOLED, Sepia, Paper, Solarized, Navy and Grey, matching the reader palettes",
-            "Custom app theme — pick your own background and accent color",
+            "App-wide themes - Nord, Dracula, Gruvbox, Catppuccin, AMOLED, Sepia, Paper, Solarized, Navy and Grey, matching the reader palettes",
+            "Custom app theme - pick your own background and accent color",
             "4 new accent colors (Pink, Indigo, Cyan, Amber) plus a custom accent seed",
-            "App-wide font setting — apply any bundled font across the whole UI",
+            "App-wide font setting - apply any bundled font across the whole UI",
             "Home screen now shows a 3×3 grid of your latest novels",
-            "New launcher icon — cursive Nf monogram in Dancing Script"
+            "New launcher icon - cursive Nf monogram in Dancing Script"
         )
     ),
     VersionEntry(
@@ -190,9 +202,9 @@ private val changelogEntries = listOf(
         date = "Apr 2026",
         changes = listOf(
             "Horizontal paged reading mode with swipe + tap navigation",
-            "Auto-scroll mode — teleprompter-style continuous drift, tap to pause",
+            "Auto-scroll mode - teleprompter-style continuous drift, tap to pause",
             "Quick settings bottom sheet (reading mode, fonts, themes, margins, transitions)",
-            "Highlights & annotations — select text to highlight in 6 colors",
+            "Highlights & annotations - select text to highlight in 6 colors",
             "Page turn animations: slide, fade, page curl, none",
             "Volume key navigation for hands-free page turning",
             "New chapter update banner on novel detail screen",
