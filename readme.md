@@ -2,15 +2,15 @@
 
 A reading app for people who actually read.
 
-NovelForge is a privacy-respecting Android reader for web novels and EPUBs. No account. No subscription. No analytics. The book stays on your phone — and now the app reads it too: a character codex, a relationship graph, and full-text search across your whole library, all computed on-device.
+NovelForge is a privacy-respecting Android reader for web novels and EPUBs. No account. No subscription. No analytics. The book stays on your phone - and now the app reads it too: a character codex, a relationship graph, and full-text search across your whole library, all computed on-device.
 
 https://github.com/user-attachments/assets/ed53e37d-f37b-43c6-87b3-962cdc796f36
 
 ## What it does
 
-- Imports `.epub`, `.txt`, and `.md` files — and exports any novel back out as a clean EPUB
-- **Character codex** — every recurring character, place, and faction indexed on-device, spoiler-safe: it only ever shows you what you've read
-- **Relationship graph** — who appears with whom, drawn as a live map that grows with your reading position
+- Imports `.epub`, `.txt`, and `.md` files - and exports any novel back out as a clean EPUB
+- **Character codex** - every recurring character, place, and faction indexed on-device, spoiler-safe: it only ever shows you what you've read
+- **Relationship graph** - who appears with whom, drawn as a live map that grows with your reading position
 - Full-text search across every downloaded chapter, plus in-chapter find with match highlighting
 - 11 themes, 8 reading fonts, configurable margins and line spacing
 - Scroll mode, paged mode, a teleprompter-style auto-scroll, and four tap-zone layouts
@@ -23,6 +23,14 @@ https://github.com/user-attachments/assets/ed53e37d-f37b-43c6-87b3-962cdc796f36
 
 [Full feature list →](docs/FEATURES.md)
 
+## ☕ Support NovelForge
+
+NovelForge is built in my spare time and kept free, open-source, and ad-free.
+
+If you find it useful, consider buying me a coffee. It helps keep development going.
+
+[☕ Buy Me a Coffee](buymeacoffee.com/abhinavxt)
+
 ## Install
 
 [Download the latest APK from Releases](https://github.com/abhinavxt/novelforge/releases/latest).
@@ -33,7 +41,7 @@ Note: the APK ships `arm64-v8a` and `x86_64` only, so 32-bit ARM devices are not
 
 ```
 1. Download the APK
-2. Open it — Android asks once for install permission
+2. Open it - Android asks once for install permission
 3. Open the app
 ```
 
@@ -47,13 +55,13 @@ cd novelforge
 ./gradlew assembleRelease
 ```
 
-The APK lands in `app/build/outputs/apk/release/`. It is **unsigned** — there is
+The APK lands in `app/build/outputs/apk/release/`. It is **unsigned** - there is
 no release `signingConfig` in the build, so you'll need to sign it yourself
 (or use `assembleDebug`) before it will install.
 
 Requirements: Android Studio Ladybug or later, JDK 21, Android SDK 36.
 
-Gradle 8.14 does not run on JDK 25 — if Android Studio picks it up, set
+Gradle 8.14 does not run on JDK 25 - if Android Studio picks it up, set
 **Settings → Build Tools → Gradle → Gradle JDK** to 21.
 
 ## Stack
@@ -64,7 +72,7 @@ MVVM with a repository layer. See [`docs/FEATURES.md`](docs/FEATURES.md) for wha
 
 ## Contributing
 
-Bug reports and feature suggestions go in [Issues](https://github.com/abhinavxt/novelforge/issues). Code contributions welcome — open a PR against `main`.
+Bug reports and feature suggestions go in [Issues](https://github.com/abhinavxt/novelforge/issues). Code contributions welcome - open a PR against `main`.
 
 The project is built on weekends. Reviews aren't instant. Be patient.
 
@@ -82,7 +90,7 @@ If a work is available through an official platform, Patreon, or paid tier, plea
 
 Use it, read it, fork it, ship it. If you distribute a modified version, that
 version has to be GPL-3.0 too, with its source available. That's the whole
-deal — it keeps forks open rather than closing them off.
+deal - it keeps forks open rather than closing them off.
 
 The scraper layer is derived from
 [QuickNovel](https://github.com/LagradOst/QuickNovel) by LagradOst, which is
