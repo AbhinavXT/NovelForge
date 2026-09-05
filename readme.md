@@ -23,14 +23,6 @@ https://github.com/user-attachments/assets/ed53e37d-f37b-43c6-87b3-962cdc796f36
 
 [Full feature list →](docs/FEATURES.md)
 
-## ☕ Support NovelForge
-
-NovelForge is built in my spare time and kept free, open-source, and ad-free.
-
-If you find it useful, consider buying me a coffee. It helps keep development going.
-
-[☕ Buy Me a Coffee](buymeacoffee.com/abhinavxt)
-
 ## Install
 
 [Download the latest APK from Releases](https://github.com/abhinavxt/novelforge/releases/latest).
