@@ -70,12 +70,6 @@ The project is built on weekends. Reviews aren't instant. Be patient.
 
 Contributions are accepted under GPL-3.0, the same license as the project.
 
-## Support
-
-NovelForge is built on weekends and kept free, open-source, and ad-free.
-
-[☕ Buy me a coffee](https://buymeacoffee.com/abhinavxt)
-
 ## Disclaimer 
 
 NovelForge is a reader. It does not host, store, or distribute any content. It renders pages from sources you choose to add, the same pages your browser would load.
