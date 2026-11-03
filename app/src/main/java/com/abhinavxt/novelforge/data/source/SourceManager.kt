@@ -77,7 +77,9 @@ object SourceManager {
                 "https://novelfull.net/${novelId.removePrefix("nfn_")}.html"
             novelId.startsWith("pr_") -> {
                 val slug = novelId.removePrefix("pr_").replace("~", "/")
-                "https://pawread.com/$slug"
+                // The trailing slash matters: without it PawRead answers 404
+                // instead of redirecting to www.pawread.com.
+                "https://pawread.com/$slug/"
             }
             novelId.startsWith("pt_") ->
                 "https://primodialtranslation.com/series/${novelId.removePrefix("pt_")}/"
