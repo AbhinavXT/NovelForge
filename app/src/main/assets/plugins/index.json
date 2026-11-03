@@ -196,5 +196,14 @@
     "version": "1.0.0",
     "url": "readhive.js",
     "sourceId": "qrhv"
+  },
+  {
+    "id": "sonicmtl",
+    "name": "SonicMTL",
+    "site": "https://www.sonicmtl.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "sonicmtl.js",
+    "sourceId": "qsonic"
   }
 ]
