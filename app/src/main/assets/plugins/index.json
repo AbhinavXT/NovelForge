@@ -187,5 +187,14 @@
     "version": "1.0.0",
     "url": "ranobes.js",
     "sourceId": "qrnb"
+  },
+  {
+    "id": "readhive",
+    "name": "ReadHive",
+    "site": "https://readhive.org",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "readhive.js",
+    "sourceId": "qrhv"
   }
 ]
