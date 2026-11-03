@@ -34,5 +34,14 @@
     "version": "1.0.0",
     "url": "libread.js",
     "sourceId": "lr"
+  },
+  {
+    "id": "novelfull-net",
+    "name": "NovelFull",
+    "site": "https://novelfull.net",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "novelfull.js",
+    "sourceId": "nfn"
   }
 ]
