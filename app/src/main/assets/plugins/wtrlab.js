@@ -8,6 +8,7 @@
 //   novel details   GET  /en/novel/{rawId}/{slug}  (props.pageProps.serie.serie_data)
 //   chapter list    GET  /api/chapters/{rawId}?start=A&end=B   (250 per batch)
 //   chapter content POST /api/reader/get  {translate:"ai"|"web", ...}
+//                   -> content_url -> GET that for the chapter body
 //
 // Chapters without a cached translation come back as an AES-256-GCM
 // encrypted ("arr:"/"str:") payload of the raw text; the key is in one of
@@ -144,6 +145,21 @@ function postJson(url, payload, referer) {
     return v != null && typeof v === "object" && !Array.isArray(v) ? v : null;
   } catch (e) {
     console.error("postJson error for " + url + ": " + e.message);
+    return null;
+  }
+}
+
+function fetchContent(url, referer) {
+  try {
+    var r = fetch(url, { headers: { "User-Agent": USER_AGENT, "Accept": "application/json", "Referer": referer } });
+    if (!r.ok) {
+      console.error("content request failed: " + r.status + " for " + url);
+      return null;
+    }
+    var v = JSON.parse(r.text());
+    return v != null && typeof v === "object" && !Array.isArray(v) ? v : null;
+  } catch (e) {
+    console.error("content error for " + url + ": " + e.message);
     return null;
   }
 }
@@ -343,7 +359,7 @@ var GENRES = [
 module.exports = {
   id: "wtrlab",
   name: "WTR-Lab",
-  version: "1.0.0",
+  version: "1.1.0",
   site: SITE,
   lang: "en",
   // The built-in source kept translator/editor credit lines.
@@ -463,6 +479,12 @@ module.exports = {
     if (!reader) {
       console.error("reader/get failed for " + url);
       return null;
+    }
+    // The v2 reader API answers with a content_url instead of the chapter
+    // itself; that URL returns the old { data: { data: { body } } } shape.
+    if (!optObject(reader, "data") && typeof reader.content_url === "string") {
+      reader = fetchContent(SITE + reader.content_url, url);
+      if (!reader) return null;
     }
     var chapterData = optObject(optObject(reader, "data"), "data");
     if (!chapterData) return null;
