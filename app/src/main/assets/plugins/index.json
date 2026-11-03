@@ -115,5 +115,14 @@
     "version": "1.0.0",
     "url": "hiraethtranslation.js",
     "sourceId": "qhir"
+  },
+  {
+    "id": "lightnoveltranslations",
+    "name": "Light Novel Translations",
+    "site": "https://lightnovelstranslations.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "lightnoveltranslations.js",
+    "sourceId": "qlnt"
   }
 ]
