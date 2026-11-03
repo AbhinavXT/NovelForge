@@ -88,5 +88,14 @@
     "version": "1.0.0",
     "url": "fanmtl.js",
     "sourceId": "qfmtl"
+  },
+  {
+    "id": "graycity",
+    "name": "Graycity",
+    "site": "https://graycity.net",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "graycity.js",
+    "sourceId": "qgray"
   }
 ]
