@@ -50,8 +50,9 @@ object SourceManager {
 
     fun getAllSources(): List<Source> = synchronized(sources) { sources.values.toList() }
 
+    /** Royal Road when it is installed, otherwise the first source. PluginManager never removes the last one. */
     fun getDefaultSource(): Source =
-        getSource("royalroad") ?: error("RoyalRoad source not registered")
+        getSource("royalroad") ?: getAllSources().firstOrNull() ?: error("no sources registered")
 
     fun getSourceFromNovelId(novelId: String): Source? = synchronized(sources) {
         val sourceId = novelId.substringBefore("_")

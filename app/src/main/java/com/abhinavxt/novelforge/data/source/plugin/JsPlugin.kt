@@ -102,8 +102,26 @@ class JsPlugin private constructor(
             return withContext(callTimeoutMs, "$function()") { cx ->
                 val fn = ScriptableObject.getProperty(exports, function) as? Function
                     ?: throw PluginException("plugin '${info.id}' does not export $function()")
-                val jsArgs = args.map { Context.javaToJS(it, scope) }.toTypedArray()
+                val jsArgs = args.map { toJs(cx, scope, it) }.toTypedArray()
                 toKotlin(fn.call(cx, scope, exports, jsArgs))
+            }
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    /** True when the plugin exports a function with this name. */
+    fun hasFunction(name: String): Boolean = export(name, raw = true) is Function
+
+    /** Reads a non-function export (e.g. `filters`, `rateLimitMs`) as plain Kotlin values. */
+    fun export(name: String): Any? = export(name, raw = false)
+
+    private fun export(name: String, raw: Boolean): Any? {
+        lock.lockInterruptibly()
+        try {
+            return withContext(callTimeoutMs, "reading $name") {
+                val v = ScriptableObject.getProperty(exports, name)
+                if (raw) v else toKotlin(v)
             }
         } finally {
             lock.unlock()
@@ -380,6 +398,19 @@ private class Bridge(
         val v = a.getOrNull(i)
         return if (v == null || Undefined.isUndefined(v)) null else Context.toString(v)
     }
+}
+
+/**
+ * Kotlin → JS. Maps and lists become real JS objects and arrays; handing
+ * them over as Java objects would run into the ClassShutter.
+ */
+private fun toJs(cx: Context, scope: Scriptable, value: Any?): Any? = when (value) {
+    null -> null
+    is Map<*, *> -> cx.newObject(scope).also { obj ->
+        value.forEach { (k, v) -> ScriptableObject.putProperty(obj, k.toString(), toJs(cx, scope, v)) }
+    }
+    is List<*> -> cx.newArray(scope, value.map { toJs(cx, scope, it) }.toTypedArray())
+    else -> Context.javaToJS(value, scope)
 }
 
 /** JS → plain Kotlin. Functions and anything nested deeper than 32 levels become null. */

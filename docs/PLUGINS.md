@@ -33,11 +33,33 @@ module.exports = {
 
 **NovelItem**: `{ name, url | path, cover?, author?, summary? }`
 
-**NovelDetails**: `{ name, cover?, author?, summary?, status?, chapters: [{ name, url | path }] }`
+**NovelDetails**: `{ name, cover?, author?, summary?, status?, chapters: [{ name, url | path, number? }] }`
+
+`number` defaults to the chapter's position in the list (1-based).
 
 Use `url` for absolute links, or `path` for links relative to `site`
 (LNReader style). Chapters go in reading order. `parseChapter` returns the
-chapter's HTML; the app turns `<p>` paragraphs into reader text.
+chapter's HTML; the app turns `<p>` paragraphs into reader text. Return
+HTML even when you build the text yourself (one `<p>` per paragraph): plain
+newlines are not preserved.
+
+### Optional exports
+
+```js
+  // A filterable catalog for the Browse screen.
+  filters: {
+    categories: [{ label: "All", value: "" }, { label: "Fantasy", value: "fantasy" }],
+    orderBys:   [{ label: "Popular", value: "popular" }],
+    tags:       []
+  },
+  browseNovels: function (page, f) { /* f.category, f.orderBy, f.tag: a value or null */ },
+
+  // Wait this long before each call, one call at a time (max 10 000).
+  rateLimitMs: 500,
+```
+
+Any of the three filter lists may be empty or missing; the Browse screen
+hides empty ones.
 
 > ⚠️ The `id` becomes part of every novel ID saved in users' libraries.
 > If you rename it, those novels lose their source.
@@ -67,7 +89,12 @@ modules do not.
 
 Requests go through the app's shared HTTP client: a browser User-Agent is
 added if you don't set one, and requests are retried on 5xx and network
-errors (GET only).
+errors (GET only). Cloudflare challenges are solved automatically in a
+hidden WebView, and the request is replayed with the clearance cookies.
+
+Chapter HTML gets the same clean-up as the QuickNovel sources: author-note
+containers (`div.qnauthornotecontainer`) and "Translator: … Editor: …"
+credit lines are removed.
 
 ## Limits and sandbox
 
@@ -105,6 +132,30 @@ A relative `url` or `iconUrl` is resolved against the index URL, so a GitHub
 repo served through `raw.githubusercontent.com` or GitHub Pages works as-is.
 The `id` in the index must match the `id` the script exports. When the
 index's `version` is higher than the installed one, the app offers an update.
+
+## Bundled plugins
+
+The app's own sources ship as plugins in `app/src/main/assets/plugins/`,
+listed in an `index.json` there. They install on first start and update
+whenever the app ships a newer `version`. If the user removes one, it isn't
+reinstalled, but it stays under "Available".
+
+A bundled plugin that replaces a former built-in Kotlin source sets
+`"sourceId"` in the bundled index to that source's id. It then registers
+under that id, and may return `id` on list items, on the `parseNovel`
+result and on chapters, so novels already in users' libraries keep their
+ids (`rr_12345`, `rr_12345_67890`, …). An `id` is accepted only if it starts
+with that source's prefix (`PluginManager.LEGACY_SOURCES`); otherwise it is
+ignored and the default id is used. Downloaded repositories can't set
+`sourceId`.
+
+`BundledPluginsTest` checks that each bundled script loads and matches its
+index entry. While a built-in source is being ported, compare the two
+against the live site:
+
+```sh
+PARITY=royalroad ./gradlew :app:testDebugUnitTest --tests '*SourceParityTest*'
+```
 
 ## Developing
 

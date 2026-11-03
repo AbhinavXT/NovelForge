@@ -70,6 +70,18 @@ android {
         }
     }
 
+    testOptions {
+        unitTests.all {
+            // SourceParityTest is opt-in: PARITY=<sourceId>[,<sourceId>…] or PARITY=all.
+            val parity = System.getenv("PARITY").orEmpty()
+            it.environment("PARITY", parity)
+            System.getenv("PARITY_QUERY")?.let { q -> it.environment("PARITY_QUERY", q) }
+            // Live network test; also keeps Robolectric out of normal runs.
+            if (parity.isEmpty()) it.exclude("**/SourceParityTest*")
+            it.testLogging.showStandardStreams = parity.isNotEmpty()
+        }
+    }
+
     buildTypes {
         release {
             // Still false — flip this only once the R8 keep rules in
@@ -144,6 +156,10 @@ dependencies {
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 
     testImplementation(libs.junit)
+    // Only for SourceParityTest, which runs the old Kotlin sources (they
+    // use android.util.Base64, android.net.Uri and org.json) side by side
+    // with their plugin ports.
+    testImplementation(libs.robolectric)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.ui.test.junit4)

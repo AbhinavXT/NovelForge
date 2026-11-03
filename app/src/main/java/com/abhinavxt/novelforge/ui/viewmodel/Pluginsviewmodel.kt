@@ -77,7 +77,8 @@ class PluginsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun uninstall(plugin: InstalledPlugin) = track(plugin.id) {
         PluginManager.uninstall(plugin.id)
-        _messages.emit("Removed ${plugin.name}")
+            .onSuccess { _messages.emit("Removed ${plugin.name}") }
+            .onFailure { _messages.emit("Couldn't remove ${plugin.name}: ${it.message}") }
     }
 
     fun installFromFile(uri: Uri) = track(FROM_FILE) {

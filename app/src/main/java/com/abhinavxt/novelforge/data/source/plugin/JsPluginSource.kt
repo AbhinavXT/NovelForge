@@ -7,23 +7,37 @@ package com.abhinavxt.novelforge.data.source.plugin
 // treat it like any built-in source.
 //
 // IDs follow the same reversible scheme as NfSourceAdapter:
-//     sourceId = "js-<sanitised plugin id>"   (never contains "_")
-//     novelId  = "<sourceId>_<base64url(novelUrl)>"
+//     sourceId  = "js-<sanitised plugin id>"   (never contains "_")
+//     novelId   = "<sourceId>_<base64url(novelUrl)>"
 //     chapterId = "<novelId>_c<sha1(chapterUrl)[0..9]>"
 //
-// The script is compiled lazily on first use, so registering every installed
-// plugin at app start costs one small JSON read, not N script evaluations.
+// Bundled plugins that replaced a built-in source register under that
+// source's id instead (InstalledPlugin.legacySourceId). If the old source
+// wrote ids in a different format ("rr_12345"), the plugin returns them as
+// `id` on novels, list items and chapters; they are only accepted when they
+// start with that source's prefix, so a plugin can never hand out ids that
+// route to another source. Without an `id`, the default scheme applies.
+//
+// The script is compiled lazily on first use (or by warmUp() in the
+// background), so registering every installed plugin at app start costs one
+// small JSON read, not N script evaluations.
 
 import android.util.Base64
 import com.abhinavxt.novelforge.data.model.Chapter
 import com.abhinavxt.novelforge.data.model.Novel
 import com.abhinavxt.novelforge.data.model.NovelPreview
-import com.abhinavxt.novelforge.data.source.Source
+import com.abhinavxt.novelforge.data.source.BrowseFilters
+import com.abhinavxt.novelforge.data.source.BrowseSource
+import com.abhinavxt.novelforge.data.source.FilterOption
+import com.abhinavxt.novelforge.data.source.nf.stripHtml
 import com.abhinavxt.novelforge.util.Logger
 import com.abhinavxt.novelforge.util.ReaderText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.net.URI
 import java.security.MessageDigest
@@ -32,13 +46,15 @@ class JsPluginSource(
     val plugin: InstalledPlugin,
     private val scriptFile: File,
     private val http: PluginHttp,
-) : Source {
+) : BrowseSource {
 
     override val id: String = plugin.sourceId
     override val name: String =
         if (plugin.lang.equals("en", ignoreCase = true) || plugin.lang.isBlank()) plugin.name
         else "${plugin.name} (${plugin.lang})"
     override val baseUrl: String = plugin.site
+
+    private val legacyPrefix: String? = plugin.legacyIdPrefix?.let { "${it}_" }
 
     @Volatile private var loaded: JsPlugin? = null
 
@@ -51,9 +67,53 @@ class JsPluginSource(
         ).also { loaded = it }
     }
 
+    /** Compiles the script now. Failures are left for the first real call to report. */
+    fun warmUp() {
+        runCatching { runtime() }
+    }
+
+    /** The runtime if it compiles; null (logged) otherwise. Used by the synchronous properties. */
+    private fun runtimeOrNull(): JsPlugin? = try {
+        runtime()
+    } catch (e: Exception) {
+        Logger.e(TAG, "[${plugin.id}] failed to load: ${e.message}")
+        null
+    }
+
+    // ── Optional exports ────────────────────────────────────────────────
+
+    override val canBrowse: Boolean by lazy { runtimeOrNull()?.hasFunction("browseNovels") == true }
+
+    override val filters: BrowseFilters by lazy {
+        val raw = runCatching { runtimeOrNull()?.export("filters") as? Map<*, *> }.getOrNull()
+            ?: return@lazy BrowseFilters()
+        fun options(key: String) = (raw[key] as? List<*>).orEmpty()
+            .filterIsInstance<Map<*, *>>()
+            .mapNotNull { o ->
+                val value = o["value"]?.toString() ?: return@mapNotNull null
+                FilterOption(label = o["label"]?.toString() ?: value, value = value)
+            }
+        BrowseFilters(categories = options("categories"), orderBys = options("orderBys"), tags = options("tags"))
+    }
+
+    /** `rateLimitMs`: wait this long before each call, one call at a time (QuickNovel's rateLimitTime). */
+    private val rateLimitMs: Long by lazy {
+        ((runCatching { runtimeOrNull()?.export("rateLimitMs") }.getOrNull() as? Double) ?: 0.0)
+            .toLong().coerceIn(0L, 10_000L)
+    }
+    private val rateLimitMutex = Mutex()
+
     /** Runs a plugin function off the main thread; cancellation interrupts the script. */
-    private suspend fun call(function: String, vararg args: Any?): Any? =
-        runInterruptible(Dispatchers.IO) { runtime().call(function, *args) }
+    private suspend fun call(function: String, vararg args: Any?): Any? {
+        val run: suspend () -> Any? = { runInterruptible(Dispatchers.IO) { runtime().call(function, *args) } }
+        if (rateLimitMs == 0L) return run()
+        return rateLimitMutex.withLock {
+            delay(rateLimitMs)
+            run()
+        }
+    }
+
+    // ── Ids ─────────────────────────────────────────────────────────────
 
     private val b64Flags = Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
 
@@ -69,10 +129,22 @@ class JsPluginSource(
         return "${novelId}_c" + digest.joinToString("") { "%02x".format(it) }.take(10)
     }
 
+    /** A plugin-supplied id, if this plugin may supply ids and it has the right prefix. */
+    private fun explicitId(item: Map<*, *>): String? {
+        val prefix = legacyPrefix ?: return null
+        val given = item.str("id") ?: return null
+        if (given.startsWith(prefix) && given.length > prefix.length) return given
+        Logger.e(TAG, "[${plugin.id}] ignoring id '$given' (must start with '$prefix')")
+        return null
+    }
+
+    // ── Conversion ──────────────────────────────────────────────────────
+
     /** Plugins may return absolute URLs (`url`) or site-relative paths (`path`, LNReader style). */
     private fun resolve(urlOrPath: String?): String? {
         val raw = urlOrPath?.trim()?.ifEmpty { null } ?: return null
         if (raw.startsWith("http://") || raw.startsWith("https://")) return raw
+        if (raw.startsWith("//")) return "https:$raw"
         return runCatching { URI(plugin.site.trimEnd('/') + "/").resolve(raw.removePrefix("/")).toString() }
             .getOrNull()
     }
@@ -88,7 +160,7 @@ class JsPluginSource(
             .mapNotNull { item ->
                 val url = item.link() ?: return@mapNotNull null
                 NovelPreview(
-                    id = novelIdFromUrl(url),
+                    id = explicitId(item) ?: novelIdFromUrl(url),
                     title = item.str("name") ?: item.str("title") ?: return@mapNotNull null,
                     author = item.str("author") ?: "",
                     coverUrl = resolve(item.str("cover")),
@@ -107,26 +179,42 @@ class JsPluginSource(
         fallback
     }
 
+    // ── Source ──────────────────────────────────────────────────────────
+
     override suspend fun search(query: String): List<NovelPreview> =
         guarded("search", emptyList()) { toPreviews(call("searchNovels", query, 1)) }
 
     override suspend fun getPopular(page: Int): List<NovelPreview> =
         guarded("popularNovels(p$page)", emptyList()) { toPreviews(call("popularNovels", page)) }
 
+    override suspend fun browse(
+        page: Int,
+        category: String?,
+        orderBy: String?,
+        tag: String?,
+    ): List<NovelPreview> {
+        if (!canBrowse) return emptyList()
+        return guarded("browseNovels(p$page)", emptyList()) {
+            val options = mapOf("category" to category, "orderBy" to orderBy, "tag" to tag)
+            toPreviews(call("browseNovels", page, options))
+        }
+    }
+
     override suspend fun getNovelDetails(novelUrl: String): Novel? = guarded("parseNovel", null) {
         val result = call("parseNovel", novelUrl) as? Map<*, *> ?: return@guarded null
         // Derive the id from the URL the app asked for, so it round-trips
         // exactly with what search()/getPopular() produced.
-        val novelId = novelIdFromUrl(novelUrl)
+        val novelId = explicitId(result) ?: novelIdFromUrl(novelUrl)
         val chapters = (result["chapters"] as? List<*>).orEmpty()
             .filterIsInstance<Map<*, *>>()
-            .mapNotNull { ch -> ch.link()?.let { url -> url to ch.str("name") } }
+            .mapNotNull { ch -> ch.link()?.let { url -> url to ch } }
             .distinctBy { it.first }
-            .mapIndexed { index, (url, title) ->
+            .mapIndexed { index, (url, ch) ->
                 Chapter(
-                    id = chapterIdFor(novelId, url),
-                    number = index + 1,
-                    title = title ?: "Chapter ${index + 1}",
+                    id = explicitId(ch) ?: chapterIdFor(novelId, url),
+                    // Optional: a source's own numbering, when it isn't just the list position.
+                    number = (ch["number"] as? Double)?.toInt() ?: (index + 1),
+                    title = ch.str("name") ?: "Chapter ${index + 1}",
                     url = url,
                 )
             }
@@ -144,7 +232,11 @@ class JsPluginSource(
 
     override suspend fun getChapterContent(chapterUrl: String): String? = guarded("parseChapter", null) {
         val html = call("parseChapter", chapterUrl) as? String ?: return@guarded null
-        runInterruptible(Dispatchers.Default) { ReaderText.fromHtml(html) }.ifBlank { null }
+        runInterruptible(Dispatchers.Default) {
+            // Same clean-up the QuickNovel adapter applied: author-note
+            // containers and "Translator: … Editor: …" credit lines.
+            ReaderText.fromHtml(stripHtml(html, stripAuthorNotes = true))
+        }.ifBlank { null }
     }
 
     private companion object {

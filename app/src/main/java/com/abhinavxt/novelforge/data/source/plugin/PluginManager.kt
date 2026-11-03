@@ -11,6 +11,21 @@ package com.abhinavxt.novelforge.data.source.plugin
 //     [ { "id": "...", "name": "...", "site": "https://...", "lang": "en",
 //         "version": "1.0.0", "url": "https://.../plugin.js", "iconUrl": "..." } ]
 // A relative "url" is resolved against the index URL.
+//
+// Bundled plugins
+// ---------------
+// The app ships its first-party sources as plugins in assets/plugins/
+// (index.json in the same format, "url" relative to that folder). They are
+// installed on first start and updated whenever the app ships a newer
+// version, unless the user removed them. They also stay listed under
+// "Available", so a removed one can be put back.
+//
+// Bundled entries may carry "sourceId": the id of the built-in Kotlin source
+// the plugin replaced. The plugin then registers under that id instead of
+// "js-<id>" so novels already in users' libraries keep resolving, and may
+// return explicit novel/chapter ids in the old format (see JsPluginSource).
+// Only ids listed in LEGACY_SOURCES are accepted, and never from a
+// downloaded repository.
 
 import android.content.Context
 import com.abhinavxt.novelforge.data.source.SourceHttp
@@ -18,7 +33,11 @@ import com.abhinavxt.novelforge.data.source.SourceManager
 import com.abhinavxt.novelforge.util.Logger
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.abhinavxt.novelforge.data.source.nf.CloudflareKiller
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,8 +62,13 @@ data class InstalledPlugin(
     val iconUrl: String?,
     /** Where the script was downloaded from; null when installed from a file. */
     val scriptUrl: String?,
+    /** Set for bundled plugins that replaced a built-in source; see LEGACY_SOURCES. */
+    val legacySourceId: String? = null,
 ) {
-    val sourceId: String get() = PluginManager.sourceIdFor(id)
+    val sourceId: String get() = legacySourceId ?: PluginManager.sourceIdFor(id)
+
+    /** Prefix of novel ids this plugin may hand out explicitly, or null if it may not. */
+    val legacyIdPrefix: String? get() = legacySourceId?.let { PluginManager.LEGACY_SOURCES[it] }
 }
 
 /** A plugin listed by a repository index. */
@@ -57,6 +81,7 @@ data class RepoPlugin(
     val url: String,
     val iconUrl: String?,
     val repo: String,
+    val legacySourceId: String? = null,
 )
 
 object PluginManager {
@@ -66,6 +91,31 @@ object PluginManager {
     private const val PREF_REPOS = "repos"
     private const val MAX_SCRIPT_BYTES = 2L * 1024 * 1024
     private const val MAX_INDEX_BYTES = 4L * 1024 * 1024
+    private const val PREF_DECLINED = "declined_bundled"
+    private const val ASSET_DIR = "plugins"
+
+    /** RepoPlugin.repo for plugins shipped in the APK. */
+    const val BUNDLED = "bundled"
+
+    /**
+     * Built-in source ids a bundled plugin may take over, mapped to the
+     * prefix of the novel ids that source wrote ("rr_12345" for royalroad).
+     * QuickNovel-adapter sources already used "<sourceId>_<base64url>", which
+     * is the plugin default, so their prefix is the source id itself.
+     */
+    val LEGACY_SOURCES: Map<String, String> = mapOf(
+        "royalroad" to "rr",
+        "rnf" to "rnf",
+        "fwn" to "fwn",
+        "lr" to "lr",
+        "nfn" to "nfn",
+        "pr" to "pr",
+        "pt" to "pt",
+        "wtr" to "wtr",
+    ) + listOf(
+        "qanv", "qfmtl", "qgray", "qhir", "qlnt", "qlnw", "qlno", "qmtln", "qnbn",
+        "qnful", "qnlig", "qrnb", "qrfn", "qrhv", "qsonic", "qwatt", "qwbox", "qwclick",
+    ).associateWith { it }
 
     private val gson = Gson()
     private val mutex = Mutex()
@@ -86,6 +136,10 @@ object PluginManager {
     /** Shared transport for every plugin's fetch(). */
     val http: PluginHttp = OkHttpPluginHttp()
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private var bundled: List<RepoPlugin> = emptyList()
+
     /**
      * Registers every installed plugin with SourceManager. Synchronous on
      * purpose: it only reads one small JSON file (scripts compile lazily), and
@@ -97,7 +151,13 @@ object PluginManager {
         appContext = context.applicationContext
         _repos.value = loadRepos()
         _installed.value = readInstalled()
-        _installed.value.forEach { register(it) }
+        bundled = readBundledIndex()
+        syncBundled()
+        _available.value = bundled
+        val sources = _installed.value.map { register(it) }
+        // Compile scripts in the background so the first search, or the
+        // Browse screen reading a plugin's filters, rarely waits for it.
+        scope.launch { sources.forEach { it.warmUp() } }
     }
 
     /** Built-in sources never start with "js-" and plugin source ids never contain "_". */
@@ -138,8 +198,11 @@ object PluginManager {
                 errors += "$repo: ${e.message ?: e.javaClass.simpleName}"
             }
         }
-        // First repo wins when two list the same plugin id.
-        _available.value = all.distinctBy { it.id }.sortedBy { it.name.lowercase() }
+        // Bundled entries first so they win ties; otherwise the highest version wins.
+        _available.value = (bundled + all)
+            .groupBy { it.id }
+            .map { (_, entries) -> entries.reduce { best, e -> if (compareVersions(e.version, best.version) > 0) e else best } }
+            .sortedBy { it.name.lowercase() }
         errors
     }
 
@@ -169,8 +232,15 @@ object PluginManager {
     // ── Install / uninstall ─────────────────────────────────────────────
 
     suspend fun install(entry: RepoPlugin): Result<InstalledPlugin> = runCatchingIo {
-        val script = download(entry.url, MAX_SCRIPT_BYTES)
-        installScript(script, scriptUrl = entry.url, expectedId = entry.id, iconUrl = entry.iconUrl)
+        val script = if (entry.repo == BUNDLED) readAsset(entry.url) else download(entry.url, MAX_SCRIPT_BYTES)
+        val plugin = installScript(
+            script,
+            scriptUrl = entry.url.takeIf { entry.repo != BUNDLED },
+            expectedId = entry.id,
+            iconUrl = entry.iconUrl,
+        )
+        setDeclined(entry.id, false)
+        plugin
     }
 
     /** Installs a script the user picked from storage (handy while writing a plugin). */
@@ -179,10 +249,15 @@ object PluginManager {
         installScript(script, scriptUrl = null, expectedId = null, iconUrl = null)
     }
 
-    suspend fun uninstall(pluginId: String) = mutex.withLock {
-        withContext(Dispatchers.IO) {
-            val plugin = _installed.value.find { it.id == pluginId } ?: return@withContext
+    suspend fun uninstall(pluginId: String): Result<Unit> = mutex.withLock {
+        runCatchingIo {
+            val plugin = _installed.value.find { it.id == pluginId } ?: return@runCatchingIo
+            if (SourceManager.getAllSources().size <= 1) {
+                throw IllegalStateException("Can't remove the last source")
+            }
             SourceManager.unregisterSource(plugin.sourceId)
+            // Don't quietly reinstall a bundled plugin the user removed.
+            if (bundled.any { it.id == pluginId }) setDeclined(pluginId, true)
             File(pluginDir, scriptName(plugin.id)).delete()
             _installed.value = _installed.value.filter { it.id != pluginId }
             writeInstalled()
@@ -211,7 +286,7 @@ object PluginManager {
         }
         val sourceId = sourceIdFor(info.id)
         if (sourceId == "js-") throw PluginException("Plugin id '${info.id}' has no letters or digits")
-        val clash = _installed.value.find { it.sourceId == sourceId && it.id != info.id }
+        val clash = _installed.value.find { it.sourceId == (legacySourceIdFor(info.id) ?: sourceId) && it.id != info.id }
         if (clash != null) {
             throw PluginException("Plugin id '${info.id}' collides with installed plugin '${clash.id}'")
         }
@@ -224,6 +299,8 @@ object PluginManager {
             lang = info.lang,
             iconUrl = iconUrl ?: info.icon,
             scriptUrl = scriptUrl,
+            // An update keeps the id it replaced; only the bundle can grant one.
+            legacySourceId = legacySourceIdFor(info.id),
         )
         pluginDir.mkdirs()
         val target = File(pluginDir, scriptName(info.id))
@@ -239,14 +316,99 @@ object PluginManager {
         plugin
     }
 
-    private fun register(plugin: InstalledPlugin) {
-        SourceManager.registerSource(
-            JsPluginSource(plugin, File(pluginDir, scriptName(plugin.id)), http)
-        )
-    }
+    private fun register(plugin: InstalledPlugin): JsPluginSource =
+        JsPluginSource(plugin, File(pluginDir, scriptName(plugin.id)), http)
+            .also { SourceManager.registerSource(it) }
 
     /** File name derived from the source id, so it is always filesystem-safe. */
     private fun scriptName(pluginId: String) = sourceIdFor(pluginId) + ".js"
+
+    private fun legacySourceIdFor(pluginId: String): String? =
+        bundled.find { it.id == pluginId }?.legacySourceId
+            ?: _installed.value.find { it.id == pluginId }?.legacySourceId
+
+    // ── Bundled plugins ─────────────────────────────────────────────────
+
+    private fun readAsset(name: String): String =
+        appContext.assets.open("$ASSET_DIR/$name").use { it.readBytes().toString(Charsets.UTF_8) }
+
+    private fun readBundledIndex(): List<RepoPlugin> = try {
+        val type = object : TypeToken<List<Map<String, Any?>>>() {}.type
+        gson.fromJson<List<Map<String, Any?>>>(readAsset("index.json"), type).orEmpty().mapNotNull { e ->
+            fun s(k: String) = (e[k] as? String)?.trim()?.ifEmpty { null }
+            val id = s("id") ?: return@mapNotNull null
+            val legacy = s("sourceId")
+            if (legacy != null && legacy !in LEGACY_SOURCES) {
+                Logger.e(TAG, "bundled plugin $id claims unknown sourceId $legacy; ignored")
+                return@mapNotNull null
+            }
+            RepoPlugin(
+                id = id,
+                name = s("name") ?: id,
+                version = s("version") ?: "0",
+                site = s("site") ?: "",
+                lang = s("lang") ?: "en",
+                url = s("url") ?: return@mapNotNull null,
+                iconUrl = s("iconUrl"),
+                repo = BUNDLED,
+                legacySourceId = legacy,
+            )
+        }
+    } catch (e: Exception) {
+        Logger.e(TAG, "bundled index unreadable: ${e.message}")
+        emptyList()
+    }
+
+    /**
+     * Installs bundled plugins that are missing (and not removed by the user)
+     * or older than the bundled copy. Trusts the bundled index for metadata
+     * instead of evaluating each script at startup; BundledPluginsTest checks
+     * that the two agree.
+     */
+    private fun syncBundled() {
+        val declined = declinedIds()
+        var changed = false
+        for (entry in bundled) {
+            val current = _installed.value.find { it.id == entry.id }
+            val wanted = when {
+                current == null -> entry.id !in declined
+                else -> compareVersions(entry.version, current.version) > 0
+            }
+            if (!wanted) continue
+            try {
+                pluginDir.mkdirs()
+                val target = File(pluginDir, scriptName(entry.id))
+                val tmp = File(pluginDir, target.name + ".tmp")
+                tmp.writeText(readAsset(entry.url))
+                if (!tmp.renameTo(target)) throw IOException("Could not write ${target.name}")
+                val plugin = InstalledPlugin(
+                    id = entry.id,
+                    name = entry.name,
+                    version = entry.version,
+                    site = entry.site,
+                    lang = entry.lang,
+                    iconUrl = entry.iconUrl,
+                    scriptUrl = null,
+                    legacySourceId = entry.legacySourceId,
+                )
+                _installed.value = _installed.value.filter { it.id != entry.id } + plugin
+                changed = true
+            } catch (e: Exception) {
+                Logger.e(TAG, "bundled plugin ${entry.id} failed to install: ${e.message}")
+            }
+        }
+        if (changed) writeInstalled()
+    }
+
+    private fun prefs() = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    private fun declinedIds(): Set<String> = prefs().getStringSet(PREF_DECLINED, emptySet()).orEmpty()
+
+    private fun setDeclined(pluginId: String, declined: Boolean) {
+        val current = declinedIds()
+        val updated = if (declined) current + pluginId else current - pluginId
+        if (updated != current) prefs().edit().putStringSet(PREF_DECLINED, updated).apply()
+    }
 
     // ── Persistence ─────────────────────────────────────────────────────
 
@@ -324,8 +486,17 @@ private fun readLimited(body: okhttp3.ResponseBody, limit: Long): String {
     return body.string()
 }
 
-/** fetch() for plugins, on the shared source client (retries, timeouts, pooling). */
+/**
+ * fetch() for plugins, on the shared source client (retries, timeouts,
+ * pooling) plus the Cloudflare solver the QuickNovel sources used: when a
+ * response is a Cloudflare challenge, a hidden WebView solves it and the
+ * request is replayed with the clearance cookies.
+ */
 private class OkHttpPluginHttp : PluginHttp {
+
+    private val client by lazy {
+        SourceHttp.client.newBuilder().addInterceptor(CloudflareKiller()).build()
+    }
 
     override fun execute(request: PluginRequest): PluginResponse {
         val url = request.url.toHttpUrlOrNull() ?: throw IOException("invalid URL: ${request.url}")
@@ -344,7 +515,7 @@ private class OkHttpPluginHttp : PluginHttp {
         }
         builder.method(method, body)
 
-        SourceHttp.client.newCall(builder.build()).execute().use { response ->
+        client.newCall(builder.build()).execute().use { response ->
             val text = response.body?.let { readLimited(it, MAX_BODY_BYTES) } ?: ""
             return PluginResponse(
                 status = response.code,
