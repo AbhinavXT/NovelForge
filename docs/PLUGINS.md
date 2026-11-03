@@ -1,0 +1,119 @@
+# Source plugins
+
+NovelForge can load novel sources as JavaScript plugins, in the spirit of
+LNReader. You can add a source without an app release: write a `.js` file,
+host it in a repository (or install it straight from a file), and it shows
+up in Search and Browse next to the built-in sources.
+
+- Manage plugins in **Settings → Source plugins**.
+- A complete, tested example: [`plugins/example-plugin.js`](plugins/example-plugin.js).
+- A sample repository index: [`plugins/index.json`](plugins/index.json).
+
+## Writing a plugin
+
+A plugin is one file that assigns an object to `module.exports`:
+
+```js
+module.exports = {
+  id: "my-site",              // stable and unique; never change it once published
+  name: "My Site",
+  version: "1.0.0",           // bump on every release; drives "Update" in the app
+  site: "https://my-site.com",
+  lang: "en",                 // optional, default "en"
+  icon: "https://…/icon.png", // optional
+
+  popularNovels: function (page) { /* → [NovelItem] */ },
+  searchNovels: function (query, page) { /* → [NovelItem] */ },
+  parseNovel: function (url) { /* → NovelDetails */ },
+  parseChapter: function (url) { /* → HTML string */ }
+};
+```
+
+`page` starts at 1. Return an empty array when there are no more results.
+
+**NovelItem**: `{ name, url | path, cover?, author?, summary? }`
+
+**NovelDetails**: `{ name, cover?, author?, summary?, status?, chapters: [{ name, url | path }] }`
+
+Use `url` for absolute links, or `path` for links relative to `site`
+(LNReader style). Chapters go in reading order. `parseChapter` returns the
+chapter's HTML; the app turns `<p>` paragraphs into reader text.
+
+> ⚠️ The `id` becomes part of every novel ID saved in users' libraries.
+> If you rename it, those novels lose their source.
+
+## What a plugin can use
+
+Plugin code is **synchronous**. There is no `async`/`await` and no Promises:
+call `fetch` and use the result directly. The engine is Rhino with ES6
+support: `let`/`const`, arrow functions, template literals and
+`Array.prototype.map`/`filter`/`forEach` work. Classes, `async` and ES
+modules do not.
+
+| Global | Description |
+|---|---|
+| `fetch(url, init?)` | `init`: `{ method, headers, body }`. If `body` is an object it is form-encoded. Returns `{ status, ok, url, headers.get(name), text(), json() }`. Only `http(s)` URLs are allowed. Network failures throw an `Error` whose `name` is `"NetworkError"`. |
+| `fetchText(url, init?)` | `fetch(...).text()`, but throws on a non-2xx status. |
+| `fetchHtml(url, init?)` | Fetches and parses the page, with relative links resolved against the final URL. Throws on a non-2xx status. |
+| `parseHtml(html, baseUrl?)` | Returns a **Node** for the document. |
+| `encodeForm(obj)` | `a=1&b=2` encoding. |
+| `console.log/info/warn/error` | Shows up in logcat (tag `JsPlugin`) in debug builds. |
+
+**Node** methods (backed by jsoup, CSS selectors):
+`select(css)` → array of Node, `selectFirst(css)` → Node or `null`,
+`text()`, `ownText()`, `wholeText()`, `html()`, `outerHtml()`, `tagName()`,
+`attr(name)` → string or `null`, `absUrl(name)` → absolute URL or `null`,
+`hasClass(name)`, `children()`, `parent()`, `next()`, `prev()`, `remove()`.
+
+Requests go through the app's shared HTTP client: a browser User-Agent is
+added if you don't set one, and requests are retried on 5xx and network
+errors (GET only).
+
+## Limits and sandbox
+
+- No access to Java, files or Android APIs. The only ways out are the
+  globals above.
+- Each call has a 90-second budget (10 seconds to load the script). An
+  infinite loop is stopped, and so is a call whose screen has closed.
+- Scripts are capped at 2 MB and HTTP responses at 10 MB.
+- Calls into the same plugin run one at a time; different plugins run in
+  parallel.
+
+Plugins still run code from the internet on the user's device and can make
+requests to any site, so only add repositories you trust.
+
+## Repositories
+
+A repository is any URL that serves a JSON array (the same fields as
+LNReader's `plugins.json`):
+
+```json
+[
+  {
+    "id": "my-site",
+    "name": "My Site",
+    "site": "https://my-site.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "my-site.js",
+    "iconUrl": "icons/my-site.png"
+  }
+]
+```
+
+A relative `url` or `iconUrl` is resolved against the index URL, so a GitHub
+repo served through `raw.githubusercontent.com` or GitHub Pages works as-is.
+The `id` in the index must match the `id` the script exports. When the
+index's `version` is higher than the installed one, the app offers an update.
+
+## Developing
+
+1. Copy `plugins/example-plugin.js` and adapt the selectors.
+2. Push it to your phone and install it with the file button in
+   **Settings → Source plugins**. Reinstalling the same `id` replaces it.
+3. Check logcat for `JsPlugin` lines: script errors are logged with the
+   file name and line number.
+
+The runtime is covered by `JsPluginTest`, which also loads the example
+plugin against canned HTML. That is a quick way to test a plugin's
+selectors on the JVM before going near a device.

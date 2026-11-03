@@ -62,7 +62,8 @@ class SearchViewModel(
     private val _selectedSource = MutableStateFlow(SourceManager.getDefaultSource())
     val selectedSource: StateFlow<Source> = _selectedSource.asStateFlow()
 
-    val availableSources: List<Source> = SourceManager.getAllSources()
+    // A getter, not a snapshot: plugins can be installed while this ViewModel lives.
+    val availableSources: List<Source> get() = SourceManager.getAllSources()
 
     // ── Source picker: pinned + recently used (persisted) ────────
     // Stored ids are filtered against availableSources at read time, so

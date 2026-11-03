@@ -82,3 +82,15 @@
 #   4. Browse + open a chapter from a web source — checks Jsoup/OkHttp.
 #   5. Open the source picker — checks SourceHealth deserialisation.
 # ============================================================================
+# Rhino (source plugins). Standard JS objects are loaded lazily by class
+# name, and the jar references JDK-only APIs (java.beans, javax.lang.model)
+# on code paths the sandbox never reaches.
+-keep class org.mozilla.javascript.** { *; }
+-dontwarn org.mozilla.javascript.**
+-dontwarn java.beans.**
+-dontwarn javax.lang.model.**
+-dontwarn javax.script.**
+
+# Installed-plugin metadata is persisted with Gson; renamed fields would
+# orphan every installed plugin after an update.
+-keep class com.abhinavxt.novelforge.data.source.plugin.InstalledPlugin { <fields>; }

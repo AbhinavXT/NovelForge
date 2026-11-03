@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Warning
@@ -109,6 +110,7 @@ fun SettingsScreen(
     onNavigateToPronunciation: () -> Unit = {},
     onNavigateToReadingStats: () -> Unit = {},
     onNavigateToChangelog: () -> Unit = {},
+    onNavigateToPlugins: () -> Unit = {},
     updateChecker: UpdateChecker,
     viewModel: SettingsViewModel = viewModel(
         factory = SettingsViewModel.Factory(backupManager, themePreferences)
@@ -975,6 +977,44 @@ fun SettingsScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
+            }
+
+            if (com.abhinavxt.novelforge.AppConfig.ONLINE_SOURCES_ENABLED) {
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Card(
+                    onClick = onNavigateToPlugins,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Extension,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Source plugins",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Add sources from plugin repositories",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }

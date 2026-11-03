@@ -31,7 +31,8 @@ class BrowseViewModel(
     private val prefs = appContext.applicationContext
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    val availableSources: List<Source> = SourceManager.getAllSources()
+    // A getter, not a snapshot: plugins can be installed while this ViewModel lives.
+    val availableSources: List<Source> get() = SourceManager.getAllSources()
 
     // ── Source selection (last browsed source persisted) ─────────
     private val _selectedSource = MutableStateFlow(restoreLastSource())

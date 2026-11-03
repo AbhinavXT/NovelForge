@@ -29,9 +29,9 @@ import com.abhinavxt.novelforge.data.source.BrowseFilters
 import com.abhinavxt.novelforge.data.source.BrowseSource
 import com.abhinavxt.novelforge.data.source.FilterOption
 import com.abhinavxt.novelforge.util.Logger
+import com.abhinavxt.novelforge.util.ReaderText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.jsoup.Jsoup
 import java.security.MessageDigest
 
 class NfSourceAdapter(
@@ -202,7 +202,7 @@ class NfSourceAdapter(
             try {
                 val html = rateLimited { api.loadHtml(chapterUrl) }
                     ?: return@withContext null
-                // Both stripHtml() and htmlToPlainText() run a full Jsoup.parse.
+                // Both stripHtml() and ReaderText.fromHtml() run a full Jsoup.parse.
                 // Kept inside the IO block deliberately -- they are the two most
                 // expensive CPU operations in a chapter load.
                 val cleaned = stripHtml(
@@ -211,36 +211,10 @@ class NfSourceAdapter(
                     chapterIndex = null,
                     stripAuthorNotes = true
                 )
-                htmlToPlainText(cleaned).ifBlank { null }
+                ReaderText.fromHtml(cleaned).ifBlank { null }
             } catch (e: Exception) {
                 Logger.e("NfSource", "[$id] getChapterContent failed: ${e.message}")
                 null
             }
         }
-
-    /**
-     * NovelForge's reader consumes plain text with paragraphs separated by blank
-     * lines (see the native sources), while QuickNovel providers return HTML.
-     */
-    private fun htmlToPlainText(html: String): String {
-        val document = Jsoup.parse(html)
-        document.select("script, style, noscript, iframe, ins, .ads, .advertisement").remove()
-
-        val paragraphs = document.select("p")
-            .map { it.text().trim() }
-            .filter { it.isNotBlank() }
-        if (paragraphs.isNotEmpty()) {
-            return paragraphs.joinToString("\n\n")
-        }
-
-        // Fallback for providers that emit bare text/<br> separated content.
-        document.select("br").append("\\n")
-        val text = document.body()?.wholeText() ?: document.wholeText()
-        return text
-            .replace("\\n", "\n")
-            .split("\n")
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .joinToString("\n\n")
-    }
 }

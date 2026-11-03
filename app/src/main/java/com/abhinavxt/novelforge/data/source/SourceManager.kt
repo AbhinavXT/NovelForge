@@ -1,10 +1,22 @@
 package com.abhinavxt.novelforge.data.source
 
+import com.abhinavxt.novelforge.data.source.plugin.JsPluginSource
 import com.abhinavxt.novelforge.data.source.providers.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 object SourceManager {
 
-    private val sources = mutableMapOf<String, Source>()
+    // Insertion-ordered (the picker lists sources in registration order) and
+    // locked, because plugin installs register sources from a background
+    // thread while the UI reads the list.
+    private val sources = LinkedHashMap<String, Source>()
+
+    private val _revision = MutableStateFlow(0)
+    /** Bumps whenever a source is added or removed (plugin install/uninstall). */
+    val revision: StateFlow<Int> = _revision.asStateFlow()
 
     init {
         registerSource(RoyalRoadSource())
@@ -23,20 +35,27 @@ object SourceManager {
         com.abhinavxt.novelforge.data.source.nf.NfSources.all().forEach { registerSource(it) }
     }
 
-    private fun registerSource(source: Source) {
-        sources[source.id] = source
+    /** Adds or replaces a source. Used at startup and by PluginManager. */
+    fun registerSource(source: Source) {
+        synchronized(sources) { sources[source.id] = source }
+        _revision.update { it + 1 }
     }
 
-    fun getSource(id: String): Source? = sources[id]
+    fun unregisterSource(id: String) {
+        synchronized(sources) { sources.remove(id) }
+        _revision.update { it + 1 }
+    }
 
-    fun getAllSources(): List<Source> = sources.values.toList()
+    fun getSource(id: String): Source? = synchronized(sources) { sources[id] }
+
+    fun getAllSources(): List<Source> = synchronized(sources) { sources.values.toList() }
 
     fun getDefaultSource(): Source =
-        sources["royalroad"] ?: error("RoyalRoad source not registered")
+        getSource("royalroad") ?: error("RoyalRoad source not registered")
 
-    fun getSourceFromNovelId(novelId: String): Source? {
+    fun getSourceFromNovelId(novelId: String): Source? = synchronized(sources) {
         val sourceId = novelId.substringBefore("_")
-        return when (sourceId) {
+        when (sourceId) {
             "rr" -> sources["royalroad"]
             "rnf" -> sources["rnf"]
             "fwn" -> sources["fwn"]
@@ -87,9 +106,11 @@ object SourceManager {
                 // (base64url), so the adapter itself can reverse it. This keeps
                 // constructNovelUrl() free of per-source cases for all ~40
                 // ported sources.
-                (getSourceFromNovelId(novelId) as? com.abhinavxt.novelforge.data.source.nf.NfSourceAdapter)
-                    ?.novelUrlFromId(novelId)
-                    ?: ""
+                when (val source = getSourceFromNovelId(novelId)) {
+                    is com.abhinavxt.novelforge.data.source.nf.NfSourceAdapter -> source.novelUrlFromId(novelId)
+                    is JsPluginSource -> source.novelUrlFromId(novelId)
+                    else -> ""
+                }
             }
         }
     }

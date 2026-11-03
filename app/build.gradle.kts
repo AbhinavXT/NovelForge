@@ -133,6 +133,9 @@ dependencies {
     implementation(libs.jsoup)
     implementation(libs.coil.compose)
     implementation(libs.gson)
+    // JavaScript engine for source plugins (data/source/plugin). Pure Java,
+    // so no extra native ABIs and the runtime is unit-testable on the JVM.
+    implementation(libs.rhino)
 
     // Sherpa-ONNX AAR. Unversioned and unreproducible — a fresh clone with
     // an empty libs/ compiles to a broken APK with no error until runtime

@@ -20,6 +20,7 @@ okhttp = "4.12.0"
 jsoup = "1.17.2"
 coil = "2.5.0"
 gson = "2.13.2"
+rhino = "1.7.15"
 
 # --- Test ---
 junit = "4.13.2"
@@ -63,6 +64,7 @@ okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhtt
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+rhino = { group = "org.mozilla", name = "rhino", version.ref = "rhino" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
