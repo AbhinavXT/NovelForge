@@ -1,1 +1,11 @@
-[]
+[
+  {
+    "id": "royalroad",
+    "name": "Royal Road",
+    "site": "https://www.royalroad.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "royalroad.js",
+    "sourceId": "royalroad"
+  }
+]
