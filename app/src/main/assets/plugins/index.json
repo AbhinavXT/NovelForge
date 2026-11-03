@@ -214,5 +214,14 @@
     "version": "1.0.0",
     "url": "wattpad.js",
     "sourceId": "qwatt"
+  },
+  {
+    "id": "wuxiabox",
+    "name": "WuxiaBox",
+    "site": "https://www.wuxiabox.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "wuxiabox.js",
+    "sourceId": "qwbox"
   }
 ]
