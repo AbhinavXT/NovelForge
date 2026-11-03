@@ -135,11 +135,14 @@ function pairs(list) {
 
 function listItems(doc) {
   var out = [];
-  doc.select("div.read_list-story-item").forEach(function (el) {
+  // Items used to be <div>s with a title attribute; the site now uses
+  // <article> and aria-label.
+  doc.select(".read_list-story-item").forEach(function (el) {
     var link = el.selectFirst(".item_thumb a");
     if (!link) return;
     var img = el.selectFirst(".item_thumb img");
-    out.push(qnItem(attr(link, "title"), fixUrl(attr(link, "href")), fixUrlNull(img ? img.attr("src") : null)));
+    var title = attr(link, "title") || attr(link, "aria-label");
+    out.push(qnItem(title, fixUrl(attr(link, "href")), fixUrlNull(img ? img.attr("src") : null)));
   });
   return out;
 }
@@ -147,7 +150,7 @@ function listItems(doc) {
 module.exports = {
   id: "lightnoveltranslations",
   name: "Light Novel Translations",
-  version: "1.0.0",
+  version: "1.1.0",
   site: MAIN_URL,
   lang: "en",
 
