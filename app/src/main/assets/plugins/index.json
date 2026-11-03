@@ -7,5 +7,14 @@
     "version": "1.0.0",
     "url": "royalroad.js",
     "sourceId": "royalroad"
+  },
+  {
+    "id": "readnovelfull",
+    "name": "ReadNovelFull",
+    "site": "https://readnovelfull.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "readnovelfull.js",
+    "sourceId": "rnf"
   }
 ]

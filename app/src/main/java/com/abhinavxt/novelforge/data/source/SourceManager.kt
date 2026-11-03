@@ -19,7 +19,6 @@ object SourceManager {
     val revision: StateFlow<Int> = _revision.asStateFlow()
 
     init {
-        registerSource(ReadNovelFullSource())
         registerSource(FreeWebNovelSource())
         registerSource(LibReadSource())
         registerSource(NovelFullNetSource())

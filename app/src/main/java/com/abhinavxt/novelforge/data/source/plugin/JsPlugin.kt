@@ -480,6 +480,15 @@ function fetch(url, init) {
   };
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** Chapter text you assembled yourself -> HTML the reader keeps paragraph for paragraph. */
+function paragraphsToHtml(paragraphs) {
+  return paragraphs.map(function (p) { return "<p>" + escapeHtml(p) + "</p>"; }).join("\n");
+}
+
 function fetchText(url, init) {
   var r = fetch(url, init);
   if (!r.ok) throw new Error("HTTP " + r.status + " for " + url);

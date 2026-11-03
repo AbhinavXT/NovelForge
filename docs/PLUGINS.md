@@ -79,6 +79,8 @@ modules do not.
 | `fetchHtml(url, init?)` | Fetches and parses the page, with relative links resolved against the final URL. Throws on a non-2xx status. |
 | `parseHtml(html, baseUrl?)` | Returns a **Node** for the document. |
 | `encodeForm(obj)` | `a=1&b=2` encoding. |
+| `escapeHtml(s)` | Escapes `& < > "`. |
+| `paragraphsToHtml(list)` | `["a", "b"]` → `<p>a</p><p>b</p>` (escaped): return this from `parseChapter` when you build the text yourself. |
 | `console.log/info/warn/error` | Shows up in logcat (tag `JsPlugin`) in debug builds. |
 
 **Node** methods (backed by jsoup, CSS selectors):
