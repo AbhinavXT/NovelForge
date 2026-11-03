@@ -49,7 +49,10 @@ class PluginsViewModel(app: Application) : AndroidViewModel(app) {
     val messages: SharedFlow<String> = _messages.asSharedFlow()
 
     init {
-        if (PluginManager.available.value.isEmpty() && PluginManager.repos.value.isNotEmpty()) refresh()
+        // "Available" always holds the bundled plugins; refresh when it has
+        // nothing from the repositories yet.
+        val fromRepos = PluginManager.available.value.any { it.repo != PluginManager.BUNDLED }
+        if (!fromRepos && PluginManager.repos.value.isNotEmpty()) refresh()
     }
 
     fun setQuery(q: String) {

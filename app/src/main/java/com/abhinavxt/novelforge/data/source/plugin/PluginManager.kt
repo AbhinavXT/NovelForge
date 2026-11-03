@@ -92,6 +92,15 @@ object PluginManager {
     private const val MAX_SCRIPT_BYTES = 2L * 1024 * 1024
     private const val MAX_INDEX_BYTES = 4L * 1024 * 1024
     private const val PREF_DECLINED = "declined_bundled"
+    private const val PREF_LAST_AUTO_UPDATE = "last_auto_update"
+    private const val AUTO_UPDATE_INTERVAL_MS = 12L * 60 * 60 * 1000
+
+    /**
+     * The public repository NovelForge's own plugins are published to
+     * (github.com/AbhinavXT/NovelForge-plugins). Listed by default and
+     * removable like any other repository.
+     */
+    const val OFFICIAL_REPO = "https://raw.githubusercontent.com/AbhinavXT/NovelForge-plugins/main/index.json"
     private const val ASSET_DIR = "plugins"
 
     /** RepoPlugin.repo for plugins shipped in the APK. */
@@ -157,7 +166,10 @@ object PluginManager {
         val sources = _installed.value.map { register(it) }
         // Compile scripts in the background so the first search, or the
         // Browse screen reading a plugin's filters, rarely waits for it.
-        scope.launch { sources.forEach { it.warmUp() } }
+        scope.launch {
+            sources.forEach { it.warmUp() }
+            autoUpdateFirstParty()
+        }
     }
 
     /** Built-in sources never start with "js-" and plugin source ids never contain "_". */
@@ -327,6 +339,30 @@ object PluginManager {
         bundled.find { it.id == pluginId }?.legacySourceId
             ?: _installed.value.find { it.id == pluginId }?.legacySourceId
 
+    /**
+     * Keeps NovelForge's own plugins current between app releases: at most
+     * every 12 hours, re-reads the repositories and installs any newer
+     * version of a bundled plugin that the official repository offers.
+     * Third-party plugins are never updated without the user.
+     */
+    private suspend fun autoUpdateFirstParty() {
+        if (OFFICIAL_REPO !in _repos.value) return
+        val now = System.currentTimeMillis()
+        val last = prefs().getLong(PREF_LAST_AUTO_UPDATE, 0L)
+        if (now - last in 0 until AUTO_UPDATE_INTERVAL_MS) return
+
+        // Offline, or the repository is down: try again on the next start.
+        if (refreshRepos().any { it.startsWith(OFFICIAL_REPO) }) return
+        prefs().edit().putLong(PREF_LAST_AUTO_UPDATE, now).apply()
+        val firstParty = bundled.map { it.id }.toSet()
+        for ((id, remote) in updatesAvailable()) {
+            if (id !in firstParty || remote.repo != OFFICIAL_REPO) continue
+            install(remote)
+                .onSuccess { Logger.d(TAG, "auto-updated $id to ${it.version}") }
+                .onFailure { Logger.e(TAG, "auto-update of $id failed: ${it.message}") }
+        }
+    }
+
     // ── Bundled plugins ─────────────────────────────────────────────────
 
     private fun readAsset(name: String): String =
@@ -432,8 +468,10 @@ object PluginManager {
     }
 
     private fun loadRepos(): List<String> {
+        // Never saved: the official repository. Once the user edits the list
+        // (even to remove it), their list is used.
         val raw = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(PREF_REPOS, null)
-            ?: return emptyList()
+            ?: return listOf(OFFICIAL_REPO)
         return runCatching {
             gson.fromJson<List<String>>(raw, object : TypeToken<List<String>>() {}.type).orEmpty()
         }.getOrDefault(emptyList())

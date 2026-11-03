@@ -118,6 +118,18 @@ requests to any site, so only add repositories you trust.
 
 ## Repositories
 
+NovelForge lists its official repository by default:
+`https://raw.githubusercontent.com/AbhinavXT/NovelForge-plugins/main/index.json`
+([github.com/AbhinavXT/NovelForge-plugins](https://github.com/AbhinavXT/NovelForge-plugins)).
+The app's own (bundled) plugins update themselves from it, at most every 12
+hours and only to a higher version. Plugins from other repositories are
+only updated when the user taps **Update**. Removing the official
+repository turns the automatic updates off.
+
+The bundled plugins are published there with
+`python3 scripts/publish-plugins.py <checkout of NovelForge-plugins>`,
+which refuses to lower a version or to change a script without bumping it.
+
 A repository is any URL that serves a JSON array (the same fields as
 LNReader's `plugins.json`):
 
