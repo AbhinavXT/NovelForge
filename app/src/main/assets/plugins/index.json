@@ -72,15 +72,6 @@
     "sourceId": "wtr"
   },
   {
-    "id": "allnovel",
-    "name": "AllNovel",
-    "site": "https://allnovel.org",
-    "lang": "en",
-    "version": "1.0.0",
-    "url": "allnovel.js",
-    "sourceId": "qanv"
-  },
-  {
     "id": "fanmtl",
     "name": "FanMTL",
     "site": "https://www.fanmtl.com",
@@ -88,15 +79,6 @@
     "version": "1.0.0",
     "url": "fanmtl.js",
     "sourceId": "qfmtl"
-  },
-  {
-    "id": "graycity",
-    "name": "Graycity",
-    "site": "https://graycity.net",
-    "lang": "en",
-    "version": "1.0.0",
-    "url": "graycity.js",
-    "sourceId": "qgray"
   },
   {
     "id": "hiraethtranslation",
@@ -115,15 +97,6 @@
     "version": "1.1.0",
     "url": "lightnoveltranslations.js",
     "sourceId": "qlnt"
-  },
-  {
-    "id": "lightnovelworld",
-    "name": "LightNovelWorld",
-    "site": "https://lightnovelworld.org",
-    "lang": "en",
-    "version": "1.0.0",
-    "url": "lightnovelworld.js",
-    "sourceId": "qlnw"
   },
   {
     "id": "lnori",

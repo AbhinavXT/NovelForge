@@ -161,11 +161,14 @@ index entry.
 
 All of NovelForge's own sources are bundled plugins: Royal Road,
 ReadNovelFull, FreeWebNovel, LibRead, NovelFull (.net and .com), PawRead,
-Primordial Translation, WTR-Lab, AllNovel, FanMTL, Graycity,
-HiraethTranslation, Light Novel Translations, LightNovelWorld, Inori,
-MtlNovel, NoBadNovel, Novel Light, Ranobes, ReadFrom.Net, ReadHive,
-SonicMTL, Wattpad, WuxiaBox and WuxiaClick. Their scripts are the best
-reference for writing new ones.
+Primordial Translation, WTR-Lab, FanMTL, HiraethTranslation, Light Novel
+Translations, Inori, MtlNovel, NoBadNovel, Novel Light, Ranobes,
+ReadFrom.Net, ReadHive, SonicMTL, Wattpad, WuxiaBox and WuxiaClick. Their
+scripts are the best reference for writing new ones.
+
+Retired sources (AllNovel, Graycity, LightNovelWorld: the sites are gone)
+are no longer bundled. A copy that is already installed stays installed,
+so novels from it stay in the library.
 
 ## Developing
 
