@@ -97,5 +97,14 @@
     "version": "1.0.0",
     "url": "graycity.js",
     "sourceId": "qgray"
+  },
+  {
+    "id": "readfromnet",
+    "name": "ReadFrom.Net",
+    "site": "https://readfrom.net",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "readfromnet.js",
+    "sourceId": "qrfn"
   }
 ]

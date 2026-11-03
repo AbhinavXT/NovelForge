@@ -32,7 +32,6 @@ object NfSources {
         NfSourceAdapter(NovelFullProvider(), "qnful"),
         NfSourceAdapter(NovelLightProvider(), "qnlig"),
         NfSourceAdapter(RanobesProvider(), "qrnb"),
-        NfSourceAdapter(ReadfromnetProvider(), "qrfn"),
         NfSourceAdapter(ReadhiveProvider(), "qrhv"),
         NfSourceAdapter(SonicMTLProvider(), "qsonic"),
         NfSourceAdapter(WattpadProvider(), "qwatt"),
