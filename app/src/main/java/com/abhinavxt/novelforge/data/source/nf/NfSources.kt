@@ -23,7 +23,6 @@ object NfSources {
 
     fun all(): List<Source> = listOf(
         // --- English ---
-        NfSourceAdapter(AllNovelProvider(), "qanv"),
         NfSourceAdapter(FanMtlnProvider(), "qfmtl"),
         NfSourceAdapter(GraycityProvider(), "qgray"),
         NfSourceAdapter(HiraethTranslationProvider(), "qhir"),
