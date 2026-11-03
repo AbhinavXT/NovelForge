@@ -160,5 +160,14 @@
     "version": "1.0.0",
     "url": "nobadnovel.js",
     "sourceId": "qnbn"
+  },
+  {
+    "id": "novelfull-com",
+    "name": "NovelFull",
+    "site": "https://novelfull.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "novelfull-com.js",
+    "sourceId": "qnful"
   }
 ]
