@@ -23,7 +23,6 @@ object NfSources {
 
     fun all(): List<Source> = listOf(
         // --- English ---
-        NfSourceAdapter(LnoriProvider(), "qlno"),
         NfSourceAdapter(MtlNovelProvider(), "qmtln"),
         NfSourceAdapter(NoBadNovelProvider(), "qnbn"),
         NfSourceAdapter(NovelFullProvider(), "qnful"),

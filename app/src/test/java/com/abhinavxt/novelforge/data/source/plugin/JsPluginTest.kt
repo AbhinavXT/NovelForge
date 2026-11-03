@@ -226,6 +226,20 @@ class JsPluginTest {
         assertEquals(listOf("第一章 ✓", "threw"), plugin.call("popularNovels", 1))
     }
 
+    @Test
+    fun `replaceWith moves a node into another's place`() {
+        val plugin = JsPlugin.load(
+            minimal("""
+                var doc = parseHtml('<section><picture><source><img src="a.png"></picture></section>');
+                var pic = doc.selectFirst("picture");
+                pic.replaceWith(pic.selectFirst("img"));
+                return doc.selectFirst("section").html();
+            """),
+            "replace.js", http,
+        )
+        assertEquals("<img src=\"a.png\">", plugin.call("popularNovels", 1))
+    }
+
     private fun minimal(popularBody: String) = """
         module.exports = {
           id: "t", name: "T", version: "1", site: "https://x.test",

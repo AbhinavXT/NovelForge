@@ -91,7 +91,8 @@ modules do not.
 `select(css)` → array of Node, `selectFirst(css)` → Node or `null`,
 `text()`, `ownText()`, `wholeText()`, `html()`, `outerHtml()`, `tagName()`,
 `attr(name)` → string or `null`, `absUrl(name)` → absolute URL or `null`,
-`hasClass(name)`, `children()`, `parent()`, `next()`, `prev()`, `remove()`.
+`hasClass(name)`, `children()`, `parent()`, `next()`, `prev()`, `remove()`,
+`replaceWith(node)` (moves `node` into this one's place).
 
 Requests go through the app's shared HTTP client: a browser User-Agent is
 added if you don't set one, and requests are retried on 5xx and network

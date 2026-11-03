@@ -370,6 +370,12 @@ private class Bridge(
             node(t).remove()
             Undefined.instance
         }
+        fn(p, "replaceWith", 1) { _, t, a ->
+            val replacement = (a.getOrNull(0) as? JsNode)?.element
+                ?: throw ScriptRuntime.typeError("replaceWith: argument must be a Node")
+            node(t).replaceWith(replacement)
+            Undefined.instance
+        }
     }
 
     private fun fetch(a: Array<Any?>): Any {

@@ -133,5 +133,14 @@
     "version": "1.0.0",
     "url": "lightnovelworld.js",
     "sourceId": "qlnw"
+  },
+  {
+    "id": "lnori",
+    "name": "Inori",
+    "site": "https://lnori.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "lnori.js",
+    "sourceId": "qlno"
   }
 ]
