@@ -2,21 +2,15 @@ package com.abhinavxt.novelforge.data.source.nf
 
 // QuickNovel compatibility layer (package: data.source.nf) — HTTP shim.
 //
-// QuickNovel uses the NiceHttp library (com.lagradost.nicehttp.Requests). Rather than
-// pulling in that dependency, this file provides the small slice of its API surface
-// that the ported providers actually use:
-//
-//   app.get(url, headers =, referer =, params =, cookies =, timeout =) -> NfResponse
-//   app.post(url, ..., data = mapOf(...))                              -> NfResponse
-//   response.text / .document / .code / .url / .headers / .okhttpResponse
-//   response.parsed<T>() / response.parsedSafe<T>()
+// A small slice of the NiceHttp API (app.get/app.post -> NfResponse) that the
+// Cloudflare solver in NfCloudflare.kt is written against. The QuickNovel
+// providers that used to share it are now JavaScript plugins.
 //
 // Everything runs on the shared OkHttpClient from SourceHttp so retry behaviour
 // and timeouts stay consistent with the native NovelForge sources.
 
 import android.content.Context
 import com.abhinavxt.novelforge.data.source.SourceHttp
-import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -153,21 +147,6 @@ class NfResponse(val okhttpResponse: Response) {
 
     /** Lazy parsed Jsoup document, base URI set so abs:href works. */
     val document: Document by lazy { Jsoup.parse(text, url) }
-
-    /** Parse the body as JSON into T. Throws on malformed input. */
-    inline fun <reified T : Any> parsed(): T {
-        return nfGson.fromJson(text, object : TypeToken<T>() {}.type)
-    }
-
-    /** Parse the body as JSON into T, returning null on any failure. */
-    inline fun <reified T : Any> parsedSafe(): T? {
-        return try {
-            nfGson.fromJson<T>(text, object : TypeToken<T>() {}.type)
-        } catch (e: Exception) {
-            logError(e)
-            null
-        }
-    }
 }
 
 /**

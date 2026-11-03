@@ -1,12 +1,17 @@
 package com.abhinavxt.novelforge.data.source
 
 import com.abhinavxt.novelforge.data.source.plugin.JsPluginSource
-import com.abhinavxt.novelforge.data.source.providers.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
+/**
+ * Registry of the installed sources. Every source is a JavaScript plugin
+ * (data/source/plugin); PluginManager registers them at start-up and on
+ * install/uninstall. Former built-in sources live on as bundled plugins
+ * under their old ids, which is why the id and URL tables below remain.
+ */
 object SourceManager {
 
     // Insertion-ordered (the picker lists sources in registration order) and
@@ -18,16 +23,7 @@ object SourceManager {
     /** Bumps whenever a source is added or removed (plugin install/uninstall). */
     val revision: StateFlow<Int> = _revision.asStateFlow()
 
-    init {
-
-        // Sources ported from QuickNovel via the nf compatibility layer.
-        // Their Source.id doubles as the novel-id prefix, so the generic
-        // fallbacks in getSourceFromNovelId()/constructNovelUrl() resolve them
-        // without any per-source hardcoding here.
-        com.abhinavxt.novelforge.data.source.nf.NfSources.all().forEach { registerSource(it) }
-    }
-
-    /** Adds or replaces a source. Used at startup and by PluginManager. */
+    /** Adds or replaces a source. Used by PluginManager. */
     fun registerSource(source: Source) {
         synchronized(sources) { sources[source.id] = source }
         _revision.update { it + 1 }
@@ -57,8 +53,8 @@ object SourceManager {
             "pr" -> sources["pr"]
             "pt" -> sources["pt"]
             "wtr" -> sources["wtr"]
-            // Adapter-backed sources use their Source.id as the prefix directly
-            // (e.g. "qanv_..." -> sources["qanv"]), so no mapping table is needed.
+            // Everything else uses its Source.id as the prefix directly
+            // (e.g. "qanv_..." -> sources["qanv"], "js-foo_..." -> sources["js-foo"]).
             else -> sources[sourceId]
         }
     }
@@ -95,15 +91,9 @@ object SourceManager {
             novelId.startsWith("local_") ->
                 "local://$novelId"
             else -> {
-                // Adapter-backed sources encode the full novel URL into the id
-                // (base64url), so the adapter itself can reverse it. This keeps
-                // constructNovelUrl() free of per-source cases for all ~40
-                // ported sources.
-                when (val source = getSourceFromNovelId(novelId)) {
-                    is com.abhinavxt.novelforge.data.source.nf.NfSourceAdapter -> source.novelUrlFromId(novelId)
-                    is JsPluginSource -> source.novelUrlFromId(novelId)
-                    else -> ""
-                }
+                // Every other source encodes the full novel URL into the id
+                // ("<sourceId>_<base64url>"), so the plugin source reverses it.
+                (getSourceFromNovelId(novelId) as? JsPluginSource)?.novelUrlFromId(novelId) ?: ""
             }
         }
     }

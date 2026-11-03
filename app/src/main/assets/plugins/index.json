@@ -99,15 +99,6 @@
     "sourceId": "qgray"
   },
   {
-    "id": "readfromnet",
-    "name": "ReadFrom.Net",
-    "site": "https://readfrom.net",
-    "lang": "en",
-    "version": "1.0.0",
-    "url": "readfromnet.js",
-    "sourceId": "qrfn"
-  },
-  {
     "id": "hiraethtranslation",
     "name": "HiraethTranslation",
     "site": "https://hiraethtranslation.com",
@@ -187,6 +178,15 @@
     "version": "1.0.0",
     "url": "ranobes.js",
     "sourceId": "qrnb"
+  },
+  {
+    "id": "readfromnet",
+    "name": "ReadFrom.Net",
+    "site": "https://readfrom.net",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "readfromnet.js",
+    "sourceId": "qrfn"
   },
   {
     "id": "readhive",

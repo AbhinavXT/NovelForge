@@ -157,12 +157,15 @@ ignored and the default id is used. Downloaded repositories can't set
 `sourceId`.
 
 `BundledPluginsTest` checks that each bundled script loads and matches its
-index entry. While a built-in source is being ported, compare the two
-against the live site:
+index entry.
 
-```sh
-PARITY=royalroad ./gradlew :app:testDebugUnitTest --tests '*SourceParityTest*'
-```
+All of NovelForge's own sources are bundled plugins: Royal Road,
+ReadNovelFull, FreeWebNovel, LibRead, NovelFull (.net and .com), PawRead,
+Primordial Translation, WTR-Lab, AllNovel, FanMTL, Graycity,
+HiraethTranslation, Light Novel Translations, LightNovelWorld, Inori,
+MtlNovel, NoBadNovel, Novel Light, Ranobes, ReadFrom.Net, ReadHive,
+SonicMTL, Wattpad, WuxiaBox and WuxiaClick. Their scripts are the best
+reference for writing new ones.
 
 ## Developing
 

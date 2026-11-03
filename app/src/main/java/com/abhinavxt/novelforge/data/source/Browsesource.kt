@@ -30,9 +30,9 @@ data class BrowseFilters(
  * Optional capability on top of [Source]: a filterable, paginated catalog.
  *
  * Plain sources are still browsable through [Source.getPopular] (no filters);
- * this interface adds genre/category/sort filtering for sources that support
- * it — currently all NfSourceAdapter-backed sources whose provider has a main
- * page. Native sources can adopt it later without any UI changes.
+ * this interface adds genre/category/sort filtering. Plugin sources
+ * (JsPluginSource) implement it and report canBrowse when the plugin
+ * exports browseNovels().
  */
 interface BrowseSource : Source {
 

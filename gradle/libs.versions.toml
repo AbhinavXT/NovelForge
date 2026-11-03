@@ -24,7 +24,6 @@ rhino = "1.7.15"
 
 # --- Test ---
 junit = "4.13.2"
-robolectric = "4.14.1"
 junitVersion = "1.3.0"
 espressoCore = "3.7.0"
 
@@ -68,7 +67,6 @@ gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 rhino = { group = "org.mozilla", name = "rhino", version.ref = "rhino" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
-robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
 
