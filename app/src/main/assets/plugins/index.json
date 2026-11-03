@@ -169,5 +169,14 @@
     "version": "1.0.0",
     "url": "novelfull-com.js",
     "sourceId": "qnful"
+  },
+  {
+    "id": "novellight",
+    "name": "Novel Light",
+    "site": "https://novelight.net",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "novellight.js",
+    "sourceId": "qnlig"
   }
 ]
