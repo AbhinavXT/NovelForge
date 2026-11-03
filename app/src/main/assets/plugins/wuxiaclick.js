@@ -1,437 +1,474 @@
-// WuxiaClick — port of the former QuickNovel-based WuxiaClickProvider.
-// Chapters are numbered from the novel's chapter count.
-// Novel ids are unchanged: qwclick_<base64url(novel url)>.
+// WuxiaClick — rewritten for the 2026 redesign of wuxia.click.
+//
+// The site is a Next.js app that embeds each page's data as JSON in
+// <script id="__NEXT_DATA__">, so this reads that instead of scraping
+// markup (the previous version's Mantine selectors no longer exist).
+//
+//   lists    /browse?order_by=&genre=&tag=&page=   props.pageProps.listing
+//   search   /search?q=&page=                      props.pageProps.result
+//   novel    /novel/<slug>                         props.pageProps.novel, .toc (100 per page)
+//   toc page /_next/data/<buildId>/novel/<slug>.json?page=N
+//   chapter  /chapter/<slug>-<number>              props.pageProps.data.chapter.paragraphs
+//
+// Novel and chapter URLs have the same shape as before, so ids of novels
+// already in libraries (qwclick_<base64url(novel url)>) are unchanged.
 
-var MAIN_URL = "https://wuxia.click";
+var SITE = "https://wuxia.click";
+var CDN = "https://cdn.wuxiaworld.eu/";
 
-// ── QuickNovel compatibility ─────────────────────────────────────────
-// Mirrors the helpers the Kotlin provider was written against
-// (data/source/nf: MainAPI, NfRequests, NfSourceAdapter), so the port can
-// follow the original line by line and produce the same results.
+function nextData(html) {
+  var m = /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/.exec(html);
+  if (!m) throw new Error("page has no __NEXT_DATA__");
+  return JSON.parse(m[1]);
+}
 
-var QN_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36";
+function getPage(path) {
+  var r = fetch(SITE + path);
+  if (!r.ok) throw new Error("HTTP " + r.status + " for " + path);
+  return nextData(r.text());
+}
 
-/**
- * app.get / app.post: default user agent, then `headers`, `cookies`
- * ("k=v;" joined by spaces), `referer`; `params` appended to the query;
- * `data` sent as a form. Like the original, a non-2xx status is not an
- * error: callers get the body either way.
- */
-function qnRequest(method, url, opts) {
-  opts = opts || {};
-  var headers = { "user-agent": QN_USER_AGENT };
-  var h = opts.headers || {};
-  for (var k in h) if (Object.prototype.hasOwnProperty.call(h, k)) headers[k] = h[k];
-  var c = opts.cookies || {};
-  var cookie = [];
-  for (var ck in c) if (Object.prototype.hasOwnProperty.call(c, ck)) cookie.push(ck + "=" + c[ck] + ";");
-  if (cookie.length) headers["Cookie"] = cookie.join(" ");
-  if (opts.referer) headers["referer"] = opts.referer;
-  if (opts.params) {
-    var q = encodeForm(opts.params);
-    if (q) url += (url.indexOf("?") >= 0 ? "&" : "?") + q;
-  }
-  var init = { method: method, headers: headers };
-  if (opts.data) init.body = opts.data;
-  else if (opts.body != null) init.body = opts.body;
-  else if (method === "POST") init.body = "";
-  var r = fetch(url, init);
-  var text = r.text();
+/** A list page, or null past the last page (the site answers 404 there). */
+function getListPage(path) {
+  var r = fetch(SITE + path);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error("HTTP " + r.status + " for " + path);
+  return nextData(r.text());
+}
+
+function cover(n, size) {
+  if (n.coverKey) return CDN + n.coverKey + "-" + size + ".webp";
+  if (n.coverOriginal && /^https?:\/\//.test(n.coverOriginal)) return n.coverOriginal;
+  return null;
+}
+
+function item(n) {
   return {
-    code: r.status,
-    url: r.url,
-    text: text,
-    headers: r.headers,
-    document: function () { return parseHtml(text, r.url); },
-    json: function () { return JSON.parse(text); }
+    url: SITE + "/novel/" + n.slug,
+    name: n.title,
+    cover: cover(n, 240),
+    author: n.authorName || "",
+    summary: n.latestChapterTitle ? "Latest: " + n.latestChapterTitle : ""
   };
 }
 
-function qnGet(url, opts) { return qnRequest("GET", url, opts); }
-function qnPost(url, opts) { return qnRequest("POST", url, opts); }
-
-function fixUrl(url) {
-  if (url.indexOf("http") === 0) return url;
-  if (url.indexOf("//") === 0) return "https:" + url;
-  return url.charAt(0) === "/" ? MAIN_URL + url : MAIN_URL + "/" + url;
-}
-
-/** null for null or "" (not for blank), like MainAPI.fixUrlNull. */
-function fixUrlNull(url) {
-  return url == null || url === "" ? null : fixUrl(url);
-}
-
-/** LoadResponse.setStatus: the display name, or null when unrecognised. */
-function qnStatus(s) {
-  if (s == null) return null;
-  switch (String(s).toLowerCase().trim()) {
-    case "ongoing": case "on-going": case "on_going": case "releasing": return "Ongoing";
-    case "completed": case "complete": case "done": return "Completed";
-    case "hiatus": case "paused": case "pause": return "Hiatus";
-    case "dropped": case "drop": return "Dropped";
-    case "stub": case "stubbed": return "Stubbed";
-    default: return null;
+function query(params) {
+  var parts = [];
+  for (var k in params) {
+    if (params[k] != null && params[k] !== "") parts.push(k + "=" + encodeURIComponent(params[k]));
   }
+  return parts.length ? "?" + parts.join("&") : "";
 }
 
-/** newSearchResponse(name, url) as NfSourceAdapter shows it. */
-function qnItem(name, url, posterUrl, latestChapter) {
-  return {
-    name: name,
-    url: url,
-    cover: posterUrl || null,
-    summary: latestChapter != null ? "Latest: " + latestChapter : ""
-  };
-}
-
-/** newStreamResponse(name, url, chapters) as NfSourceAdapter shows it. */
-function qnNovel(name, chapters, info) {
-  info = info || {};
-  return {
-    name: name,
-    author: info.author != null ? info.author : "",
-    cover: info.posterUrl || null,
-    summary: info.synopsis != null ? info.synopsis : "",
-    status: info.status || "Unknown",
-    chapters: chapters
-  };
-}
-
-/** Elements.attr(name): the first element that has it, else "". */
-function qnAttr(nodes, name) {
-  for (var i = 0; i < nodes.length; i++) {
-    var v = nodes[i].attr(name);
-    if (v != null) return v;
-  }
-  return "";
-}
-
-/** Elements.text(): texts joined by single spaces. */
-function qnText(nodes) {
-  var sb = "";
-  nodes.forEach(function (n) {
-    if (sb.length !== 0) sb += " ";
-    sb += n.text();
-  });
-  return sb;
-}
-
-/** Element.attr(name): "" when missing. */
-function attr(node, name) {
-  var v = node ? node.attr(name) : null;
-  return v == null ? "" : v;
-}
-
-/** The Browse defaults NfSourceAdapter used for getPopular: the first option of each list. */
-function qnPopular(page) {
-  var f = module.exports.filters || {};
-  function first(list) { return list && list.length ? list[0].value : null; }
-  return module.exports.browseNovels(page, { category: first(f.categories), orderBy: first(f.orderBys), tag: first(f.tags) });
-}
-
-function pairs(list) {
-  return list.map(function (p) { return { label: p[0], value: p[1] }; });
-}
-// ─────────────────────────────────────────────────────────────────────
-
-function empty(s) {
-  return s == null || s === "";
-}
-
-function grid(doc) {
-  var out = [];
-  doc.select("div.mantine-Grid-root > div.mantine-Grid-col > div > a").forEach(function (card) {
-    var t = card.selectFirst("div.mantine-w2rcte > div");
-    if (!t) return;
-    var img = card.selectFirst("img");
-    out.push(qnItem(t.text(), fixUrl(attr(card, "href")), img ? attr(img, "src") : null));
-  });
-  return out;
-}
+var STATUS = { ONGOING: "Ongoing", COMPLETED: "Completed", HIATUS: "Hiatus", DROPPED: "Dropped" };
 
 module.exports = {
   id: "wuxiaclick",
   name: "WuxiaClick",
-  version: "1.0.0",
-  site: MAIN_URL,
+  version: "2.0.0",
+  site: SITE,
   lang: "en",
 
   filters: {
-    categories: pairs([
-      ["All", ""],
-      ["Mature", "mature"],
-      ["Psychological", "psychological"],
-      ["Tragedy", "tragedy"],
-      ["Mystery", "mystery"],
-      ["Seinen", "seinen"],
-      ["Harem", "harem"],
-      ["Mecha", "mecha"],
-      ["Xuanhuan", "xuanhuan"],
-      ["Josei", "josei"],
-      ["Horror", "horror"],
-      ["Adult", "adult"],
-      ["Sci-fi", "sci-fi"],
-      ["Action", "action"],
-      ["Smut", "smut"],
-      ["Drama", "drama"],
-      ["Yaoi", "yaoi"],
-      ["School life", "school life"],
-      ["Comedy", "comedy"],
-      ["Gender bender", "gender bender"],
-      ["Adventure", "adventure"],
-      ["Shounen", "shounen"],
-      ["Romance", "romance"],
-      ["Fantasy", "fantasy"],
-      ["Xianxia", "xianxia"],
-      ["Martial arts", "martial arts"],
-      ["Shounen ai", "shounen ai"],
-      ["Supernatural", "supernatural"],
-      ["Slice of life", "slice of life"],
-      ["Ecchi", "ecchi"],
-      ["Sports", "sports"],
-      ["Shoujo", "shoujo"],
-      ["Historical", "historical"],
-      ["Wuxia", "wuxia"],
-      ["Yuri", "yuri"],
-      ["Shoujo ai", "shoujo ai"],
-      ["Mtl", "mtl"]
+    categories: [{ label: "All", value: "" }].concat([
+      {"label": "Action", "value": "action"},
+      {"label": "Adult", "value": "adult"},
+      {"label": "Adventure", "value": "adventure"},
+      {"label": "Comedy", "value": "comedy"},
+      {"label": "Drama", "value": "drama"},
+      {"label": "Ecchi", "value": "ecchi"},
+      {"label": "Fantasy", "value": "fantasy"},
+      {"label": "Gender Bender", "value": "gender-bender"},
+      {"label": "Harem", "value": "harem"},
+      {"label": "Historical", "value": "historical"},
+      {"label": "Horror", "value": "horror"},
+      {"label": "Josei", "value": "josei"},
+      {"label": "Martial Arts", "value": "martial-arts"},
+      {"label": "Mature", "value": "mature"},
+      {"label": "Mecha", "value": "mecha"},
+      {"label": "MTL", "value": "mtl"},
+      {"label": "Mystery", "value": "mystery"},
+      {"label": "Psychological", "value": "psychological"},
+      {"label": "Romance", "value": "romance"},
+      {"label": "School Life", "value": "school-life"},
+      {"label": "Sci-fi", "value": "sci-fi"},
+      {"label": "Seinen", "value": "seinen"},
+      {"label": "Shoujo", "value": "shoujo"},
+      {"label": "Shoujo Ai", "value": "shoujo-ai"},
+      {"label": "Shounen", "value": "shounen"},
+      {"label": "Shounen Ai", "value": "shounen-ai"},
+      {"label": "Slice of Life", "value": "slice-of-life"},
+      {"label": "Smut", "value": "smut"},
+      {"label": "Sports", "value": "sports"},
+      {"label": "Supernatural", "value": "supernatural"},
+      {"label": "Tragedy", "value": "tragedy"},
+      {"label": "Wuxia", "value": "wuxia"},
+      {"label": "Xianxia", "value": "xianxia"},
+      {"label": "Xuanhuan", "value": "xuanhuan"},
+      {"label": "Yaoi", "value": "yaoi"},
+      {"label": "Yuri", "value": "yuri"}
     ]),
-    orderBys: pairs([
-      ["Translated chapters", "-num_of_chaps"], ["Rating", "-rating"], ["Name", "-name"],
-      ["Old", "-created_at"], ["New", "created_at"]
-    ]),
-    tags: pairs([
-      ["All", ""],
-      ["shotacon", "shotacon"],
-      ["handsome male lead", "handsome male lead"],
-      ["male protagonist", "male protagonist"],
-      ["beautiful female lead", "beautiful female lead"],
-      ["weak to strong", "weak to strong"],
-      ["transmigration", "transmigration"],
-      ["calm protagonist", "calm protagonist"],
-      ["clever protagonist", "clever protagonist"],
-      ["female protagonist", "female protagonist"],
-      ["love interest falls in love first", "love interest falls in love first"],
-      ["hard-working protagonist", "hard-working protagonist"],
-      ["cultivation", "cultivation"],
-      ["strong love interests", "strong love interests"],
-      ["modern day", "modern day"],
-      ["nobles", "nobles"],
-      ["schemes and conspiracies", "schemes and conspiracies"],
-      ["wealthy characters", "wealthy characters"],
-      ["cunning protagonist", "cunning protagonist"],
-      ["misunderstandings", "misunderstandings"],
-      ["royalty", "royalty"],
-      ["devoted love interests", "devoted love interests"],
-      ["multiple realms", "multiple realms"],
-      ["character growth", "character growth"],
-      ["arrogant characters", "arrogant characters"],
-      ["determined protagonist", "determined protagonist"],
-      ["reincarnation", "reincarnation"],
-      ["past plays a big role", "past plays a big role"],
-      ["romantic subplot", "romantic subplot"],
-      ["magic", "magic"],
-      ["time skip", "time skip"],
-      ["dragons", "dragons"],
-      ["adapted to manhua", "adapted to manhua"],
-      ["demons", "demons"],
-      ["aristocracy", "aristocracy"],
-      ["alchemy", "alchemy"],
-      ["hiding true identity", "hiding true identity"],
-      ["special abilities", "special abilities"],
-      ["multiple pov", "multiple pov"],
-      ["slow romance", "slow romance"],
-      ["wars", "wars"],
-      ["gods", "gods"],
-      ["ruthless protagonist", "ruthless protagonist"],
-      ["lucky protagonist", "lucky protagonist"],
-      ["monsters", "monsters"],
-      ["hiding true abilities", "hiding true abilities"],
-      ["overpowered protagonist", "overpowered protagonist"],
-      ["polygamy", "polygamy"],
-      ["game elements", "game elements"],
-      ["possessive characters", "possessive characters"],
-      ["older love interests", "older love interests"],
-      ["sword and magic", "sword and magic"],
-      ["doting love interests", "doting love interests"],
-      ["beast companions", "beast companions"],
-      ["caring protagonist", "caring protagonist"],
-      ["death of loved ones", "death of loved ones"],
-      ["loyal subordinates", "loyal subordinates"],
-      ["artifacts", "artifacts"],
-      ["shameless protagonist", "shameless protagonist"],
-      ["sword wielder", "sword wielder"],
-      ["revenge", "revenge"],
-      ["second chance", "second chance"],
-      ["fantasy world", "fantasy world"],
-      ["tragic past", "tragic past"],
-      ["cold love interests", "cold love interests"],
-      ["immortals", "immortals"],
-      ["marriage", "marriage"],
-      ["body tempering", "body tempering"],
-      ["strength-based social hierarchy", "strength-based social hierarchy"],
-      ["european ambience", "european ambience"],
-      ["adapted to manhwa", "adapted to manhwa"],
-      ["betrayal", "betrayal"],
-      ["pregnancy", "pregnancy"],
-      ["genius protagonist", "genius protagonist"],
-      ["underestimated protagonist", "underestimated protagonist"],
-      ["first-time interc**rse", "first-time interc**rse"],
-      ["hidden abilities", "hidden abilities"],
-      ["kingdoms", "kingdoms"],
-      ["confident protagonist", "confident protagonist"],
-      ["protagonist strong from the start", "protagonist strong from the start"],
-      ["bloodlines", "bloodlines"],
-      ["power couple", "power couple"],
-      ["friendship", "friendship"],
-      ["manipulative characters", "manipulative characters"],
-      ["strong to stronger", "strong to stronger"],
-      ["depictions of cruelty", "depictions of cruelty"],
-      ["charismatic protagonist", "charismatic protagonist"],
-      ["fast cultivation", "fast cultivation"],
-      ["unique cultivation technique", "unique cultivation technique"],
-      ["world travel", "world travel"],
-      ["academy", "academy"],
-      ["dense protagonist", "dense protagonist"],
-      ["elves", "elves"],
-      ["previous life talent", "previous life talent"],
-      ["poor to rich", "poor to rich"],
-      ["alternate world", "alternate world"],
-      ["cold protagonist", "cold protagonist"],
-      ["politics", "politics"],
-      ["pill concocting", "pill concocting"],
-      ["fast learner", "fast learner"],
-      ["obsessive love", "obsessive love"],
-      ["r*pe", "r*pe"],
-      ["long separations", "long separations"],
-      ["money grubber", "money grubber"],
-      ["transported to another world", "transported to another world"],
-      ["cheats", "cheats"],
-      ["cautious protagonist", "cautious protagonist"],
-      ["mature protagonist", "mature protagonist"],
-      ["familial love", "familial love"],
-      ["arranged marriage", "arranged marriage"],
-      ["magical space", "magical space"],
-      ["comedic undertone", "comedic undertone"],
-      ["mysterious past", "mysterious past"],
-      ["male yandere", "male yandere"],
-      ["mysterious family background", "mysterious family background"],
-      ["famous protagonist", "famous protagonist"],
-      ["magic formations", "magic formations"],
-      ["family conflict", "family conflict"],
-      ["system administrator", "system administrator"],
-      ["reincarnated in another world", "reincarnated in another world"],
-      ["late romance", "late romance"],
-      ["heavenly tribulation", "heavenly tribulation"],
-      ["proactive protagonist", "proactive protagonist"],
-      ["complex family relationships", "complex family relationships"],
-      ["pets", "pets"],
-      ["level system", "level system"],
-      ["enemies become allies", "enemies become allies"],
-      ["cute children", "cute children"],
-      ["death", "death"],
-      ["mythical beasts", "mythical beasts"],
-      ["enemies become lovers", "enemies become lovers"],
-      ["soul power", "soul power"],
-      ["ancient china", "ancient china"],
-      ["dao comprehension", "dao comprehension"],
-      ["charming protagonist", "charming protagonist"],
-      ["acting", "acting"],
-      ["time travel", "time travel"],
-      ["multiple reincarnated individuals", "multiple reincarnated individuals"],
-      ["past trauma", "past trauma"],
-      ["absent parents", "absent parents"],
-      ["master-disciple relationship", "master-disciple relationship"],
-      ["childcare", "childcare"],
-      ["r*pe victim becomes lover", "r*pe victim becomes lover"],
-      ["family", "family"],
-      ["secret organizations", "secret organizations"],
-      ["phoenixes", "phoenixes"],
-      ["appearance different from actual age", "appearance different from actual age"],
-      ["curses", "curses"],
-      ["age progression", "age progression"],
-      ["secret identity", "secret identity"],
-      ["sharp-tongued characters", "sharp-tongued characters"],
-      ["naive protagonist", "naive protagonist"],
-      ["knights", "knights"],
-      ["kingdom building", "kingdom building"],
-      ["spatial manipulation", "spatial manipulation"],
-      ["demon lord", "demon lord"],
-      ["tsundere", "tsundere"],
-      ["appearance changes", "appearance changes"],
-      ["cruel characters", "cruel characters"],
-      ["fantasy creatures", "fantasy creatures"],
-      ["assassins", "assassins"],
-      ["popular love interests", "popular love interests"],
-      ["spirit advisor", "spirit advisor"],
-      ["time manipulation", "time manipulation"],
-      ["dark", "dark"],
-      ["business management", "business management"],
-      ["heartwarming", "heartwarming"],
-      ["broken engagement", "broken engagement"],
-      ["destiny", "destiny"],
-      ["cooking", "cooking"],
-      ["religions", "religions"],
-      ["protagonist with multiple bodies", "protagonist with multiple bodies"],
-      ["cute protagonist", "cute protagonist"],
-      ["r-18", "r-18"]
+    orderBys: [
+      { label: "Popular", value: "popular" },
+      { label: "Trending", value: "trending" },
+      { label: "Popular this month", value: "monthly" },
+      { label: "Most views", value: "views" },
+      { label: "Rating", value: "rating" },
+      { label: "Latest updates", value: "latest" },
+      { label: "New", value: "new" },
+      { label: "Most chapters", value: "chapters" },
+      { label: "Name", value: "name" }
+    ],
+    tags: [{ label: "All", value: "" }].concat([
+      {"label": "Abandoned Children", "value": "abandoned-children"},
+      {"label": "Absent Parents", "value": "absent-parents"},
+      {"label": "Abusive Characters", "value": "abusive-characters"},
+      {"label": "Academy", "value": "academy"},
+      {"label": "Acting", "value": "acting"},
+      {"label": "Adapted to Anime", "value": "adapted-to-anime"},
+      {"label": "Adapted to Drama", "value": "adapted-to-drama"},
+      {"label": "Adapted to Drama CD", "value": "adapted-to-drama-cd"},
+      {"label": "Adapted to Manga", "value": "adapted-to-manga"},
+      {"label": "Adapted to Manhua", "value": "adapted-to-manhua"},
+      {"label": "Adapted to Manhwa", "value": "adapted-to-manhwa"},
+      {"label": "Adopted Children", "value": "adopted-children"},
+      {"label": "Adventurers", "value": "adventurers"},
+      {"label": "Age Progression", "value": "age-progression"},
+      {"label": "Age Regression", "value": "age-regression"},
+      {"label": "Alchemy", "value": "alchemy"},
+      {"label": "Alternate World", "value": "alternate-world"},
+      {"label": "Amnesia", "value": "amnesia"},
+      {"label": "Ancient China", "value": "ancient-china"},
+      {"label": "Ancient Times", "value": "ancient-times"},
+      {"label": "Animal Characteristics", "value": "animal-characteristics"},
+      {"label": "Antihero Protagonist", "value": "antihero-protagonist"},
+      {"label": "Apocalypse", "value": "apocalypse"},
+      {"label": "Appearance Changes", "value": "appearance-changes"},
+      {"label": "Appearance Different from Actual Age", "value": "appearance-different-from-actual-age"},
+      {"label": "Aristocracy", "value": "aristocracy"},
+      {"label": "Arranged Marriage", "value": "arranged-marriage"},
+      {"label": "Arrogant Characters", "value": "arrogant-characters"},
+      {"label": "Artifacts", "value": "artifacts"},
+      {"label": "Artificial Intelligence", "value": "artificial-intelligence"},
+      {"label": "Assassins", "value": "assassins"},
+      {"label": "Average-looking Protagonist", "value": "average-looking-protagonist"},
+      {"label": "Beast Companions", "value": "beast-companions"},
+      {"label": "Beastkin", "value": "beastkin"},
+      {"label": "Beasts", "value": "beasts"},
+      {"label": "Beautiful Female Lead", "value": "beautiful-female-lead"},
+      {"label": "Betrayal", "value": "betrayal"},
+      {"label": "Bickering Couple", "value": "bickering-couple"},
+      {"label": "Black Belly", "value": "black-belly"},
+      {"label": "Bloodlines", "value": "bloodlines"},
+      {"label": "Body Tempering", "value": "body-tempering"},
+      {"label": "Broken Engagement", "value": "broken-engagement"},
+      {"label": "Brother Complex", "value": "brother-complex"},
+      {"label": "Bullying", "value": "bullying"},
+      {"label": "Business Management", "value": "business-management"},
+      {"label": "Businessmen", "value": "businessmen"},
+      {"label": "Calm Protagonist", "value": "calm-protagonist"},
+      {"label": "Carefree Protagonist", "value": "carefree-protagonist"},
+      {"label": "Caring Protagonist", "value": "caring-protagonist"},
+      {"label": "Cautious Protagonist", "value": "cautious-protagonist"},
+      {"label": "Celebrities", "value": "celebrities"},
+      {"label": "Character Growth", "value": "character-growth"},
+      {"label": "Charismatic Protagonist", "value": "charismatic-protagonist"},
+      {"label": "Charming Protagonist", "value": "charming-protagonist"},
+      {"label": "Cheats", "value": "cheats"},
+      {"label": "Child Abuse", "value": "child-abuse"},
+      {"label": "Child Protagonist", "value": "child-protagonist"},
+      {"label": "Childcare", "value": "childcare"},
+      {"label": "Childhood Friends", "value": "childhood-friends"},
+      {"label": "Childhood Love", "value": "childhood-love"},
+      {"label": "Clever Protagonist", "value": "clever-protagonist"},
+      {"label": "Clingy Lover", "value": "clingy-lover"},
+      {"label": "Cohabitation", "value": "cohabitation"},
+      {"label": "Cold Love Interests", "value": "cold-love-interests"},
+      {"label": "Cold Protagonist", "value": "cold-protagonist"},
+      {"label": "College/University", "value": "collegeuniversity"},
+      {"label": "Comedic Undertone", "value": "comedic-undertone"},
+      {"label": "Complex Family Relationships", "value": "complex-family-relationships"},
+      {"label": "Confident Protagonist", "value": "confident-protagonist"},
+      {"label": "Contracts", "value": "contracts"},
+      {"label": "Cooking", "value": "cooking"},
+      {"label": "Couple Growth", "value": "couple-growth"},
+      {"label": "Cross-dressing", "value": "cross-dressing"},
+      {"label": "Cruel Characters", "value": "cruel-characters"},
+      {"label": "Cultivation", "value": "cultivation"},
+      {"label": "Cunning Protagonist", "value": "cunning-protagonist"},
+      {"label": "Cute Children", "value": "cute-children"},
+      {"label": "Cute Protagonist", "value": "cute-protagonist"},
+      {"label": "Cute Story", "value": "cute-story"},
+      {"label": "Dark", "value": "dark"},
+      {"label": "Death", "value": "death"},
+      {"label": "Death of Loved Ones", "value": "death-of-loved-ones"},
+      {"label": "Demi-Humans", "value": "demi-humans"},
+      {"label": "Demon Lord", "value": "demon-lord"},
+      {"label": "Demons", "value": "demons"},
+      {"label": "Dense Protagonist", "value": "dense-protagonist"},
+      {"label": "Depictions of Cruelty", "value": "depictions-of-cruelty"},
+      {"label": "Depression", "value": "depression"},
+      {"label": "Determined Protagonist", "value": "determined-protagonist"},
+      {"label": "Devoted Love Interests", "value": "devoted-love-interests"},
+      {"label": "Different Social Status", "value": "different-social-status"},
+      {"label": "Discrimination", "value": "discrimination"},
+      {"label": "Doctors", "value": "doctors"},
+      {"label": "Doting Love Interests", "value": "doting-love-interests"},
+      {"label": "Doting Older Siblings", "value": "doting-older-siblings"},
+      {"label": "Doting Parents", "value": "doting-parents"},
+      {"label": "Dragons", "value": "dragons"},
+      {"label": "Dungeons", "value": "dungeons"},
+      {"label": "Dwarfs", "value": "dwarfs"},
+      {"label": "Early Romance", "value": "early-romance"},
+      {"label": "Elemental Magic", "value": "elemental-magic"},
+      {"label": "Elves", "value": "elves"},
+      {"label": "Empires", "value": "empires"},
+      {"label": "Enemies Become Allies", "value": "enemies-become-allies"},
+      {"label": "Enemies Become Lovers", "value": "enemies-become-lovers"},
+      {"label": "Engagement", "value": "engagement"},
+      {"label": "European Ambience", "value": "european-ambience"},
+      {"label": "F*llatio", "value": "fllatio"},
+      {"label": "Familial Love", "value": "familial-love"},
+      {"label": "Family", "value": "family"},
+      {"label": "Family Conflict", "value": "family-conflict"},
+      {"label": "Famous Protagonist", "value": "famous-protagonist"},
+      {"label": "Fantasy Creatures", "value": "fantasy-creatures"},
+      {"label": "Fantasy World", "value": "fantasy-world"},
+      {"label": "Farming", "value": "farming"},
+      {"label": "Fast Cultivation", "value": "fast-cultivation"},
+      {"label": "Fast Learner", "value": "fast-learner"},
+      {"label": "Fated Lovers", "value": "fated-lovers"},
+      {"label": "Female Protagonist", "value": "female-protagonist"},
+      {"label": "First Love", "value": "first-love"},
+      {"label": "First-time Interc**rse", "value": "first-time-intercrse"},
+      {"label": "Friendship", "value": "friendship"},
+      {"label": "Futuristic Setting", "value": "futuristic-setting"},
+      {"label": "Game Elements", "value": "game-elements"},
+      {"label": "Gamers", "value": "gamers"},
+      {"label": "Genius Protagonist", "value": "genius-protagonist"},
+      {"label": "Ghosts", "value": "ghosts"},
+      {"label": "Goddesses", "value": "goddesses"},
+      {"label": "Godly Powers", "value": "godly-powers"},
+      {"label": "Gods", "value": "gods"},
+      {"label": "Gore", "value": "gore"},
+      {"label": "Guilds", "value": "guilds"},
+      {"label": "Handsome Male Lead", "value": "handsome-male-lead"},
+      {"label": "Hard-Working Protagonist", "value": "hard-working-protagonist"},
+      {"label": "Hated Protagonist", "value": "hated-protagonist"},
+      {"label": "Heartwarming", "value": "heartwarming"},
+      {"label": "Heroes", "value": "heroes"},
+      {"label": "Hidden Abilities", "value": "hidden-abilities"},
+      {"label": "Hiding True Abilities", "value": "hiding-true-abilities"},
+      {"label": "Hiding True Identity", "value": "hiding-true-identity"},
+      {"label": "Human-Nonhuman Relationship", "value": "human-nonhuman-relationship"},
+      {"label": "Humanoid Protagonist", "value": "humanoid-protagonist"},
+      {"label": "Immortals", "value": "immortals"},
+      {"label": "Incest", "value": "incest"},
+      {"label": "Jealousy", "value": "jealousy"},
+      {"label": "Kidnappings", "value": "kidnappings"},
+      {"label": "Kind Love Interests", "value": "kind-love-interests"},
+      {"label": "Kingdom Building", "value": "kingdom-building"},
+      {"label": "Kingdoms", "value": "kingdoms"},
+      {"label": "Knights", "value": "knights"},
+      {"label": "Lack of Common Sense", "value": "lack-of-common-sense"},
+      {"label": "Late Romance", "value": "late-romance"},
+      {"label": "Lazy Protagonist", "value": "lazy-protagonist"},
+      {"label": "Leadership", "value": "leadership"},
+      {"label": "Level System", "value": "level-system"},
+      {"label": "Loli", "value": "loli"},
+      {"label": "Loner Protagonist", "value": "loner-protagonist"},
+      {"label": "Love at First Sight", "value": "love-at-first-sight"},
+      {"label": "Love Interest Falls in Love First", "value": "love-interest-falls-in-love-first"},
+      {"label": "Love Triangles", "value": "love-triangles"},
+      {"label": "Lovers Reunited", "value": "lovers-reunited"},
+      {"label": "Loyal Subordinates", "value": "loyal-subordinates"},
+      {"label": "Lucky Protagonist", "value": "lucky-protagonist"},
+      {"label": "Magic", "value": "magic"},
+      {"label": "Magic Beasts", "value": "magic-beasts"},
+      {"label": "Magical Space", "value": "magical-space"},
+      {"label": "Maids", "value": "maids"},
+      {"label": "Male Protagonist", "value": "male-protagonist"},
+      {"label": "Male Yandere", "value": "male-yandere"},
+      {"label": "Manipulative Characters", "value": "manipulative-characters"},
+      {"label": "Manly Gay Couple", "value": "manly-gay-couple"},
+      {"label": "Marriage", "value": "marriage"},
+      {"label": "Marriage of Convenience", "value": "marriage-of-convenience"},
+      {"label": "Master-Disciple Relationship", "value": "master-disciple-relationship"},
+      {"label": "Master-Servant Relationship", "value": "master-servant-relationship"},
+      {"label": "Mature Protagonist", "value": "mature-protagonist"},
+      {"label": "Medical Knowledge", "value": "medical-knowledge"},
+      {"label": "Military", "value": "military"},
+      {"label": "Misunderstandings", "value": "misunderstandings"},
+      {"label": "Mob Protagonist", "value": "mob-protagonist"},
+      {"label": "Modern Day", "value": "modern-day"},
+      {"label": "Modern Knowledge", "value": "modern-knowledge"},
+      {"label": "Monsters", "value": "monsters"},
+      {"label": "Mpreg", "value": "mpreg"},
+      {"label": "Multiple POV", "value": "multiple-pov"},
+      {"label": "Multiple Realms", "value": "multiple-realms"},
+      {"label": "Multiple Reincarnated Individuals", "value": "multiple-reincarnated-individuals"},
+      {"label": "Multiple Transported Individuals", "value": "multiple-transported-individuals"},
+      {"label": "Murders", "value": "murders"},
+      {"label": "Mysterious Family Background", "value": "mysterious-family-background"},
+      {"label": "Mysterious Past", "value": "mysterious-past"},
+      {"label": "Mystery Solving", "value": "mystery-solving"},
+      {"label": "Naive Protagonist", "value": "naive-protagonist"},
+      {"label": "Near-Death Experience", "value": "near-death-experience"},
+      {"label": "Nobles", "value": "nobles"},
+      {"label": "Non-humanoid Protagonist", "value": "non-humanoid-protagonist"},
+      {"label": "Obsessive Love", "value": "obsessive-love"},
+      {"label": "Older Love Interests", "value": "older-love-interests"},
+      {"label": "Omegaverse", "value": "omegaverse"},
+      {"label": "Oneshot", "value": "oneshot"},
+      {"label": "Orphans", "value": "orphans"},
+      {"label": "Otome Game", "value": "otome-game"},
+      {"label": "Overpowered Protagonist", "value": "overpowered-protagonist"},
+      {"label": "Past Plays a Big Role", "value": "past-plays-a-big-role"},
+      {"label": "Past Trauma", "value": "past-trauma"},
+      {"label": "Persistent Love Interests", "value": "persistent-love-interests"},
+      {"label": "Personality Changes", "value": "personality-changes"},
+      {"label": "Pets", "value": "pets"},
+      {"label": "Politics", "value": "politics"},
+      {"label": "Polygamy", "value": "polygamy"},
+      {"label": "Poor Protagonist", "value": "poor-protagonist"},
+      {"label": "Poor to Rich", "value": "poor-to-rich"},
+      {"label": "Popular Love Interests", "value": "popular-love-interests"},
+      {"label": "Possessive Characters", "value": "possessive-characters"},
+      {"label": "Power Couple", "value": "power-couple"},
+      {"label": "Power Struggle", "value": "power-struggle"},
+      {"label": "Pragmatic Protagonist", "value": "pragmatic-protagonist"},
+      {"label": "Pregnancy", "value": "pregnancy"},
+      {"label": "Previous Life Talent", "value": "previous-life-talent"},
+      {"label": "Proactive Protagonist", "value": "proactive-protagonist"},
+      {"label": "Protagonist Falls in Love First", "value": "protagonist-falls-in-love-first"},
+      {"label": "Protagonist Strong from the Start", "value": "protagonist-strong-from-the-start"},
+      {"label": "Quirky Characters", "value": "quirky-characters"},
+      {"label": "R*pe", "value": "rpe"},
+      {"label": "R*pe Victim Becomes Lover", "value": "rpe-victim-becomes-lover"},
+      {"label": "R-15", "value": "r-15"},
+      {"label": "R-18", "value": "r-18"},
+      {"label": "Reincarnated in a Game World", "value": "reincarnated-in-a-game-world"},
+      {"label": "Reincarnated in Another World", "value": "reincarnated-in-another-world"},
+      {"label": "Reincarnation", "value": "reincarnation"},
+      {"label": "Religions", "value": "religions"},
+      {"label": "Revenge", "value": "revenge"},
+      {"label": "Reverse Harem", "value": "reverse-harem"},
+      {"label": "Romantic Subplot", "value": "romantic-subplot"},
+      {"label": "Royalty", "value": "royalty"},
+      {"label": "Ruthless Protagonist", "value": "ruthless-protagonist"},
+      {"label": "S*aves", "value": "saves"},
+      {"label": "S*xual Abuse", "value": "sxual-abuse"},
+      {"label": "Schemes And Conspiracies", "value": "schemes-and-conspiracies"},
+      {"label": "Second Chance", "value": "second-chance"},
+      {"label": "Secret Identity", "value": "secret-identity"},
+      {"label": "Secrets", "value": "secrets"},
+      {"label": "Seme Protagonist", "value": "seme-protagonist"},
+      {"label": "Shameless Protagonist", "value": "shameless-protagonist"},
+      {"label": "Sharp-tongued Characters", "value": "sharp-tongued-characters"},
+      {"label": "Short Story", "value": "short-story"},
+      {"label": "Showbiz", "value": "showbiz"},
+      {"label": "Siblings", "value": "siblings"},
+      {"label": "Siblings Not Related by Blood", "value": "siblings-not-related-by-blood"},
+      {"label": "Sickly Characters", "value": "sickly-characters"},
+      {"label": "Slow Romance", "value": "slow-romance"},
+      {"label": "Smart Couple", "value": "smart-couple"},
+      {"label": "Special Abilities", "value": "special-abilities"},
+      {"label": "Spirits", "value": "spirits"},
+      {"label": "Strength-based Social Hierarchy", "value": "strength-based-social-hierarchy"},
+      {"label": "Strong Love Interests", "value": "strong-love-interests"},
+      {"label": "Strong to Stronger", "value": "strong-to-stronger"},
+      {"label": "Survival", "value": "survival"},
+      {"label": "Sword And Magic", "value": "sword-and-magic"},
+      {"label": "Sword Wielder", "value": "sword-wielder"},
+      {"label": "System Administrator", "value": "system-administrator"},
+      {"label": "Threesome", "value": "threesome"},
+      {"label": "Time Skip", "value": "time-skip"},
+      {"label": "Time Travel", "value": "time-travel"},
+      {"label": "Torture", "value": "torture"},
+      {"label": "Tragic Past", "value": "tragic-past"},
+      {"label": "Transmigration", "value": "transmigration"},
+      {"label": "Transported into a Game World", "value": "transported-into-a-game-world"},
+      {"label": "Transported to Another World", "value": "transported-to-another-world"},
+      {"label": "Tsundere", "value": "tsundere"},
+      {"label": "Unconditional Love", "value": "unconditional-love"},
+      {"label": "Underestimated Protagonist", "value": "underestimated-protagonist"},
+      {"label": "Unique Cultivation Technique", "value": "unique-cultivation-technique"},
+      {"label": "Unreliable Narrator", "value": "unreliable-narrator"},
+      {"label": "Unrequited Love", "value": "unrequited-love"},
+      {"label": "Vampires", "value": "vampires"},
+      {"label": "Villainess Noble Girls", "value": "villainess-noble-girls"},
+      {"label": "Virtual Reality", "value": "virtual-reality"},
+      {"label": "Wars", "value": "wars"},
+      {"label": "Weak Protagonist", "value": "weak-protagonist"},
+      {"label": "Weak to Strong", "value": "weak-to-strong"},
+      {"label": "Wealthy Characters", "value": "wealthy-characters"},
+      {"label": "World Hopping", "value": "world-hopping"},
+      {"label": "World Travel", "value": "world-travel"},
+      {"label": "Yandere", "value": "yandere"},
+      {"label": "Younger Love Interests", "value": "younger-love-interests"},
+      {"label": "Younger Sisters", "value": "younger-sisters"},
+      {"label": "Zombies", "value": "zombies"}
     ])
   },
 
   browseNovels: function (page, f) {
-    var path = empty(f.category) && !empty(f.tag) ? "tag/" + f.tag
-      : !empty(f.category) && empty(f.tag) ? "category/" + f.category
-      : "search";
-    return grid(qnGet(MAIN_URL + "/" + path + "?page=" + page + "&order_by=" + f.orderBy).document());
+    var data = getListPage("/browse" + query({
+      order_by: f.orderBy === "popular" ? null : f.orderBy,
+      genre: f.category,
+      tag: f.tag,
+      page: page > 1 ? page : null
+    }));
+    var listing = data && data.props.pageProps.listing;
+    if (!listing || listing.page < page) return []; // past the last page
+    return listing.items.map(item);
   },
 
   popularNovels: function (page) {
-    return qnPopular(page);
+    return module.exports.browseNovels(page, { category: null, orderBy: null, tag: null });
   },
 
-  searchNovels: function (query) {
-    return grid(qnGet(MAIN_URL + "/search/" + encodeURIComponent(query)).document());
+  searchNovels: function (q, page) {
+    var data = getListPage("/search" + query({ q: q, page: page > 1 ? page : null }));
+    var result = data && data.props.pageProps.result;
+    return result ? result.items.map(item) : [];
   },
 
   parseNovel: function (url) {
-    var doc = qnGet(url).document();
-    var info = doc.selectFirst("div.mantine-Container-root > div.mantine-Paper-root.mantine-Card-root > div");
-    var h5 = info ? info.selectFirst("h5") : null;
-    if (!h5) throw new Error("Title not found");
+    var data = getPage(url.replace(SITE, ""));
+    var props = data.props.pageProps;
+    var n = props.novel;
+    if (!n) return null;
 
+    // The table of contents is paged; fetch the rest through the lighter
+    // JSON data route (its build id changes with every deploy).
     var chapters = [];
-    var countEl = info.selectFirst("div.mantine-Group-root div.mantine-19n0k2t");
-    if (countEl) {
-      var text = countEl.text();
-      var head = text.indexOf(" C") >= 0 ? text.substring(0, text.indexOf(" C")) : text;
-      if (/^[+-]?\d+$/.test(head)) {
-        var slug = url.substring(url.lastIndexOf("/") + 1);
-        for (var n = 1; n <= parseInt(head, 10); n++) {
-          chapters.push({ name: "Chapter " + n, url: fixUrl(MAIN_URL + "/chapter/" + slug + "-" + n) });
-        }
-      }
+    function add(toc) {
+      toc.items.forEach(function (c) {
+        chapters.push({ name: c.title || ("Chapter " + c.number), url: SITE + "/chapter/" + n.slug + "-" + c.number, number: c.number });
+      });
     }
-
-    var img = info.selectFirst("img");
-    var synopsis = info.selectFirst("div.mantine-Spoiler-root > div.mantine-Spoiler-content > div > div.mantine-Text-root");
-    var authorEl = info.selectFirst("div.mantine-lqk3v2 > div");
-    var author = "";
-    if (authorEl) {
-      var a = authorEl.text();
-      var i = a.lastIndexOf("By ");
-      author = i >= 0 ? a.substring(i + 3) : a;
-    }
-    var status = info.selectFirst("div.mantine-Group-root.mantine-1uxmzbt > div.mantine-1huvzos");
-    return qnNovel(h5.text(), chapters, {
-      posterUrl: img ? attr(img, "src") : null,
-      synopsis: synopsis ? synopsis.text() : "",
-      author: author,
-      status: qnStatus(status ? status.text() : null)
+    add(props.toc);
+    (props.toc.ranges || []).forEach(function (range) {
+      if (range.page === props.toc.range.page) return;
+      var r = fetch(SITE + "/_next/data/" + data.buildId + "/novel/" + n.slug + ".json?page=" + range.page);
+      var toc = r.ok ? JSON.parse(r.text()).pageProps.toc : getPage("/novel/" + n.slug + "?page=" + range.page).props.pageProps.toc;
+      add(toc);
     });
+
+    return {
+      name: n.title,
+      cover: cover(n, 480),
+      author: (n.author && n.author.name) || n.authorName || "",
+      summary: n.description || "",
+      status: STATUS[n.status] || "Unknown",
+      chapters: chapters
+    };
   },
 
   parseChapter: function (url) {
-    var el = qnGet(url).document().selectFirst("#__next .mantine-Container-root .mantine-Paper-root > div:nth-child(4) > div");
-    return el ? el.html() : "";
+    var data = getPage(url.replace(SITE, "")).props.pageProps.data;
+    var paragraphs = data && data.chapter && data.chapter.paragraphs;
+    if (!paragraphs || paragraphs.length === 0) return null;
+    return paragraphsToHtml(paragraphs);
   }
 };
