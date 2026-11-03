@@ -84,6 +84,7 @@ modules do not.
 | `encodeForm(obj)` | `a=1&b=2` encoding. |
 | `escapeHtml(s)` | Escapes `& < > "`. |
 | `paragraphsToHtml(list)` | `["a", "b"]` → `<p>a</p><p>b</p>` (escaped): return this from `parseChapter` when you build the text yourself. |
+| `aesGcmDecrypt(key, iv, tag, data)` | AES-GCM decryption for sites that ship encrypted chapters. `key` is a UTF-8 string (16, 24 or 32 bytes), the rest base64. Returns the UTF-8 plaintext; throws on a bad key or tag. |
 | `console.log/info/warn/error` | Shows up in logcat (tag `JsPlugin`) in debug builds. |
 
 **Node** methods (backed by jsoup, CSS selectors):

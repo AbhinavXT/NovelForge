@@ -199,6 +199,33 @@ class JsPluginTest {
         assertEquals("2,4,6|https://s.test/p", plugin.call("popularNovels", 1))
     }
 
+    @Test
+    fun `aesGcmDecrypt decrypts what javax crypto encrypted`() {
+        val key = "0123456789abcdef0123456789abcdef"
+        val iv = ByteArray(12) { it.toByte() }
+        val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(
+            javax.crypto.Cipher.ENCRYPT_MODE,
+            javax.crypto.spec.SecretKeySpec(key.toByteArray(), "AES"),
+            javax.crypto.spec.GCMParameterSpec(128, iv),
+        )
+        val sealed = cipher.doFinal("第一章 ✓".toByteArray())
+        val ct = sealed.copyOfRange(0, sealed.size - 16)
+        val tag = sealed.copyOfRange(sealed.size - 16, sealed.size)
+        val b64 = java.util.Base64.getEncoder()
+        val plugin = JsPlugin.load(
+            minimal("""
+                var ok = aesGcmDecrypt("$key", "${b64.encodeToString(iv)}", "${b64.encodeToString(tag)}", "${b64.encodeToString(ct)}");
+                var bad;
+                try { aesGcmDecrypt("$key", "${b64.encodeToString(iv)}", "${b64.encodeToString(ByteArray(16))}", "${b64.encodeToString(ct)}"); bad = "no"; }
+                catch (e) { bad = "threw"; }
+                return [ok, bad];
+            """),
+            "aes.js", http,
+        )
+        assertEquals(listOf("第一章 ✓", "threw"), plugin.call("popularNovels", 1))
+    }
+
     private fun minimal(popularBody: String) = """
         module.exports = {
           id: "t", name: "T", version: "1", site: "https://x.test",

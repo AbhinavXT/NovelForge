@@ -286,6 +286,28 @@ private class Bridge(
             }
         }
         ScriptableObject.putProperty(scope, "console", console)
+
+        // AES-GCM decryption for sites that ship encrypted chapter text.
+        // key: UTF-8 string (16/24/32 bytes); iv, tag, data: base64.
+        fn(scope, "aesGcmDecrypt", 4) { _, _, a ->
+            try {
+                val key = (argString(a, 0) ?: "").toByteArray(Charsets.UTF_8)
+                val iv = base64Decode(argString(a, 1) ?: "")
+                val tag = base64Decode(argString(a, 2) ?: "")
+                val data = base64Decode(argString(a, 3) ?: "")
+                val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(
+                    javax.crypto.Cipher.DECRYPT_MODE,
+                    javax.crypto.spec.SecretKeySpec(key, "AES"),
+                    javax.crypto.spec.GCMParameterSpec(tag.size * 8, iv),
+                )
+                String(cipher.doFinal(data + tag), Charsets.UTF_8)
+            } catch (e: java.security.GeneralSecurityException) {
+                throw ScriptRuntime.constructError("Error", "aesGcmDecrypt: ${e.message ?: e.javaClass.simpleName}")
+            } catch (e: IllegalArgumentException) {
+                throw ScriptRuntime.constructError("Error", "aesGcmDecrypt: ${e.message}")
+            }
+        }
     }
 
     private fun fn(
@@ -398,6 +420,35 @@ private class Bridge(
         val v = a.getOrNull(i)
         return if (v == null || Undefined.isUndefined(v)) null else Context.toString(v)
     }
+}
+
+/**
+ * Standard or URL-safe base64, padding optional. Hand-rolled because
+ * java.util.Base64 needs API 26 and android.util.Base64 isn't on the JVM.
+ */
+private fun base64Decode(input: String): ByteArray {
+    val clean = input.trim().trimEnd('=')
+    val out = java.io.ByteArrayOutputStream(clean.length * 3 / 4)
+    var buffer = 0
+    var bits = 0
+    for (c in clean) {
+        val v = when (c) {
+            in 'A'..'Z' -> c - 'A'
+            in 'a'..'z' -> c - 'a' + 26
+            in '0'..'9' -> c - '0' + 52
+            '+', '-' -> 62
+            '/', '_' -> 63
+            '\n', '\r', ' ' -> continue
+            else -> throw IllegalArgumentException("invalid base64 character '$c'")
+        }
+        buffer = (buffer shl 6) or v
+        bits += 6
+        if (bits >= 8) {
+            bits -= 8
+            out.write((buffer shr bits) and 0xFF)
+        }
+    }
+    return out.toByteArray()
 }
 
 /**

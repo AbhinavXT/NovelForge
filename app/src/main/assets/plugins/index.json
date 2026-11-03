@@ -61,5 +61,14 @@
     "version": "1.0.0",
     "url": "primordialtranslation.js",
     "sourceId": "pt"
+  },
+  {
+    "id": "wtrlab",
+    "name": "WTR-Lab",
+    "site": "https://wtr-lab.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "wtrlab.js",
+    "sourceId": "wtr"
   }
 ]
