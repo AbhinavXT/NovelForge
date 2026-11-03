@@ -139,7 +139,7 @@ function firstNumber(s) {
 module.exports = {
   id: "primordialtranslation",
   name: "Primordial Translation",
-  version: "1.0.0",
+  version: "1.1.0",
   site: SITE,
   lang: "en",
   // The built-in source kept translator/editor credit lines.
@@ -149,7 +149,8 @@ module.exports = {
     var doc = get(page === 1 ? SITE + "/series/" : SITE + "/series/?page=" + page);
     if (!doc) return [];
     var seenIds = {};
-    var items = doc.select(".bsx, .bs, article.bs, .listupd .bs, .soralist .bsx");
+    // The theme's current cards are .listupd article.maindet.
+    var items = doc.select(".bsx, .bs, article.bs, .listupd .bs, .soralist .bsx, .listupd article.maindet");
     if (items.length > 0) return cards(items, seenIds);
 
     // Fallback: every series link on the listing page.
@@ -159,6 +160,8 @@ module.exports = {
       var href = link.absUrl("href") || "";
       if (href === SITE + "/series/" || seen[href]) return;
       if (href.indexOf(SITE + "/series/") !== 0) return;
+      // Listing-mode switch and RSS feed, not novels.
+      if (/\/series\/(list-mode|feed)\/?$/.test(href)) return;
       seen[href] = true;
       var img = link.selectFirst("img");
       var alt = img ? (img.attr("alt") || "").trim() : null;
@@ -176,7 +179,7 @@ module.exports = {
     var doc = get(SITE + "/?s=" + urlEncode(query));
     if (!doc) return [];
     var seen = {};
-    var items = doc.select(".bsx, .bs, article.bs, .listupd .bs");
+    var items = doc.select(".bsx, .bs, article.bs, .listupd .bs, .listupd article.maindet");
     // Fallback: standard WordPress search results.
     return cards(items.length > 0 ? items : doc.select("article, .post, .search-result"), seen);
   },
