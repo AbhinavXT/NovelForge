@@ -22,7 +22,7 @@ open class LibReadSource : BrowseSource {
     // Subclasses can override to strip .html from URLs
     open val removeHtml = false
 
-    private val client = SourceManager.sharedClient
+    private val client = SourceHttp.client
 
     private val userAgent =
         "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36"

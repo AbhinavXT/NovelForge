@@ -100,6 +100,8 @@ android {
 }
 
 dependencies {
+    implementation(project(":source-api"))
+
     // --- Compose BOM must come first so the artifacts below inherit it ---
     implementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(platform(libs.androidx.compose.bom))
@@ -126,11 +128,8 @@ dependencies {
     implementation(libs.androidx.glance.material3)
     implementation(libs.androidx.datastore.preferences)
 
-    // FIXED: okhttp was declared three times — once via the catalog and
-    // twice as an identical literal. Same version, so no conflict today,
-    // but a catalog bump would have been silently overridden by the
-    // literals. One declaration, catalog-owned.
-    implementation(libs.okhttp)
+    // okhttp comes in through :source-api, which declares it as `api`.
+    // Don't redeclare it here — one declaration, catalog-owned.
     implementation(libs.jsoup)
     implementation(libs.coil.compose)
     implementation(libs.gson)

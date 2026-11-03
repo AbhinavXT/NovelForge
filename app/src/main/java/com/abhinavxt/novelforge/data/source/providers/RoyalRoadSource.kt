@@ -18,7 +18,7 @@ class RoyalRoadSource : BrowseSource {
     override val name = "Royal Road"
     override val baseUrl = "https://www.royalroad.com"
 
-    private val client = SourceManager.sharedClient
+    private val client = SourceHttp.client
 
     private suspend fun fetchDocument(url: String): Document? {
         return withContext(Dispatchers.IO) {

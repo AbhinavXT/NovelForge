@@ -19,7 +19,7 @@ class ReadNovelFullSource : BrowseSource {
     override val name = "ReadNovelFull"
     override val baseUrl = "https://readnovelfull.com"
 
-    private val client = SourceManager.sharedClient
+    private val client = SourceHttp.client
 
     private suspend fun fetchDocument(url: String): Document? {
         return withContext(Dispatchers.IO) {

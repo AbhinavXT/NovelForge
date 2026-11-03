@@ -11,11 +11,11 @@ package com.abhinavxt.novelforge.data.source.nf
 //   response.text / .document / .code / .url / .headers / .okhttpResponse
 //   response.parsed<T>() / response.parsedSafe<T>()
 //
-// Everything runs on the shared OkHttpClient from SourceManager so retry behaviour
+// Everything runs on the shared OkHttpClient from SourceHttp so retry behaviour
 // and timeouts stay consistent with the native NovelForge sources.
 
 import android.content.Context
-import com.abhinavxt.novelforge.data.source.SourceManager
+import com.abhinavxt.novelforge.data.source.SourceHttp
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -246,14 +246,14 @@ class NfRequests(
 object NfHttp {
     val app: NfRequests by lazy {
         NfRequests(
-            baseClient = SourceManager.sharedClient,
+            baseClient = SourceHttp.client,
             defaultHeaders = mapOf("user-agent" to USER_AGENT)
         )
     }
 
     val appWithInterceptor: NfRequests by lazy {
         NfRequests(
-            baseClient = SourceManager.sharedClient.newBuilder()
+            baseClient = SourceHttp.client.newBuilder()
                 .addInterceptor(CloudflareKiller())
                 .build(),
             defaultHeaders = mapOf("user-agent" to USER_AGENT)

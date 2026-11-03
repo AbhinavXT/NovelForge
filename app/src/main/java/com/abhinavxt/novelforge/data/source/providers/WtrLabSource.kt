@@ -53,7 +53,7 @@ class WtrLabSource : BrowseSource {
     override val name = "WTR-Lab"
     override val baseUrl = "https://wtr-lab.com"
 
-    private val client = SourceManager.sharedClient
+    private val client = SourceHttp.client
 
     private val userAgent =
         "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
