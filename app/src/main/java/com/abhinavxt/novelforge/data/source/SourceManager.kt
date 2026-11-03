@@ -19,7 +19,6 @@ object SourceManager {
     val revision: StateFlow<Int> = _revision.asStateFlow()
 
     init {
-        registerSource(LibReadSource())
         registerSource(NovelFullNetSource())
         registerSource(PawReadSource())
         registerSource(PrimordialTranslationSource())

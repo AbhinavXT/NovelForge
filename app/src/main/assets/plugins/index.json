@@ -25,5 +25,14 @@
     "version": "1.0.0",
     "url": "freewebnovel.js",
     "sourceId": "fwn"
+  },
+  {
+    "id": "libread",
+    "name": "LibRead",
+    "site": "https://libread.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "libread.js",
+    "sourceId": "lr"
   }
 ]
