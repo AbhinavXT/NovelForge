@@ -151,5 +151,14 @@
     "version": "1.0.0",
     "url": "mtlnovel.js",
     "sourceId": "qmtln"
+  },
+  {
+    "id": "nobadnovel",
+    "name": "NoBadNovel",
+    "site": "https://www.nobadnovel.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "nobadnovel.js",
+    "sourceId": "qnbn"
   }
 ]
