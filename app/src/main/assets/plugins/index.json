@@ -43,5 +43,14 @@
     "version": "1.0.0",
     "url": "novelfull.js",
     "sourceId": "nfn"
+  },
+  {
+    "id": "pawread",
+    "name": "PawRead",
+    "site": "https://pawread.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "pawread.js",
+    "sourceId": "pr"
   }
 ]
