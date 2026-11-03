@@ -154,8 +154,9 @@ class JsPluginSource(
             .getOrNull()
     }
 
+    /** A string field; blank counts as missing. Not trimmed: values reach the app as the plugin wrote them. */
     private fun Map<*, *>.str(key: String): String? =
-        (this[key] as? String)?.trim()?.ifEmpty { null }
+        (this[key] as? String)?.takeIf { it.isNotBlank() }
 
     private fun Map<*, *>.link(): String? = resolve(str("url") ?: str("path"))
 

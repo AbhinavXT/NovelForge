@@ -106,5 +106,14 @@
     "version": "1.0.0",
     "url": "readfromnet.js",
     "sourceId": "qrfn"
+  },
+  {
+    "id": "hiraethtranslation",
+    "name": "HiraethTranslation",
+    "site": "https://hiraethtranslation.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "hiraethtranslation.js",
+    "sourceId": "qhir"
   }
 ]
