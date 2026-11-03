@@ -70,6 +70,21 @@ android {
         }
     }
 
+    testOptions {
+        unitTests.all {
+            // LivePluginCheck hits the real sites: opt-in with LIVE_PLUGINS=all (or ids).
+            val live = System.getenv("LIVE_PLUGINS").orEmpty()
+            if (live.isEmpty()) {
+                it.exclude("**/LivePluginCheck*")
+            } else {
+                it.environment("LIVE_PLUGINS", live)
+                // Environment variables aren't task inputs: never skip a live run as up to date.
+                it.outputs.upToDateWhen { false }
+                it.testLogging.showStandardStreams = true
+            }
+        }
+    }
+
     buildTypes {
         release {
             // Still false — flip this only once the R8 keep rules in
