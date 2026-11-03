@@ -90,7 +90,7 @@ modules do not.
 **Node** methods (backed by jsoup, CSS selectors):
 `select(css)` → array of Node, `selectFirst(css)` → Node or `null`,
 `text()`, `ownText()`, `wholeText()`, `html()`, `outerHtml()`, `tagName()`,
-`attr(name)` → string or `null`, `absUrl(name)` → absolute URL or `null`,
+`attr(name)` → string or `null` (`attr(name, value)` sets it), `absUrl(name)` → absolute URL or `null`,
 `hasClass(name)`, `children()`, `parent()`, `next()`, `prev()`, `remove()`,
 `replaceWith(node)` (moves `node` into this one's place).
 

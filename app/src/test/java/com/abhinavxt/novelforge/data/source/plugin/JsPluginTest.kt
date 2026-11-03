@@ -240,6 +240,19 @@ class JsPluginTest {
         assertEquals("<img src=\"a.png\">", plugin.call("popularNovels", 1))
     }
 
+    @Test
+    fun `attr with a value sets the attribute`() {
+        val plugin = JsPlugin.load(
+            minimal("""
+                var img = parseHtml('<img src="a.png">').selectFirst("img");
+                img.attr("src", "https://x.test/a.png");
+                return [img.attr("src"), img.outerHtml()];
+            """),
+            "attr.js", http,
+        )
+        assertEquals(listOf("https://x.test/a.png", "<img src=\"https://x.test/a.png\">"), plugin.call("popularNovels", 1))
+    }
+
     private fun minimal(popularBody: String) = """
         module.exports = {
           id: "t", name: "T", version: "1", site: "https://x.test",

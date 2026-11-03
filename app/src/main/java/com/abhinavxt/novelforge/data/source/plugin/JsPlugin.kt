@@ -353,10 +353,18 @@ private class Bridge(
         fn(p, "html", 0) { _, t, _ -> node(t).html() }
         fn(p, "outerHtml", 0) { _, t, _ -> node(t).outerHtml() }
         fn(p, "tagName", 0) { _, t, _ -> node(t).tagName() }
-        fn(p, "attr", 1) { _, t, a ->
+        fn(p, "attr", 2) { _, t, a ->
             val el = node(t)
             val name = argString(a, 0) ?: ""
-            if (el.hasAttr(name)) el.attr(name) else null
+            val value = argString(a, 1)
+            when {
+                value != null -> {
+                    el.attr(name, value)
+                    t
+                }
+                el.hasAttr(name) -> el.attr(name)
+                else -> null
+            }
         }
         fn(p, "absUrl", 1) { _, t, a ->
             node(t).absUrl(argString(a, 0) ?: "").ifEmpty { null }

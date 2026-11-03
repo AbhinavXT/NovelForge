@@ -23,7 +23,6 @@ object NfSources {
 
     fun all(): List<Source> = listOf(
         // --- English ---
-        NfSourceAdapter(RanobesProvider(), "qrnb"),
         NfSourceAdapter(ReadhiveProvider(), "qrhv"),
         NfSourceAdapter(SonicMTLProvider(), "qsonic"),
         NfSourceAdapter(WattpadProvider(), "qwatt"),

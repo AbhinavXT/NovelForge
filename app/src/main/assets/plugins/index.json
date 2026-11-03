@@ -178,5 +178,14 @@
     "version": "1.0.0",
     "url": "novellight.js",
     "sourceId": "qnlig"
+  },
+  {
+    "id": "ranobes",
+    "name": "Ranobes",
+    "site": "https://ranobes.net",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "ranobes.js",
+    "sourceId": "qrnb"
   }
 ]
