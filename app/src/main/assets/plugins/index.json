@@ -205,5 +205,14 @@
     "version": "1.0.0",
     "url": "sonicmtl.js",
     "sourceId": "qsonic"
+  },
+  {
+    "id": "wattpad",
+    "name": "Wattpad",
+    "site": "https://www.wattpad.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "wattpad.js",
+    "sourceId": "qwatt"
   }
 ]
