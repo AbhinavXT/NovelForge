@@ -106,8 +106,13 @@ class SourceParityTest {
                 val p = plugin.getNovelDetails(url)
                 compareNovel(url, k, p)
                 val chapters = k?.chapters.orEmpty()
+                println("[$tag]   ${chapters.size} chapters")
                 for (ch in listOfNotNull(chapters.firstOrNull(), chapters.lastOrNull()).distinct()) {
-                    check("content ${ch.url}", kotlin.getChapterContent(ch.url), plugin.getChapterContent(ch.url))
+                    val kc = kotlin.getChapterContent(ch.url)
+                    val pc = plugin.getChapterContent(ch.url)
+                    // "identical" means little if both sides came back empty, so say so.
+                    println("[$tag]   content ${ch.url}: kotlin ${kc?.length ?: "null"} chars, plugin ${pc?.length ?: "null"} chars")
+                    check("content ${ch.url}", kc, pc)
                 }
             }
             return diffs

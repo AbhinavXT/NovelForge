@@ -79,5 +79,14 @@
     "version": "1.0.0",
     "url": "allnovel.js",
     "sourceId": "qanv"
+  },
+  {
+    "id": "fanmtl",
+    "name": "FanMTL",
+    "site": "https://www.fanmtl.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "fanmtl.js",
+    "sourceId": "qfmtl"
   }
 ]
