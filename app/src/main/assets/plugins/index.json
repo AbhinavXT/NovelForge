@@ -142,5 +142,14 @@
     "version": "1.0.0",
     "url": "lnori.js",
     "sourceId": "qlno"
+  },
+  {
+    "id": "mtlnovel",
+    "name": "MtlNovel",
+    "site": "https://mtlnovel.me",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "mtlnovel.js",
+    "sourceId": "qmtln"
   }
 ]
