@@ -223,5 +223,14 @@
     "version": "1.0.0",
     "url": "wuxiabox.js",
     "sourceId": "qwbox"
+  },
+  {
+    "id": "wuxiaclick",
+    "name": "WuxiaClick",
+    "site": "https://wuxia.click",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "wuxiaclick.js",
+    "sourceId": "qwclick"
   }
 ]

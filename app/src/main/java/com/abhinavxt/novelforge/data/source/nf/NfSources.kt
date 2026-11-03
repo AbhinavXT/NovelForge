@@ -23,7 +23,6 @@ object NfSources {
 
     fun all(): List<Source> = listOf(
         // --- English ---
-        NfSourceAdapter(WuxiaClickProvider(), "qwclick"),
 
         // Removed sources — provider files deleted, prefixes retired.
         // Never reuse a retired prefix: it may still be baked into Room rows
