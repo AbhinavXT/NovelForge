@@ -123,6 +123,8 @@ module.exports = {
   version: "1.0.0",
   site: SITE,
   lang: "en",
+  // The built-in source kept translator/editor credit lines.
+  stripCredits: false,
 
   filters: {
     orderBys: [

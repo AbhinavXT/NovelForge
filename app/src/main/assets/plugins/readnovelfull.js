@@ -135,6 +135,8 @@ module.exports = {
   version: "1.0.0",
   site: SITE,
   lang: "en",
+  // The built-in source kept translator/editor credit lines.
+  stripCredits: false,
 
   // Genre listing URLs are unverified for this site, so only sort lists are offered.
   filters: {

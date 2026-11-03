@@ -27,7 +27,8 @@ import org.robolectric.annotation.Config
  *     PARITY=royalroad ./gradlew :app:testDebugUnitTest --tests '*SourceParityTest*'
  *     PARITY=all       ...   (every bundled plugin whose Kotlin source still exists)
  *
- * Optional: PARITY_QUERY=<search term> (default: first word of the first popular title).
+ * Optional: PARITY_QUERY=<search term> (default: first word of the first popular title),
+ * PARITY_NOVEL=<novel url> to compare one more novel besides the first two popular ones.
  *
  * The Kotlin side is looked up through SourceManager rather than by class,
  * so this keeps compiling after a converted source is deleted; it then
@@ -98,8 +99,8 @@ class SourceParityTest {
                 ?: "the"
             comparePreviews("search('$query')", kotlin.search(query), plugin.search(query))
 
-            for (preview in popular.take(2)) {
-                val url = SourceManager.constructNovelUrl(preview.id)
+            val extra = System.getenv("PARITY_NOVEL")?.ifBlank { null }
+            for (url in popular.take(2).map { SourceManager.constructNovelUrl(it.id) } + listOfNotNull(extra)) {
                 println("[$tag] details: $url")
                 val k = kotlin.getNovelDetails(url)
                 val p = plugin.getNovelDetails(url)
@@ -143,9 +144,25 @@ class SourceParityTest {
         }
     }
 
-    /** Plain OkHttp transport (no Cloudflare WebView under Robolectric). */
+    /**
+     * Plain OkHttp transport (no Cloudflare WebView under Robolectric). The
+     * plugin's request follows the Kotlin source's immediately, which some
+     * sites answer with 429; back off and retry so that isn't reported as a
+     * difference.
+     */
     private object LiveHttp : PluginHttp {
         override fun execute(request: PluginRequest): PluginResponse {
+            var response = once(request)
+            var wait = 3_000L
+            while (response.status == 429 && wait <= 24_000L) {
+                Thread.sleep(wait)
+                wait *= 2
+                response = once(request)
+            }
+            return response
+        }
+
+        private fun once(request: PluginRequest): PluginResponse {
             val builder = Request.Builder().url(request.url)
             request.headers.forEach { (k, v) -> builder.header(k, v) }
             if (request.headers.keys.none { it.equals("User-Agent", true) }) builder.header("User-Agent", DEFAULT_USER_AGENT)
@@ -155,6 +172,7 @@ class SourceParityTest {
             }
             builder.method(request.method, body)
             SourceHttp.client.newCall(builder.build()).execute().use { r ->
+                if (!r.isSuccessful) println("[http] plugin got ${r.code} for ${request.method} ${request.url}")
                 return PluginResponse(
                     r.code, r.request.url.toString(), r.body?.string() ?: "",
                     r.headers.names().associate { it.lowercase() to r.headers.values(it).joinToString(", ") },

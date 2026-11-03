@@ -103,6 +103,11 @@ class JsPluginSource(
     }
     private val rateLimitMutex = Mutex()
 
+    /** `stripCredits: false` keeps "Translator: … Editor: …" lines and author-note containers. */
+    private val stripCredits: Boolean by lazy {
+        runCatching { runtimeOrNull()?.export("stripCredits") }.getOrNull() != false
+    }
+
     /** Runs a plugin function off the main thread; cancellation interrupts the script. */
     private suspend fun call(function: String, vararg args: Any?): Any? {
         val run: suspend () -> Any? = { runInterruptible(Dispatchers.IO) { runtime().call(function, *args) } }
@@ -235,7 +240,7 @@ class JsPluginSource(
         runInterruptible(Dispatchers.Default) {
             // Same clean-up the QuickNovel adapter applied: author-note
             // containers and "Translator: … Editor: …" credit lines.
-            ReaderText.fromHtml(stripHtml(html, stripAuthorNotes = true))
+            ReaderText.fromHtml(if (stripCredits) stripHtml(html, stripAuthorNotes = true) else html)
         }.ifBlank { null }
     }
 

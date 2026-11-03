@@ -56,6 +56,9 @@ newlines are not preserved.
 
   // Wait this long before each call, one call at a time (max 10 000).
   rateLimitMs: 500,
+
+  // Keep "Translator: … Editor: …" lines and author-note containers (see below).
+  stripCredits: false,
 ```
 
 Any of the three filter lists may be empty or missing; the Browse screen
@@ -96,7 +99,7 @@ hidden WebView, and the request is replayed with the clearance cookies.
 
 Chapter HTML gets the same clean-up as the QuickNovel sources: author-note
 containers (`div.qnauthornotecontainer`) and "Translator: … Editor: …"
-credit lines are removed.
+credit lines are removed, unless the plugin exports `stripCredits: false`.
 
 ## Limits and sandbox
 

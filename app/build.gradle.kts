@@ -75,9 +75,11 @@ android {
             // SourceParityTest is opt-in: PARITY=<sourceId>[,<sourceId>…] or PARITY=all.
             val parity = System.getenv("PARITY").orEmpty()
             it.environment("PARITY", parity)
-            System.getenv("PARITY_QUERY")?.let { q -> it.environment("PARITY_QUERY", q) }
+            listOf("PARITY_QUERY", "PARITY_NOVEL").forEach { k -> System.getenv(k)?.let { v -> it.environment(k, v) } }
             // Live network test; also keeps Robolectric out of normal runs.
             if (parity.isEmpty()) it.exclude("**/SourceParityTest*")
+            // Environment variables aren't task inputs: never skip a live run as up to date.
+            else it.outputs.upToDateWhen { false }
             it.testLogging.showStandardStreams = parity.isNotEmpty()
         }
     }
