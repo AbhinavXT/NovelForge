@@ -52,5 +52,14 @@
     "version": "1.0.0",
     "url": "pawread.js",
     "sourceId": "pr"
+  },
+  {
+    "id": "primordialtranslation",
+    "name": "Primordial Translation",
+    "site": "https://primodialtranslation.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "primordialtranslation.js",
+    "sourceId": "pt"
   }
 ]

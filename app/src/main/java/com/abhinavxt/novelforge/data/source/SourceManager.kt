@@ -19,7 +19,6 @@ object SourceManager {
     val revision: StateFlow<Int> = _revision.asStateFlow()
 
     init {
-        registerSource(PrimordialTranslationSource())
         registerSource(WtrLabSource())
 
         // Sources ported from QuickNovel via the nf compatibility layer.
