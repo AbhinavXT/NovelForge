@@ -253,6 +253,62 @@ class JsPluginTest {
         assertEquals(listOf("https://x.test/a.png", "<img src=\"https://x.test/a.png\">"), plugin.call("popularNovels", 1))
     }
 
+    @Test
+    fun `bad selectors and bad request headers are catchable js errors`() {
+        val badHeaders = PluginHttp { throw IllegalArgumentException("Unexpected char 0x00e9 in header value") }
+        val plugin = JsPlugin.load(
+            minimal("""
+                var out = [];
+                try { parseHtml('<p>x</p>').select('div['); out.push('no'); } catch (e) { out.push(e.name); }
+                try { fetch('https://x.test', { headers: { Referer: 'é' } }); out.push('no'); } catch (e) { out.push(e.name); }
+                return out;
+            """),
+            "errors.js", badHeaders,
+        )
+        assertEquals(listOf("SyntaxError", "TypeError"), plugin.call("popularNovels", 1))
+    }
+
+    @Test
+    fun `results with heavily shared references fail fast instead of hanging`() {
+        val plugin = JsPlugin.load(
+            minimal("var a = {}; for (var i = 0; i < 40; i++) { a = { x: a, y: a }; } return a;"),
+            "shared.js", http,
+        )
+        val start = System.currentTimeMillis()
+        try {
+            plugin.call("popularNovels", 1)
+            fail("expected PluginException")
+        } catch (e: PluginException) {
+            assertTrue(e.message!!, e.message!!.contains("too large"))
+        }
+        assertTrue(System.currentTimeMillis() - start < 10_000)
+    }
+
+    @Test
+    fun `static exports are captured at load time`() {
+        val plugin = JsPlugin.load(
+            """
+            module.exports = {
+              id: "t", name: "T", version: "1", site: "https://x.test",
+              rateLimitMs: 250, stripCredits: false,
+              filters: { tags: [{ label: "A", value: "a" }] },
+              browseNovels: function () { return []; },
+              popularNovels: function () { return []; },
+              searchNovels: function () { return []; },
+              parseNovel: function () { return null; },
+              parseChapter: function () { return ""; }
+            };
+            """.trimIndent(),
+            "caps.js", http,
+        )
+        val caps = plugin.capabilities
+        assertTrue(caps.canBrowse)
+        assertEquals(250L, caps.rateLimitMs)
+        assertEquals(false, caps.stripCredits)
+        assertEquals(listOf(mapOf("label" to "A", "value" to "a")), caps.filters?.get("tags"))
+        assertEquals(PluginCapabilities(false, null, 0L, true), JsPlugin.load(minimal("return [];"), "m.js", http).capabilities)
+    }
+
     private fun minimal(popularBody: String) = """
         module.exports = {
           id: "t", name: "T", version: "1", site: "https://x.test",

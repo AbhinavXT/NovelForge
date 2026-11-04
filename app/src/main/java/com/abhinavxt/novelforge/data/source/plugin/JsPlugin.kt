@@ -79,10 +79,24 @@ data class PluginInfo(
     val icon: String?,
 )
 
+/**
+ * The optional, static exports, read once when the script loads, so the app
+ * can ask for them at any time (Browse reads filters on the main thread)
+ * without taking the call lock or entering Rhino.
+ */
+data class PluginCapabilities(
+    val canBrowse: Boolean,
+    /** `filters` as plain Kotlin values (see JsPlugin.call), or null. */
+    val filters: Map<*, *>?,
+    val rateLimitMs: Long,
+    val stripCredits: Boolean,
+)
+
 class JsPlugin private constructor(
     private val scope: ScriptableObject,
     private val exports: Scriptable,
     val info: PluginInfo,
+    val capabilities: PluginCapabilities,
     private val callTimeoutMs: Long,
 ) {
 
@@ -179,7 +193,14 @@ class JsPlugin private constructor(
             if (missing.isNotEmpty()) {
                 throw PluginException("$fileName: missing exported functions: ${missing.joinToString()}")
             }
-            JsPlugin(scope, exports, info, callTimeoutMs)
+            val capabilities = PluginCapabilities(
+                canBrowse = ScriptableObject.getProperty(exports, "browseNovels") is Function,
+                filters = toKotlin(ScriptableObject.getProperty(exports, "filters")) as? Map<*, *>,
+                rateLimitMs = ((toKotlin(ScriptableObject.getProperty(exports, "rateLimitMs")) as? Double) ?: 0.0)
+                    .toLong().coerceIn(0L, 10_000L),
+                stripCredits = ScriptableObject.getProperty(exports, "stripCredits") != false,
+            )
+            JsPlugin(scope, exports, info, capabilities, callTimeoutMs)
         }
 
         // ── Context management ──────────────────────────────────────────
@@ -335,9 +356,17 @@ private class Bridge(
         argString(a, 0) ?: throw ScriptRuntime.typeError("selector must be a string")
 
     /** jsoup throws on malformed selectors; surface that as a catchable JS error. */
+    /**
+     * jsoup reports a malformed selector as Selector.SelectorParseException
+     * (an IllegalStateException) and bad arguments as IllegalArgumentException.
+     * Surface both as a JS SyntaxError the plugin can catch; a raw Java
+     * exception would skip the plugin's catch block.
+     */
     private fun <T> jsoupCall(block: () -> T): T = try {
         block()
     } catch (e: IllegalArgumentException) {
+        throw ScriptRuntime.constructError("SyntaxError", e.message ?: "bad selector")
+    } catch (e: IllegalStateException) {
         throw ScriptRuntime.constructError("SyntaxError", e.message ?: "bad selector")
     }
 
@@ -415,6 +444,9 @@ private class Bridge(
             return networkError(cx, "fetch $url: ${e.message ?: "timed out"}")
         } catch (e: IOException) {
             return networkError(cx, "fetch $url: ${e.message ?: e.javaClass.simpleName}")
+        } catch (e: IllegalArgumentException) {
+            // OkHttp rejects e.g. non-ASCII header values; make it catchable.
+            throw ScriptRuntime.typeError("fetch $url: ${e.message}")
         }
 
         val headerObj = cx.newObject(scope)
@@ -478,21 +510,36 @@ private fun toJs(cx: Context, scope: Scriptable, value: Any?): Any? = when (valu
     else -> Context.javaToJS(value, scope)
 }
 
-/** JS → plain Kotlin. Functions and anything nested deeper than 32 levels become null. */
-private fun toKotlin(value: Any?, depth: Int = 0): Any? {
+/**
+ * Most values one call may hand back; shared references are counted every
+ * time they're reached. About 5x the largest real result (a 10,000-chapter
+ * novel is ~40,000 values), low enough to fail before exhausting memory.
+ */
+private const val MAX_RESULT_NODES = 250_000
+
+private class Budget(var left: Int = MAX_RESULT_NODES)
+
+/**
+ * JS → plain Kotlin. Functions and anything nested deeper than 32 levels
+ * become null. Converting runs no JS, so the instruction observer can't stop
+ * it; a node budget does instead (objects sharing references could otherwise
+ * take exponential time).
+ */
+private fun toKotlin(value: Any?, depth: Int = 0, budget: Budget = Budget()): Any? {
     if (depth > 32) return null
+    if (--budget.left < 0) throw PluginException("result is too large or too deeply shared to convert")
     return when {
         value == null || Undefined.isUndefined(value) || value == Scriptable.NOT_FOUND -> null
         value is CharSequence -> value.toString()
         value is Boolean -> value
         value is Number -> value.toDouble()
         value is Function -> null
-        value is NativeArray -> (0 until value.length.toInt()).map { toKotlin(value.get(it, value), depth + 1) }
+        value is NativeArray -> (0 until value.length.toInt()).map { toKotlin(value.get(it, value), depth + 1, budget) }
         value is JsNode -> value.element.outerHtml()
         value is Scriptable -> buildMap {
             for (id in value.ids) {
                 val key = id.toString()
-                put(key, toKotlin(ScriptableObject.getProperty(value, key), depth + 1))
+                put(key, toKotlin(ScriptableObject.getProperty(value, key), depth + 1, budget))
             }
         }
         else -> value.toString()

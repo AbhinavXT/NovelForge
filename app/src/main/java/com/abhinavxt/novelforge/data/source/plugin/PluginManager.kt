@@ -126,6 +126,13 @@ object PluginManager {
         "qnful", "qnlig", "qrnb", "qrfn", "qrhv", "qsonic", "qwatt", "qwbox", "qwclick",
     ).associateWith { it }
 
+    /**
+     * Legacy source ids that SourceManager.constructNovelUrl() parses as
+     * "<id>_<slug>". Their plugins must hand out explicit ids, since the
+     * default "<id>_<base64url>" would be read back as a slug.
+     */
+    val HARDCODED_URL_PREFIXES: Set<String> = setOf("rnf", "fwn", "lr", "nfn", "pr", "pt", "wtr")
+
     private val gson = Gson()
     private val mutex = Mutex()
 

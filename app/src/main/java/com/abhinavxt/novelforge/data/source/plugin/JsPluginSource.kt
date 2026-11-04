@@ -38,6 +38,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.URI
 import java.security.MessageDigest
@@ -55,6 +56,13 @@ class JsPluginSource(
     override val baseUrl: String = plugin.site
 
     private val legacyPrefix: String? = plugin.legacyIdPrefix?.let { "${it}_" }
+
+    /**
+     * Former built-ins whose id is also one of SourceManager.constructNovelUrl's
+     * hardcoded prefixes ("rnf_<slug>" etc.). The default "<sourceId>_<base64>"
+     * id would be read back as a slug there, so these must supply ids.
+     */
+    private val requiresExplicitIds: Boolean = id in PluginManager.HARDCODED_URL_PREFIXES
 
     @Volatile private var loaded: JsPlugin? = null
 
@@ -81,12 +89,16 @@ class JsPluginSource(
     }
 
     // ── Optional exports ────────────────────────────────────────────────
+    // Read from the snapshot JsPlugin takes at load time, so asking for them
+    // never waits on the call lock. canBrowse/filters may still compile the
+    // script on first use; warmUp() normally does that at start-up.
 
-    override val canBrowse: Boolean by lazy { runtimeOrNull()?.hasFunction("browseNovels") == true }
+    private fun capabilities(): PluginCapabilities? = runtimeOrNull()?.capabilities
+
+    override val canBrowse: Boolean get() = capabilities()?.canBrowse == true
 
     override val filters: BrowseFilters by lazy {
-        val raw = runCatching { runtimeOrNull()?.export("filters") as? Map<*, *> }.getOrNull()
-            ?: return@lazy BrowseFilters()
+        val raw = capabilities()?.filters ?: return@lazy BrowseFilters()
         fun options(key: String) = (raw[key] as? List<*>).orEmpty()
             .filterIsInstance<Map<*, *>>()
             .mapNotNull { o ->
@@ -97,20 +109,16 @@ class JsPluginSource(
     }
 
     /** `rateLimitMs`: wait this long before each call, one call at a time (QuickNovel's rateLimitTime). */
-    private val rateLimitMs: Long by lazy {
-        ((runCatching { runtimeOrNull()?.export("rateLimitMs") }.getOrNull() as? Double) ?: 0.0)
-            .toLong().coerceIn(0L, 10_000L)
-    }
     private val rateLimitMutex = Mutex()
 
-    /** `stripCredits: false` keeps "Translator: … Editor: …" lines and author-note containers. */
-    private val stripCredits: Boolean by lazy {
-        runCatching { runtimeOrNull()?.export("stripCredits") }.getOrNull() != false
-    }
-
-    /** Runs a plugin function off the main thread; cancellation interrupts the script. */
+    /**
+     * Runs a plugin function off the main thread; cancellation interrupts the
+     * script. The runtime (and with it rateLimitMs) is resolved on IO too.
+     */
     private suspend fun call(function: String, vararg args: Any?): Any? {
-        val run: suspend () -> Any? = { runInterruptible(Dispatchers.IO) { runtime().call(function, *args) } }
+        val plugin = withContext(Dispatchers.IO) { runtime() }
+        val run: suspend () -> Any? = { runInterruptible(Dispatchers.IO) { plugin.call(function, *args) } }
+        val rateLimitMs = plugin.capabilities.rateLimitMs
         if (rateLimitMs == 0L) return run()
         return rateLimitMutex.withLock {
             delay(rateLimitMs)
@@ -166,7 +174,7 @@ class JsPluginSource(
             .mapNotNull { item ->
                 val url = item.link() ?: return@mapNotNull null
                 NovelPreview(
-                    id = explicitId(item) ?: novelIdFromUrl(url),
+                    id = explicitId(item) ?: if (requiresExplicitIds) return@mapNotNull null else novelIdFromUrl(url),
                     title = item.str("name") ?: item.str("title") ?: return@mapNotNull null,
                     author = item.str("author") ?: "",
                     coverUrl = resolve(item.str("cover")),
@@ -210,7 +218,8 @@ class JsPluginSource(
         val result = call("parseNovel", novelUrl) as? Map<*, *> ?: return@guarded null
         // Derive the id from the URL the app asked for, so it round-trips
         // exactly with what search()/getPopular() produced.
-        val novelId = explicitId(result) ?: novelIdFromUrl(novelUrl)
+        val novelId = explicitId(result)
+            ?: if (requiresExplicitIds) throw PluginException("parseNovel must return an id for $id") else novelIdFromUrl(novelUrl)
         val chapters = (result["chapters"] as? List<*>).orEmpty()
             .filterIsInstance<Map<*, *>>()
             .mapNotNull { ch -> ch.link()?.let { url -> url to ch } }
@@ -241,6 +250,8 @@ class JsPluginSource(
         runInterruptible(Dispatchers.Default) {
             // Same clean-up the QuickNovel adapter applied: author-note
             // containers and "Translator: … Editor: …" credit lines.
+            // `stripCredits: false` keeps "Translator: … Editor: …" lines and author notes.
+            val stripCredits = runtime().capabilities.stripCredits
             ReaderText.fromHtml(if (stripCredits) stripHtml(html, stripAuthorNotes = true) else html)
         }.ifBlank { null }
     }
