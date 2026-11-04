@@ -174,6 +174,13 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.0.0",
+        date = "Nov 2026",
+        changes = listOf(
+            "NovelForge is now signed with a proper release key. Updating from 1.9.0 or older needed a one-time reinstall (back up, uninstall, install, restore); later updates install normally"
+        )
+    ),
+    VersionEntry(
         version = "v1.9.0",
         date = "Nov 2026",
         changes = listOf(

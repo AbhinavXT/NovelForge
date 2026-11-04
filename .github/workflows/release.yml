@@ -97,10 +97,12 @@ jobs:
       # strand every existing user. Fail instead.
       - name: Verify signature and version
         env:
-          # SHA-256 of the certificate existing installs were signed with
-          # (v1.5.0 onwards). Change only together with a deliberate key
-          # migration. A repository variable of the same name overrides it.
-          EXPECTED_CERT_SHA256: ${{ vars.EXPECTED_CERT_SHA256 || '3e994aafba4305bdd73ec49d365d20e190afbf1b66fc980e2c57df3ea11b2a8b' }}
+          # SHA-256 of the release certificate (CN=Abhinav Pathak) used
+          # from 2.0.0 on. 1.5.0-1.9.0 were signed with the Android debug
+          # certificate (3e994aaf...); 2.0.0 was the one-time switch.
+          # Change only with a deliberate key migration. A repository
+          # variable of the same name overrides it.
+          EXPECTED_CERT_SHA256: ${{ vars.EXPECTED_CERT_SHA256 || '75f1308204db823d984cea82b35d7aeceb7cee22e84705ae45d5e8359f042b5e' }}
         run: |
           apk=app/build/outputs/apk/release/app-release.apk
           build_tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)

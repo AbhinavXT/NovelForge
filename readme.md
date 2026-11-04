@@ -40,6 +40,8 @@ Note: the APK ships `arm64-v8a` and `x86_64` only, so 32-bit ARM devices are not
 
 That's it. No account, no setup.
 
+Coming from 1.9.0 or older? 2.0.0 is signed with a new key, so it can't install over an older version: back up (Settings → Backup & Restore), uninstall, install 2.0.0, then restore. See the [2.0.0 release notes](docs/releases/v2.0.0.md). Later updates install normally.
+
 ## Build from source
 
 ```bash
