@@ -92,12 +92,26 @@ jobs:
           ./gradlew --no-daemon :app:assembleRelease
           rm -f "$KEYSTORE_FILE"
 
+      # Android only installs an update signed with the same certificate as
+      # the installed app, so a release signed with any other key would
+      # strand every existing user. Fail instead.
       - name: Verify signature and version
+        env:
+          # SHA-256 of the certificate existing installs were signed with
+          # (v1.5.0 onwards). Change only together with a deliberate key
+          # migration. A repository variable of the same name overrides it.
+          EXPECTED_CERT_SHA256: ${{ vars.EXPECTED_CERT_SHA256 || '3e994aafba4305bdd73ec49d365d20e190afbf1b66fc980e2c57df3ea11b2a8b' }}
         run: |
           apk=app/build/outputs/apk/release/app-release.apk
           build_tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$build_tools/apksigner" verify --print-certs "$apk" | tee signer.txt
-          grep -q "Signer #1 certificate SHA-256" signer.txt
+          # apksigner prints "Signer #1 certificate SHA-256 digest: …" or
+          # "V2 Signer: certificate SHA-256 digest: …" depending on version.
+          actual=$(grep -oE 'certificate SHA-256 digest: [0-9a-f]+' signer.txt | head -1 | awk '{print $NF}')
+          if [ "$actual" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::APK is signed with certificate $actual, but installs trust $EXPECTED_CERT_SHA256. Check the KEYSTORE_* secrets."
+            exit 1
+          fi
           "$build_tools/aapt2" dump badging "$apk" | grep -q "versionName='$VERSION'"
           mkdir -p dist
           cp "$apk" "dist/NovelForge_v$VERSION.apk"
