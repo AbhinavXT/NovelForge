@@ -20,6 +20,7 @@ https://github.com/user-attachments/assets/ed53e37d-f37b-43c6-87b3-962cdc796f36
 - Tracks reading stats locally (streaks, words, chapters, time)
 - Bookmarks and highlights with notes, exportable as JSON
 - Backup and restore as a single ZIP
+- Sources are plugins: 22 built in, kept up to date from [NovelForge-plugins](https://github.com/AbhinavXT/NovelForge-plugins), and you can add your own ([how](docs/PLUGINS.md))
 
 [Full feature list →](docs/FEATURES.md)
 
@@ -47,9 +48,11 @@ cd novelforge
 ./gradlew assembleRelease
 ```
 
-The APK lands in `app/build/outputs/apk/release/`. It is **unsigned** - there is
-no release `signingConfig` in the build, so you'll need to sign it yourself
-(or use `assembleDebug`) before it will install.
+The APK lands in `app/build/outputs/apk/release/`. It is **unsigned** unless
+`KEYSTORE_FILE`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD` are set in
+the environment, so sign it yourself (or use `assembleDebug`) before it will
+install. Official releases are built by `.github/workflows/release.yml` when a
+`v*` tag is pushed.
 
 Requirements: Android Studio Ladybug or later, JDK 21, Android SDK 36.
 
@@ -90,7 +93,7 @@ Use it, read it, fork it, ship it. If you distribute a modified version, that
 version has to be GPL-3.0 too, with its source available. That's the whole
 deal - it keeps forks open rather than closing them off.
 
-The scraper layer is derived from
+Most source plugins are ported from
 [QuickNovel](https://github.com/LagradOst/QuickNovel) by LagradOst, which is
 GPL-3.0; NovelForge inherits that license. Full attribution for every bundled
 dependency is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

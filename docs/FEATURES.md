@@ -338,15 +338,32 @@ NovelForge connects to publicly-accessible web novel sites. The app fetches the 
 
 ### Currently supported sources
 
-- RoyalRoad
+Every source is a plugin: a small JavaScript file that NovelForge runs in a sandbox. The app ships with these, and keeps them updated from [NovelForge-plugins](https://github.com/AbhinavXT/NovelForge-plugins):
+
+- Royal Road
 - ReadNovelFull
 - FreeWebNovel
 - LibRead
-- NovelFullNet
+- NovelFull (novelfull.net and novelfull.com)
 - PawRead
-- PrimordialTranslation
+- Primordial Translation
+- WTR-Lab
+- FanMTL
+- HiraethTranslation
+- Light Novel Translations
+- Inori (lnori.com)
+- MtlNovel
+- NoBadNovel
+- Novel Light
+- Ranobes
+- ReadFrom.Net
+- ReadHive
+- SonicMTL
+- Wattpad
+- WuxiaBox
+- WuxiaClick
 
-The list grows when users request sources and the scrapers prove stable. The most up-to-date list is in the in-app source browser.
+**Settings → Source plugins** lists what's installed and lets you remove sources, add other plugin repositories, or install a plugin from a `.js` file. Writing a plugin is documented in [PLUGINS.md](PLUGINS.md).
 
 ### Downloading chapters for offline
 
