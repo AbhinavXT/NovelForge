@@ -33,7 +33,7 @@ import java.util.concurrent.TimeUnit
  * and records the result in [SourceHealthStore].
  *
  * Probe strategy: a single GET of Source.baseUrl with a browser User-Agent and
- * a dedicated no-retry client (SourceManager.sharedClient's RetryInterceptor
+ * a dedicated no-retry client (SourceHttp.client's RetryInterceptor
  * would triple the cost of a dead host and Thread.sleep() through it).
  *
  * Classification:

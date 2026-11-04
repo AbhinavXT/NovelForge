@@ -167,6 +167,12 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
         icon = Icons.Default.MenuBook
     )
 
+    object Plugins : Screen(
+        route = "plugins",
+        title = "Source plugins",
+        icon = Icons.Default.MenuBook
+    )
+
     object Browse : Screen(
         route = "browse",
         title = "Browse",
@@ -419,6 +425,9 @@ fun NavigationHost(
                         onNavigateToChangelog = {
                             navController.navigate(Screen.Changelog.route)
                         },
+                        onNavigateToPlugins = {
+                            navController.navigate(Screen.Plugins.route)
+                        },
                         updateChecker = updateChecker,
                     )
                 }
@@ -441,6 +450,12 @@ fun NavigationHost(
 
                 composable(Screen.Changelog.route) {
                     ChangelogScreen(
+                        onBackClick = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Screen.Plugins.route) {
+                    PluginsScreen(
                         onBackClick = { navController.popBackStack() }
                     )
                 }

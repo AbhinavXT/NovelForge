@@ -74,11 +74,13 @@ internal fun NovelHeader(
     onDownloadAll: () -> Unit
 ) {
     // Resolve cover URL vs local file path
-    val imageModel = remember(novel.coverUrl) {
+    // Local copy: the model lives in :source-api, so no smart cast.
+    val coverUrl = novel.coverUrl
+    val imageModel = remember(coverUrl) {
         when {
-            novel.coverUrl == null -> null
-            novel.coverUrl.startsWith("/") -> File(novel.coverUrl)
-            else -> novel.coverUrl
+            coverUrl == null -> null
+            coverUrl.startsWith("/") -> File(coverUrl)
+            else -> coverUrl
         }
     }
 
@@ -94,9 +96,9 @@ internal fun NovelHeader(
     ) {
         // Layer 1: Blurred cover as atmospheric backdrop
         if (imageModel != null) {
-            val referer = if (novel.coverUrl != null && !novel.coverUrl.startsWith("/")) {
+            val referer = if (coverUrl != null && !coverUrl.startsWith("/")) {
                 try {
-                    val uri = android.net.Uri.parse(novel.coverUrl)
+                    val uri = android.net.Uri.parse(coverUrl)
                     "${uri.scheme}://${uri.host}"
                 } catch (_: Exception) { null }
             } else null

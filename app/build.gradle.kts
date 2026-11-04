@@ -1,6 +1,6 @@
 // ── Version ──────────────────────────────────────────────────────────────
 // Single source of truth. Edit this line only.
-val appVersionName = "1.8.1"
+val appVersionName = "1.9.0"
 
 /**
  * major.minor.patch -> major*10000 + minor*100 + patch
@@ -70,8 +70,42 @@ android {
         }
     }
 
+    testOptions {
+        // PluginManagerTest reads the bundled plugins from assets.
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            // LivePluginCheck hits the real sites: opt-in with LIVE_PLUGINS=all (or ids).
+            val live = System.getenv("LIVE_PLUGINS").orEmpty()
+            if (live.isEmpty()) {
+                it.exclude("**/LivePluginCheck*")
+            } else {
+                it.environment("LIVE_PLUGINS", live)
+                // Environment variables aren't task inputs: never skip a live run as up to date.
+                it.outputs.upToDateWhen { false }
+                it.testLogging.showStandardStreams = true
+            }
+        }
+    }
+
+    // Release signing comes from the environment, so no key ever lives in
+    // the repository: CI sets these from secrets (see
+    // .github/workflows/release.yml), and a local release build can point
+    // them at a keystore. Without them, assembleRelease stays unsigned.
+    val releaseKeystore = System.getenv("KEYSTORE_FILE")?.takeIf { it.isNotBlank() }?.let { file(it) }
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
             // Still false — flip this only once the R8 keep rules in
             // proguard-rules.pro are in place AND you've run a release
             // build end-to-end (backup restore, TTS playback, source
@@ -100,6 +134,8 @@ android {
 }
 
 dependencies {
+    implementation(project(":source-api"))
+
     // --- Compose BOM must come first so the artifacts below inherit it ---
     implementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(platform(libs.androidx.compose.bom))
@@ -110,6 +146,8 @@ dependencies {
     implementation(libs.androidx.activity.compose)
 
     implementation(libs.androidx.ui)
+    // Pinned with ui (see composeUi in the catalog) so release matches debug.
+    implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
@@ -126,14 +164,14 @@ dependencies {
     implementation(libs.androidx.glance.material3)
     implementation(libs.androidx.datastore.preferences)
 
-    // FIXED: okhttp was declared three times — once via the catalog and
-    // twice as an identical literal. Same version, so no conflict today,
-    // but a catalog bump would have been silently overridden by the
-    // literals. One declaration, catalog-owned.
-    implementation(libs.okhttp)
+    // okhttp comes in through :source-api, which declares it as `api`.
+    // Don't redeclare it here — one declaration, catalog-owned.
     implementation(libs.jsoup)
     implementation(libs.coil.compose)
     implementation(libs.gson)
+    // JavaScript engine for source plugins (data/source/plugin). Pure Java,
+    // so no extra native ABIs and the runtime is unit-testable on the JVM.
+    implementation(libs.rhino)
 
     // Sherpa-ONNX AAR. Unversioned and unreproducible — a fresh clone with
     // an empty libs/ compiles to a broken APK with no error until runtime
@@ -142,6 +180,9 @@ dependencies {
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 
     testImplementation(libs.junit)
+    // PluginManagerTest drives the real PluginManager (assets, files, prefs).
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.ui.test.junit4)

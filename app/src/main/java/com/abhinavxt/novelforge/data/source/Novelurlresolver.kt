@@ -189,19 +189,21 @@ object NovelUrlResolver {
     }
 
     /**
-     * PawRead: https://pawread.com/some/slug/with/path
+     * PawRead: https://pawread.com/some/slug/with/path (the site now serves
+     * from www.pawread.com, so shared links carry www.)
      * The novelId convention uses ~ to encode slashes in the path.
-     * We replicate SourceManager.constructNovelUrl's inverse encoding.
+     * We replicate SourceManager.constructNovelUrl's inverse encoding,
+     * trailing slash included: without it the site answers 404.
      */
     private fun tryPawRead(url: String): ResolvedNovel? {
-        val re = Regex("""https?://pawread\.com/(.+?)(?:[?#]|$)""")
+        val re = Regex("""https?://(?:www\.)?pawread\.com/(.+?)(?:[?#]|$)""")
         val match = re.find(url) ?: return null
         val path = match.groupValues[1].trimEnd('/')
         if (path.isEmpty()) return null
         return ResolvedNovel(
             sourceId = "pr",
             novelId = "pr_${path.replace("/", "~")}",
-            canonicalUrl = "https://pawread.com/$path"
+            canonicalUrl = "https://pawread.com/$path/"
         )
     }
 

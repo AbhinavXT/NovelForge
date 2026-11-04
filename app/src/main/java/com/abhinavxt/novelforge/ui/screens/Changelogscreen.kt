@@ -174,6 +174,20 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v1.9.0",
+        date = "Nov 2026",
+        changes = listOf(
+            "Sources are now plugins - each source is a small script that updates on its own, so website fixes no longer wait for an app release. Your library, progress and bookmarks are unchanged",
+            "Source plugins screen (Settings → Source plugins) - remove sources you don't use, add plugin repositories, or install a plugin from a file",
+            "Fixed PawRead novels not opening",
+            "WuxiaClick works again after the site's redesign, with genre, tag and sort filters",
+            "Fixed empty lists and search in Light Novel Translations",
+            "Fixed a \"Text Mode\" entry in Primordial Translation's list",
+            "WTR-Lab updated for the site's new chapter API (the site's human-verification step isn't supported yet)",
+            "AllNovel, Graycity and LightNovelWorld: their sites are gone. They stay installed if you're updating, so their novels keep their place in your library, but new installs don't include them"
+        )
+    ),
+    VersionEntry(
         version = "v1.8.1",
         date = "Sep 2026",
         changes = listOf(

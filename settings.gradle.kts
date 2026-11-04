@@ -21,3 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "NovelForge"
 include(":app")
+include(":source-api")

@@ -1,58 +1,50 @@
 package com.abhinavxt.novelforge.data.source
 
-import com.abhinavxt.novelforge.data.source.providers.*
-import okhttp3.OkHttpClient
-import okhttp3.Interceptor
-import okhttp3.Response
-import java.io.IOException
-import java.util.concurrent.TimeUnit
+import com.abhinavxt.novelforge.data.source.plugin.JsPluginSource
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
+/**
+ * Registry of the installed sources. Every source is a JavaScript plugin
+ * (data/source/plugin); PluginManager registers them at start-up and on
+ * install/uninstall. Former built-in sources live on as bundled plugins
+ * under their old ids, which is why the id and URL tables below remain.
+ */
 object SourceManager {
 
-    /**
-     * #10: Shared OkHttpClient for all sources.
-     * #11: Includes retry interceptor with exponential backoff.
-     */
-    val sharedClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .addInterceptor(RetryInterceptor(maxRetries = 3))
-        .build()
+    // Insertion-ordered (the picker lists sources in registration order) and
+    // locked, because plugin installs register sources from a background
+    // thread while the UI reads the list.
+    private val sources = LinkedHashMap<String, Source>()
 
-    private val sources = mutableMapOf<String, Source>()
+    private val _revision = MutableStateFlow(0)
+    /** Bumps whenever a source is added or removed (plugin install/uninstall). */
+    val revision: StateFlow<Int> = _revision.asStateFlow()
 
-    init {
-        registerSource(RoyalRoadSource())
-        registerSource(ReadNovelFullSource())
-        registerSource(FreeWebNovelSource())
-        registerSource(LibReadSource())
-        registerSource(NovelFullNetSource())
-        registerSource(PawReadSource())
-        registerSource(PrimordialTranslationSource())
-        registerSource(WtrLabSource())
-
-        // Sources ported from QuickNovel via the nf compatibility layer.
-        // Their Source.id doubles as the novel-id prefix, so the generic
-        // fallbacks in getSourceFromNovelId()/constructNovelUrl() resolve them
-        // without any per-source hardcoding here.
-        com.abhinavxt.novelforge.data.source.nf.NfSources.all().forEach { registerSource(it) }
+    /** Adds or replaces a source. Used by PluginManager. */
+    fun registerSource(source: Source) {
+        synchronized(sources) { sources[source.id] = source }
+        _revision.update { it + 1 }
     }
 
-    private fun registerSource(source: Source) {
-        sources[source.id] = source
+    fun unregisterSource(id: String) {
+        synchronized(sources) { sources.remove(id) }
+        _revision.update { it + 1 }
     }
 
-    fun getSource(id: String): Source? = sources[id]
+    fun getSource(id: String): Source? = synchronized(sources) { sources[id] }
 
-    fun getAllSources(): List<Source> = sources.values.toList()
+    fun getAllSources(): List<Source> = synchronized(sources) { sources.values.toList() }
 
+    /** Royal Road when it is installed, otherwise the first source. PluginManager never removes the last one. */
     fun getDefaultSource(): Source =
-        sources["royalroad"] ?: error("RoyalRoad source not registered")
+        getSource("royalroad") ?: getAllSources().firstOrNull() ?: error("no sources registered")
 
-    fun getSourceFromNovelId(novelId: String): Source? {
+    fun getSourceFromNovelId(novelId: String): Source? = synchronized(sources) {
         val sourceId = novelId.substringBefore("_")
-        return when (sourceId) {
+        when (sourceId) {
             "rr" -> sources["royalroad"]
             "rnf" -> sources["rnf"]
             "fwn" -> sources["fwn"]
@@ -61,8 +53,8 @@ object SourceManager {
             "pr" -> sources["pr"]
             "pt" -> sources["pt"]
             "wtr" -> sources["wtr"]
-            // Adapter-backed sources use their Source.id as the prefix directly
-            // (e.g. "qanv_..." -> sources["qanv"]), so no mapping table is needed.
+            // Everything else uses its Source.id as the prefix directly
+            // (e.g. "qanv_..." -> sources["qanv"], "js-foo_..." -> sources["js-foo"]).
             else -> sources[sourceId]
         }
     }
@@ -85,7 +77,9 @@ object SourceManager {
                 "https://novelfull.net/${novelId.removePrefix("nfn_")}.html"
             novelId.startsWith("pr_") -> {
                 val slug = novelId.removePrefix("pr_").replace("~", "/")
-                "https://pawread.com/$slug"
+                // The trailing slash matters: without it PawRead answers 404
+                // instead of redirecting to www.pawread.com.
+                "https://pawread.com/$slug/"
             }
             novelId.startsWith("pt_") ->
                 "https://primodialtranslation.com/series/${novelId.removePrefix("pt_")}/"
@@ -99,48 +93,11 @@ object SourceManager {
             novelId.startsWith("local_") ->
                 "local://$novelId"
             else -> {
-                // Adapter-backed sources encode the full novel URL into the id
-                // (base64url), so the adapter itself can reverse it. This keeps
-                // constructNovelUrl() free of per-source cases for all ~40
-                // ported sources.
-                (getSourceFromNovelId(novelId) as? com.abhinavxt.novelforge.data.source.nf.NfSourceAdapter)
-                    ?.novelUrlFromId(novelId)
-                    ?: ""
+                // Every other source encodes the full novel URL into the id
+                // ("<sourceId>_<base64url>"), so the plugin source reverses it.
+                (getSourceFromNovelId(novelId) as? JsPluginSource)?.novelUrlFromId(novelId) ?: ""
             }
         }
     }
 }
 
-/**
- * OkHttp interceptor that retries failed requests with exponential backoff.
- * Retries on IOException (network errors) and 5xx server errors.
- */
-private class RetryInterceptor(private val maxRetries: Int = 3) : Interceptor {
-    override fun intercept(chain: Interceptor.Chain): Response {
-        val request = chain.request()
-        var lastException: IOException? = null
-
-        for (attempt in 0..maxRetries) {
-            try {
-                val response = chain.proceed(request)
-                // Don't retry on client errors (4xx), only server errors (5xx)
-                if (response.isSuccessful || response.code in 400..499) {
-                    return response
-                }
-                // Server error — close body and retry
-                if (attempt < maxRetries) {
-                    response.close()
-                    Thread.sleep(1000L * (attempt + 1)) // 1s, 2s, 3s
-                } else {
-                    return response
-                }
-            } catch (e: IOException) {
-                lastException = e
-                if (attempt < maxRetries) {
-                    Thread.sleep(1000L * (attempt + 1))
-                }
-            }
-        }
-        throw lastException ?: IOException("Request failed after $maxRetries retries")
-    }
-}

@@ -1,11 +1,6 @@
 package com.abhinavxt.novelforge.data.source.providers
 
 
-class GraycityProvider : ReadfromnetProvider() {
-    override val name: String = "Graycity"
-    override val mainUrl = "https://graycity.net"
-}
-
 /*
 class EfremnetProvider : MainAPI() {
     override val name = "Efrem.net"

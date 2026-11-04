@@ -136,6 +136,10 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
         // (needed by the Cloudflare WebView resolver).
         com.abhinavxt.novelforge.data.source.nf.NfBridge.init(this)
 
+        // Register installed JS source plugins. Reads one small JSON file;
+        // the scripts themselves compile on first use.
+        com.abhinavxt.novelforge.data.source.plugin.PluginManager.init(this)
+
         // Load pronunciation cache so substitutions work immediately
         appScope.launch {
             pronunciationManager.loadCache()

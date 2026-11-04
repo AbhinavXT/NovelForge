@@ -1,6 +1,6 @@
 package com.abhinavxt.novelforge.data.web
 
-import com.abhinavxt.novelforge.data.source.SourceManager
+import com.abhinavxt.novelforge.data.source.SourceHttp
 import com.abhinavxt.novelforge.data.source.nf.USER_AGENT
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -47,7 +47,7 @@ object WebPageFetcher {
             .header("Accept-Language", "en-US,en;q=0.9")
             .build()
 
-        SourceManager.sharedClient.newCall(request).execute().use { response ->
+        SourceHttp.client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw UnreadablePageException(
                     when (response.code) {

@@ -1,0 +1,239 @@
+[
+  {
+    "id": "royalroad",
+    "name": "Royal Road",
+    "site": "https://www.royalroad.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "royalroad.js",
+    "sourceId": "royalroad"
+  },
+  {
+    "id": "readnovelfull",
+    "name": "ReadNovelFull",
+    "site": "https://readnovelfull.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "readnovelfull.js",
+    "sourceId": "rnf"
+  },
+  {
+    "id": "freewebnovel",
+    "name": "FreeWebNovel",
+    "site": "https://freewebnovel.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "freewebnovel.js",
+    "sourceId": "fwn"
+  },
+  {
+    "id": "libread",
+    "name": "LibRead",
+    "site": "https://libread.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "libread.js",
+    "sourceId": "lr"
+  },
+  {
+    "id": "novelfull-net",
+    "name": "NovelFull",
+    "site": "https://novelfull.net",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "novelfull.js",
+    "sourceId": "nfn"
+  },
+  {
+    "id": "pawread",
+    "name": "PawRead",
+    "site": "https://pawread.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "pawread.js",
+    "sourceId": "pr"
+  },
+  {
+    "id": "primordialtranslation",
+    "name": "Primordial Translation",
+    "site": "https://primodialtranslation.com",
+    "lang": "en",
+    "version": "1.1.0",
+    "url": "primordialtranslation.js",
+    "sourceId": "pt"
+  },
+  {
+    "id": "wtrlab",
+    "name": "WTR-Lab",
+    "site": "https://wtr-lab.com",
+    "lang": "en",
+    "version": "1.1.0",
+    "url": "wtrlab.js",
+    "sourceId": "wtr"
+  },
+  {
+    "id": "allnovel",
+    "name": "AllNovel",
+    "site": "https://allnovel.org",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "allnovel.js",
+    "sourceId": "qanv",
+    "retired": true
+  },
+  {
+    "id": "fanmtl",
+    "name": "FanMTL",
+    "site": "https://www.fanmtl.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "fanmtl.js",
+    "sourceId": "qfmtl"
+  },
+  {
+    "id": "graycity",
+    "name": "Graycity",
+    "site": "https://graycity.net",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "graycity.js",
+    "sourceId": "qgray",
+    "retired": true
+  },
+  {
+    "id": "hiraethtranslation",
+    "name": "HiraethTranslation",
+    "site": "https://hiraethtranslation.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "hiraethtranslation.js",
+    "sourceId": "qhir"
+  },
+  {
+    "id": "lightnoveltranslations",
+    "name": "Light Novel Translations",
+    "site": "https://lightnovelstranslations.com",
+    "lang": "en",
+    "version": "1.1.0",
+    "url": "lightnoveltranslations.js",
+    "sourceId": "qlnt"
+  },
+  {
+    "id": "lightnovelworld",
+    "name": "LightNovelWorld",
+    "site": "https://lightnovelworld.org",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "lightnovelworld.js",
+    "sourceId": "qlnw",
+    "retired": true
+  },
+  {
+    "id": "lnori",
+    "name": "Inori",
+    "site": "https://lnori.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "lnori.js",
+    "sourceId": "qlno"
+  },
+  {
+    "id": "mtlnovel",
+    "name": "MtlNovel",
+    "site": "https://mtlnovel.me",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "mtlnovel.js",
+    "sourceId": "qmtln"
+  },
+  {
+    "id": "nobadnovel",
+    "name": "NoBadNovel",
+    "site": "https://www.nobadnovel.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "nobadnovel.js",
+    "sourceId": "qnbn"
+  },
+  {
+    "id": "novelfull-com",
+    "name": "NovelFull",
+    "site": "https://novelfull.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "novelfull-com.js",
+    "sourceId": "qnful"
+  },
+  {
+    "id": "novellight",
+    "name": "Novel Light",
+    "site": "https://novelight.net",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "novellight.js",
+    "sourceId": "qnlig"
+  },
+  {
+    "id": "ranobes",
+    "name": "Ranobes",
+    "site": "https://ranobes.net",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "ranobes.js",
+    "sourceId": "qrnb"
+  },
+  {
+    "id": "readfromnet",
+    "name": "ReadFrom.Net",
+    "site": "https://readfrom.net",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "readfromnet.js",
+    "sourceId": "qrfn"
+  },
+  {
+    "id": "readhive",
+    "name": "ReadHive",
+    "site": "https://readhive.org",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "readhive.js",
+    "sourceId": "qrhv"
+  },
+  {
+    "id": "sonicmtl",
+    "name": "SonicMTL",
+    "site": "https://www.sonicmtl.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "sonicmtl.js",
+    "sourceId": "qsonic"
+  },
+  {
+    "id": "wattpad",
+    "name": "Wattpad",
+    "site": "https://www.wattpad.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "wattpad.js",
+    "sourceId": "qwatt"
+  },
+  {
+    "id": "wuxiabox",
+    "name": "WuxiaBox",
+    "site": "https://www.wuxiabox.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "wuxiabox.js",
+    "sourceId": "qwbox"
+  },
+  {
+    "id": "wuxiaclick",
+    "name": "WuxiaClick",
+    "site": "https://wuxia.click",
+    "lang": "en",
+    "version": "2.0.0",
+    "url": "wuxiaclick.js",
+    "sourceId": "qwclick"
+  }
+]

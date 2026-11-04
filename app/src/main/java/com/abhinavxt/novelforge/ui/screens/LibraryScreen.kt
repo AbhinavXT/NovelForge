@@ -952,10 +952,12 @@ private fun LibraryNovelItem(
 ) {
     // Handle both URL and local file path for cover
     val imageModel = remember(novel.coverUrl) {
+        // Local copy: the model lives in :source-api, so no smart cast.
+        val coverUrl = novel.coverUrl
         when {
-            novel.coverUrl == null -> null
-            novel.coverUrl.startsWith("/") -> File(novel.coverUrl)  // Local file
-            else -> novel.coverUrl                                  // URL
+            coverUrl == null -> null
+            coverUrl.startsWith("/") -> File(coverUrl)  // Local file
+            else -> coverUrl                            // URL
         }
     }
 

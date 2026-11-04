@@ -1,0 +1,11 @@
+[
+  {
+    "id": "example-novels",
+    "name": "Example Novels",
+    "site": "https://novels.example.com",
+    "lang": "en",
+    "version": "1.0.0",
+    "url": "example-plugin.js",
+    "iconUrl": null
+  }
+]

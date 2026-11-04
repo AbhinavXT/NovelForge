@@ -7,18 +7,27 @@ attribution record; it does not replace the individual licenses.
 
 ## QuickNovel — the reason this project is GPL-3.0
 
-The scraper layer is derived from
+The source layer is derived from
 [QuickNovel](https://github.com/LagradOst/QuickNovel) by LagradOst, licensed
-**GPL-3.0**. `data/source/nf/` is a QuickNovel compatibility layer, built so
-QuickNovel providers run essentially unmodified.
+**GPL-3.0**. NovelForge's sources were Kotlin ports of QuickNovel providers
+(plus original sources that used QuickNovel's selectors); since 1.9.0 they are
+JavaScript plugins ported from that code.
 
-| Component                                                          |      Lines | Relationship                                 |
-| ------------------------------------------------------------------ | ---------: | -------------------------------------------- |
-| `data/source/nf/` — `MainAPI`, `NfHttp`, `NfCloudflare`, `NfTools` |      1,424 | Compatibility layer for QuickNovel providers |
-| `data/source/providers/*Provider.kt` (17 files)                    |      5,655 | Ported providers                             |
-| **Total**                                                          | **~7,100** | ≈17% of the codebase                         |
+| Component                                                      | Relationship                                            |
+| -------------------------------------------------------------- | ------------------------------------------------------- |
+| `app/src/main/assets/plugins/*.js`                             | Plugins ported from QuickNovel providers (see below)    |
+| `data/source/nf/` — `NfCloudflare`, `NfHttp`, `NfShared`       | QuickNovel's Cloudflare solver and HTML clean-up, ported |
 
-The seven `*Source.kt` providers (2,535 lines) are original work.
+Ported from QuickNovel providers: fanmtl, hiraethtranslation,
+lightnoveltranslations, lnori, mtlnovel, nobadnovel, novelfull-com,
+novellight, ranobes, readfromnet, readhive, sonicmtl, wattpad, wuxiabox
+(and wuxiaclick, since rewritten). freewebnovel, libread, novelfull,
+pawread and readnovelfull follow QuickNovel's selectors. The same plugins are
+published, under GPL-3.0, at
+[NovelForge-plugins](https://github.com/AbhinavXT/NovelForge-plugins).
+
+The WTR-Lab plugin's encrypted-chapter handling follows the approach of
+[LNReader](https://github.com/LNReader/lnreader-plugins)'s WTR-Lab plugin.
 
 GPL-3.0 is copyleft: a derivative must be distributed under GPL-3.0. NovelForge
 therefore is. **This project was previously labelled MIT, which was incorrect
@@ -38,10 +47,14 @@ makes NovelForge able to read anything at all came from their work.
 | [OkHttp](https://square.github.io/okhttp/)                          | Apache-2.0 | HTTP client                                             |
 | [Okio](https://square.github.io/okio/)                              | Apache-2.0 | I/O (via OkHttp)                                        |
 | [Jsoup](https://jsoup.org/)                                         | MIT        | HTML parsing                                            |
+| [Rhino](https://github.com/mozilla/rhino)                           | MPL-2.0    | JavaScript engine that runs source plugins              |
 | [Gson](https://github.com/google/gson)                              | Apache-2.0 | JSON serialization for backup/restore                   |
 | [Coil](https://coil-kt.github.io/coil/)                             | Apache-2.0 | Image loading                                           |
 | [AndroidX / Jetpack Compose](https://developer.android.com/jetpack) | Apache-2.0 | UI, Room, WorkManager, Glance, DataStore, Media         |
 | [Kotlin & kotlinx.coroutines](https://kotlinlang.org/)              | Apache-2.0 | Language and concurrency                                |
+
+Rhino is used unmodified, as the published `org.mozilla:rhino` jar; MPL-2.0
+asks that its source stays available, which it is at the link above.
 
 Apache-2.0 requires preserving copyright and license notices, and forwarding
 any `NOTICE` file the dependency ships. Sherpa-ONNX is the one to check

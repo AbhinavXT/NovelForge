@@ -3,7 +3,7 @@ package com.abhinavxt.novelforge.data
 import android.content.Context
 import android.content.SharedPreferences
 import com.abhinavxt.novelforge.BuildConfig
-import com.abhinavxt.novelforge.data.source.SourceManager
+import com.abhinavxt.novelforge.data.source.SourceHttp
 import com.abhinavxt.novelforge.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -124,7 +124,7 @@ class UpdateChecker(
                 .header("Accept", "application/json")
                 .build()
 
-            SourceManager.sharedClient.newCall(request).execute().use { response ->
+            SourceHttp.client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     return@use Status.Failed(
                         "Check failed: HTTP ${response.code}"

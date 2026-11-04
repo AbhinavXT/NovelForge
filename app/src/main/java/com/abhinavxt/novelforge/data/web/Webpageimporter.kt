@@ -4,7 +4,7 @@ import android.content.Context
 import com.abhinavxt.novelforge.data.database.AppDatabase
 import com.abhinavxt.novelforge.data.database.ChapterEntity
 import com.abhinavxt.novelforge.data.database.NovelEntity
-import com.abhinavxt.novelforge.data.source.SourceManager
+import com.abhinavxt.novelforge.data.source.SourceHttp
 import com.abhinavxt.novelforge.data.source.nf.USER_AGENT
 import com.abhinavxt.novelforge.util.Logger
 import kotlinx.coroutines.CancellationException
@@ -137,7 +137,7 @@ class WebPageImporter(private val context: Context) {
                 .header("User-Agent", USER_AGENT)
                 .build()
 
-            SourceManager.sharedClient.newCall(request).execute().use { response ->
+            SourceHttp.client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return null
                 val body = response.body ?: return null
                 if (body.contentType()?.type != "image") return null

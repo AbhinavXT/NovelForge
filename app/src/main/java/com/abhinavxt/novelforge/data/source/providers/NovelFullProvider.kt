@@ -1,13 +1,6 @@
 package com.abhinavxt.novelforge.data.source.providers
 
 
-class NovelFullProvider : AllNovelProvider() {
-    override val name = "NovelFull"
-    override val mainUrl = "https://novelfull.com"
-    override val hasMainPage = true
-    override val requireMobilUserAgent = true
-}
-
 /*
 class NovelFullProvider : MainAPI() {
     override val name = "NovelFull"

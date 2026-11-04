@@ -1,0 +1,116 @@
+name: Release
+
+# Push a tag that matches appVersionName in app/build.gradle.kts:
+#
+#   git tag v1.9.0 && git push origin v1.9.0
+#
+# Signing uses four repository secrets (Settings -> Secrets and variables
+# -> Actions). Releases must keep the key existing installs were signed
+# with, or Android refuses to install the update:
+#
+#   KEYSTORE_BASE64    base64 of the keystore file (base64 -i release.jks)
+#   KEYSTORE_PASSWORD  keystore password
+#   KEY_ALIAS          key alias
+#   KEY_PASSWORD       key password
+#
+# Release notes come from docs/releases/<tag>.md. If the GitHub release
+# already exists, the APK is uploaded to it (replacing one of the same
+# name) instead of creating a new release.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build, e.g. v1.9.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Tag matches appVersionName
+        run: |
+          version=$(sed -n 's/^val appVersionName = "\(.*\)"$/\1/p' app/build.gradle.kts)
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::Tag $TAG does not match appVersionName $version in app/build.gradle.kts"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Signing secrets are set
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          missing=""
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing (see the comment at the top of release.yml)"
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # gradle.properties pins org.gradle.java.home to a JDK path on the
+      # maintainer's machine; use the runner's JDK instead.
+      - name: Use the runner's JDK
+        run: sed -i '/^org\.gradle\.java\.home=/d' gradle.properties
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        run: ./gradlew --no-daemon :app:testDebugUnitTest
+
+      - name: Build signed release APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          export KEYSTORE_FILE="$RUNNER_TEMP/release.keystore"
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_FILE"
+          ./gradlew --no-daemon :app:assembleRelease
+          rm -f "$KEYSTORE_FILE"
+
+      - name: Verify signature and version
+        run: |
+          apk=app/build/outputs/apk/release/app-release.apk
+          build_tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$build_tools/apksigner" verify --print-certs "$apk" | tee signer.txt
+          grep -q "Signer #1 certificate SHA-256" signer.txt
+          "$build_tools/aapt2" dump badging "$apk" | grep -q "versionName='$VERSION'"
+          mkdir -p dist
+          cp "$apk" "dist/NovelForge_v$VERSION.apk"
+          (cd dist && sha256sum "NovelForge_v$VERSION.apk" > "NovelForge_v$VERSION.apk.sha256")
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="docs/releases/$TAG.md"
+          [ -f "$notes" ] || { echo "::error::$notes is missing"; exit 1; }
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "Novel Forge $TAG" --notes-file "$notes"
+          fi
