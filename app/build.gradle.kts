@@ -71,6 +71,8 @@ android {
     }
 
     testOptions {
+        // PluginManagerTest reads the bundled plugins from assets.
+        unitTests.isIncludeAndroidResources = true
         unitTests.all {
             // LivePluginCheck hits the real sites: opt-in with LIVE_PLUGINS=all (or ids).
             val live = System.getenv("LIVE_PLUGINS").orEmpty()
@@ -178,6 +180,9 @@ dependencies {
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 
     testImplementation(libs.junit)
+    // PluginManagerTest drives the real PluginManager (assets, files, prefs).
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.ui.test.junit4)

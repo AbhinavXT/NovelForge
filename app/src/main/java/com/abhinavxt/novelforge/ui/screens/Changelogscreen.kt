@@ -184,7 +184,7 @@ private val changelogEntries = listOf(
             "Fixed empty lists and search in Light Novel Translations",
             "Fixed a \"Text Mode\" entry in Primordial Translation's list",
             "WTR-Lab updated for the site's new chapter API (the site's human-verification step isn't supported yet)",
-            "AllNovel, Graycity and LightNovelWorld are no longer included in new installs - their sites are gone"
+            "AllNovel, Graycity and LightNovelWorld: their sites are gone. They stay installed if you're updating, so their novels keep their place in your library, but new installs don't include them"
         )
     ),
     VersionEntry(

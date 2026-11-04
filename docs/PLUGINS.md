@@ -112,6 +112,9 @@ credit lines are removed, unless the plugin exports `stripCredits: false`.
 - Scripts are capped at 2 MB and HTTP responses at 10 MB.
 - Calls into the same plugin run one at a time; different plugins run in
   parallel.
+- Avoid regular expressions that can backtrack catastrophically (like
+  `/(a+)+$/` on long input): Rhino's regex engine doesn't check the time
+  budget, so such a match can't be stopped.
 
 Plugins still run code from the internet on the user's device and can make
 requests to any site, so only add repositories you trust.
@@ -179,8 +182,16 @@ ReadFrom.Net, ReadHive, SonicMTL, Wattpad, WuxiaBox and WuxiaClick. Their
 scripts are the best reference for writing new ones.
 
 Retired sources (AllNovel, Graycity, LightNovelWorld: the sites are gone)
-are no longer bundled. A copy that is already installed stays installed,
-so novels from it stay in the library.
+are marked `"retired": true` in the bundled index. They are installed only
+for users upgrading from a version with built-in Kotlin sources, so novels
+from them keep their source; fresh installs don't get them, and they are
+never offered under "Available" or published to the repository.
+
+The ids of bundled plugins are reserved: only the bundle and the official
+repository can install a plugin with one of them. A script installed from a
+file or another repository with such an id is rejected, and entries in
+other repositories that use one are ignored. (To test a change to a
+built-in plugin, give your copy a different id.)
 
 ## Developing
 

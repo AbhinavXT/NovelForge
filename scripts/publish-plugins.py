@@ -34,7 +34,10 @@ def main():
     if not os.path.isdir(os.path.join(repo, ".git")):
         sys.exit(f"{repo} is not a git checkout")
 
-    bundled = json.load(open(os.path.join(ASSETS, "index.json"), encoding="utf-8"))
+    # Retired plugins (sites that are gone) stay in the app only for users
+    # upgrading from the built-in sources; they are not offered publicly.
+    bundled = [e for e in json.load(open(os.path.join(ASSETS, "index.json"), encoding="utf-8"))
+               if not e.get("retired")]
     repo_index_path = os.path.join(repo, "index.json")
     existing = {}
     if os.path.exists(repo_index_path):
@@ -54,7 +57,7 @@ def main():
             elif entry["version"] == old["version"] and os.path.exists(dest):
                 if open(src, "rb").read() != open(dest, "rb").read():
                     problems.append(f"{entry['id']}: script changed but version is still {entry['version']}")
-        published = {k: v for k, v in entry.items() if k != "sourceId"}
+        published = {k: v for k, v in entry.items() if k not in ("sourceId", "retired")}
         published["url"] = dest_rel
         out.append((src, dest, published, old))
 

@@ -82,6 +82,8 @@ data class RepoPlugin(
     val iconUrl: String?,
     val repo: String,
     val legacySourceId: String? = null,
+    /** Bundled only: the site is gone; installed only for users upgrading from the Kotlin sources. */
+    val retired: Boolean = false,
 )
 
 object PluginManager {
@@ -136,7 +138,8 @@ object PluginManager {
     private val gson = Gson()
     private val mutex = Mutex()
 
-    private lateinit var appContext: Context
+    private var appContextField: Context? = null
+    private val appContext: Context get() = appContextField ?: error("PluginManager.init() was not called")
     private val pluginDir: File get() = File(appContext.filesDir, "plugins")
     private val installedFile: File get() = File(pluginDir, "installed.json")
 
@@ -163,13 +166,16 @@ object PluginManager {
      * be opened straight away on a cold start.
      */
     fun init(context: Context) {
-        if (::appContext.isInitialized) return
-        appContext = context.applicationContext
+        if (appContextField != null) return
+        appContextField = context.applicationContext
         _repos.value = loadRepos()
+        // No installed.json on an app that was already installed before:
+        // an upgrade from a version with built-in Kotlin sources.
+        val upgradingFromBuiltIns = !installedFile.exists() && wasUpdatedInPlace(context)
         _installed.value = readInstalled()
         bundled = readBundledIndex()
-        syncBundled()
-        _available.value = bundled
+        syncBundled(includeRetired = upgradingFromBuiltIns)
+        _available.value = offerable(bundled)
         val sources = _installed.value.map { register(it) }
         // Compile scripts in the background so the first search, or the
         // Browse screen reading a plugin's filters, rarely waits for it.
@@ -177,6 +183,17 @@ object PluginManager {
             sources.forEach { it.warmUp() }
             autoUpdateFirstParty()
         }
+    }
+
+    /** Tests only: forget everything init() set up, so it can run again with another Context. */
+    @androidx.annotation.VisibleForTesting
+    internal fun resetForTests() {
+        _installed.value.forEach { SourceManager.unregisterSource(it.sourceId) }
+        _installed.value = emptyList()
+        _available.value = emptyList()
+        _repos.value = emptyList()
+        bundled = emptyList()
+        appContextField = null
     }
 
     /** Built-in sources never start with "js-" and plugin source ids never contain "_". */
@@ -217,11 +234,17 @@ object PluginManager {
                 errors += "$repo: ${e.message ?: e.javaClass.simpleName}"
             }
         }
+        // First-party ids may only come from the bundle or the official
+        // repository: anything else listing them would replace a built-in
+        // source (and inherit its library ids).
+        val firstParty = bundled.map { it.id }.toSet()
+        val trusted = all.filter { it.id !in firstParty || it.repo == OFFICIAL_REPO }
         // Bundled entries first so they win ties; otherwise the highest version wins.
-        _available.value = (bundled + all)
+        _available.value = (bundled + trusted)
             .groupBy { it.id }
             .map { (_, entries) -> entries.reduce { best, e -> if (compareVersions(e.version, best.version) > 0) e else best } }
             .sortedBy { it.name.lowercase() }
+            .let { offerable(it) }
         errors
     }
 
@@ -257,6 +280,7 @@ object PluginManager {
             scriptUrl = entry.url.takeIf { entry.repo != BUNDLED },
             expectedId = entry.id,
             iconUrl = entry.iconUrl,
+            firstPartyOrigin = entry.repo == BUNDLED || entry.repo == OFFICIAL_REPO,
         )
         setDeclined(entry.id, false)
         plugin
@@ -265,7 +289,7 @@ object PluginManager {
     /** Installs a script the user picked from storage (handy while writing a plugin). */
     suspend fun installFromScript(script: String): Result<InstalledPlugin> = runCatchingIo {
         if (script.length > MAX_SCRIPT_BYTES) throw IOException("Script is larger than 2 MB")
-        installScript(script, scriptUrl = null, expectedId = null, iconUrl = null)
+        installScript(script, scriptUrl = null, expectedId = null, iconUrl = null, firstPartyOrigin = false)
     }
 
     suspend fun uninstall(pluginId: String): Result<Unit> = mutex.withLock {
@@ -277,7 +301,7 @@ object PluginManager {
             SourceManager.unregisterSource(plugin.sourceId)
             // Don't quietly reinstall a bundled plugin the user removed.
             if (bundled.any { it.id == pluginId }) setDeclined(pluginId, true)
-            File(pluginDir, scriptName(plugin.id)).delete()
+            scriptFile(plugin).delete()
             _installed.value = _installed.value.filter { it.id != pluginId }
             writeInstalled()
         }
@@ -297,15 +321,21 @@ object PluginManager {
         scriptUrl: String?,
         expectedId: String?,
         iconUrl: String?,
+        /** From the bundle or the official repository: may use a built-in source's id. */
+        firstPartyOrigin: Boolean,
     ): InstalledPlugin = mutex.withLock {
         // Evaluating it is the validation: syntax, exports, required functions.
         val info = JsPlugin.load(script, "plugin.js", http).info
         if (expectedId != null && info.id != expectedId) {
             throw PluginException("Script declares id '${info.id}', repository says '$expectedId'")
         }
-        val sourceId = sourceIdFor(info.id)
-        if (sourceId == "js-") throw PluginException("Plugin id '${info.id}' has no letters or digits")
-        val clash = _installed.value.find { it.sourceId == (legacySourceIdFor(info.id) ?: sourceId) && it.id != info.id }
+        if (!firstPartyOrigin && bundled.any { it.id == info.id }) {
+            throw PluginException("'${info.id}' is the id of a built-in source; a plugin from elsewhere can't replace it")
+        }
+        if (sourceIdFor(info.id) == "js-") throw PluginException("Plugin id '${info.id}' has no letters or digits")
+        val legacy = if (firstPartyOrigin) legacySourceIdFor(info.id) else null
+        val sourceId = legacy ?: sourceIdFor(info.id)
+        val clash = _installed.value.find { it.sourceId == sourceId && it.id != info.id }
         if (clash != null) {
             throw PluginException("Plugin id '${info.id}' collides with installed plugin '${clash.id}'")
         }
@@ -319,16 +349,9 @@ object PluginManager {
             iconUrl = iconUrl ?: info.icon,
             scriptUrl = scriptUrl,
             // An update keeps the id it replaced; only the bundle can grant one.
-            legacySourceId = legacySourceIdFor(info.id),
+            legacySourceId = legacy,
         )
-        pluginDir.mkdirs()
-        val target = File(pluginDir, scriptName(info.id))
-        val tmp = File(pluginDir, scriptName(info.id) + ".tmp")
-        tmp.writeText(script)
-        if (!tmp.renameTo(target)) {
-            tmp.delete()
-            throw IOException("Could not write ${target.name}")
-        }
+        writeScript(plugin, script)
         _installed.value = _installed.value.filter { it.id != info.id } + plugin
         writeInstalled()
         register(plugin)
@@ -336,11 +359,36 @@ object PluginManager {
     }
 
     private fun register(plugin: InstalledPlugin): JsPluginSource =
-        JsPluginSource(plugin, File(pluginDir, scriptName(plugin.id)), http)
+        JsPluginSource(plugin, scriptFile(plugin), http)
             .also { SourceManager.registerSource(it) }
 
-    /** File name derived from the source id, so it is always filesystem-safe. */
-    private fun scriptName(pluginId: String) = sourceIdFor(pluginId) + ".js"
+    /**
+     * Named after the source id the plugin registers under, so two
+     * plugins can only share a file if they would share a source, which
+     * the clash check prevents. ("royalroad.js" for the bundled Royal Road,
+     * "js-<id>.js" for everything else; both are filesystem-safe.)
+     */
+    private fun scriptFile(plugin: InstalledPlugin) = File(pluginDir, plugin.sourceId + ".js")
+
+    /** Writes a plugin's script atomically (temp file, then rename). */
+    private fun writeScript(plugin: InstalledPlugin, script: String) {
+        pluginDir.mkdirs()
+        val target = scriptFile(plugin)
+        val tmp = File(pluginDir, target.name + ".tmp")
+        tmp.writeText(script)
+        if (!tmp.renameTo(target)) {
+            tmp.delete()
+            throw IOException("Could not write ${target.name}")
+        }
+    }
+
+    /** What "Available" offers: everything except retired bundled plugins. */
+    private fun offerable(entries: List<RepoPlugin>) = entries.filter { !it.retired }
+
+    private fun wasUpdatedInPlace(context: Context): Boolean = runCatching {
+        val info = context.packageManager.getPackageInfo(context.packageName, 0)
+        info.lastUpdateTime > info.firstInstallTime
+    }.getOrDefault(false)
 
     private fun legacySourceIdFor(pluginId: String): String? =
         bundled.find { it.id == pluginId }?.legacySourceId
@@ -395,6 +443,7 @@ object PluginManager {
                 iconUrl = s("iconUrl"),
                 repo = BUNDLED,
                 legacySourceId = legacy,
+                retired = e["retired"] == true,
             )
         }
     } catch (e: Exception) {
@@ -408,22 +457,19 @@ object PluginManager {
      * instead of evaluating each script at startup; BundledPluginsTest checks
      * that the two agree.
      */
-    private fun syncBundled() {
+    private fun syncBundled(includeRetired: Boolean) {
         val declined = declinedIds()
         var changed = false
         for (entry in bundled) {
             val current = _installed.value.find { it.id == entry.id }
             val wanted = when {
-                current == null -> entry.id !in declined
+                // Retired: only for users who had the Kotlin source, so their
+                // novels keep a source.
+                current == null -> entry.id !in declined && (!entry.retired || includeRetired)
                 else -> compareVersions(entry.version, current.version) > 0
             }
             if (!wanted) continue
             try {
-                pluginDir.mkdirs()
-                val target = File(pluginDir, scriptName(entry.id))
-                val tmp = File(pluginDir, target.name + ".tmp")
-                tmp.writeText(readAsset(entry.url))
-                if (!tmp.renameTo(target)) throw IOException("Could not write ${target.name}")
                 val plugin = InstalledPlugin(
                     id = entry.id,
                     name = entry.name,
@@ -434,6 +480,7 @@ object PluginManager {
                     scriptUrl = null,
                     legacySourceId = entry.legacySourceId,
                 )
+                writeScript(plugin, readAsset(entry.url))
                 _installed.value = _installed.value.filter { it.id != entry.id } + plugin
                 changed = true
             } catch (e: Exception) {
@@ -460,7 +507,7 @@ object PluginManager {
         else {
             val type = object : TypeToken<List<InstalledPlugin>>() {}.type
             gson.fromJson<List<InstalledPlugin>>(installedFile.readText(), type).orEmpty()
-                .filter { File(pluginDir, scriptName(it.id)).exists() }
+                .filter { scriptFile(it).exists() }
         }
     } catch (e: Exception) {
         Logger.e(TAG, "installed.json unreadable: ${e.message}")
