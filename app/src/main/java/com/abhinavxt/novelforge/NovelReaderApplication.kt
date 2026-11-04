@@ -62,9 +62,27 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
     // failures never break chapter reading. The callback itself also
     // handles its own errors internally — we're defensive in both places
     // because widget reliability shouldn't block reading reliability.
+    /** Archives imported books and restores them from their files. */
+    val bookArchive by lazy {
+        com.abhinavxt.novelforge.data.epub.LocalBookArchive(this, database)
+    }
+
+    /** Bulk archive and database compaction, outliving any one screen. */
+    val libraryStorage by lazy {
+        com.abhinavxt.novelforge.data.LibraryStorage(
+            archive = bookArchive,
+            compactor = com.abhinavxt.novelforge.data.database.DatabaseCompactor(this, database),
+            scope = appScope
+        )
+    }
+
     val repository: NovelRepository by lazy {
         NovelRepository(
             database = database,
+            restoreArchived = { novelId ->
+                bookArchive.restore(novelId) is
+                        com.abhinavxt.novelforge.data.epub.LocalBookArchive.RestoreResult.Restored
+            },
             onProgressSaved = { _ ->
                 // The param is the novelId that just changed — we don't
                 // actually need it here because rebuildFromRepository

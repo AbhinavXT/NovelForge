@@ -38,7 +38,14 @@ import kotlinx.coroutines.flow.first
  */
 class NovelRepository(
     private val database: AppDatabase,
-    private val onProgressSaved: (suspend (novelId: String) -> Unit)? = null
+    private val onProgressSaved: (suspend (novelId: String) -> Unit)? = null,
+    /**
+     * Brings an archived imported book's text back from its file; true when
+     * it did. A lambda for the same reason as [onProgressSaved]: the archive
+     * needs a Context and a file parser, and the repository stays free of
+     * both. Null in tests.
+     */
+    private val restoreArchived: (suspend (novelId: String) -> Boolean)? = null
 ) {
 
     private val novelDao = database.novelDao()
@@ -116,6 +123,9 @@ class NovelRepository(
     /** The file a book was imported from, or null if it did not come from one. */
     suspend fun getSourceUri(novelId: String): String? =
         novelDao.getSourceUri(novelId)
+
+    suspend fun isSourceUriInUse(uri: String): Boolean =
+        novelDao.isSourceUriInUse(uri)
 
     suspend fun removeFromLibrary(novelId: String) {
         database.withTransaction {
@@ -569,8 +579,24 @@ class NovelRepository(
             return downloadedChapter.content
         }
 
+        // An archived book has no source to fetch from; its text is in its
+        // file. Restoring here means every reader of chapter text — TTS
+        // export included — works on archived books without knowing about
+        // them. The reader checks first so it can show progress and handle
+        // a missing file; this is the fallback for everything else.
+        if (restoreArchived != null && isArchived(novelId) && restoreArchived.invoke(novelId)) {
+            return chapterDao.getChapterById(chapterId)?.content
+        }
+
         return fetchChapterContent(novelId, chapterUrl)
     }
+
+    suspend fun isArchived(novelId: String): Boolean =
+        novelDao.getNovelById(novelId)?.archivedAt != null
+
+    /** Ids of every archived book, for the library's badges and menus. */
+    fun getArchivedNovelIds(): Flow<Set<String>> =
+        novelDao.getArchivedNovelIds().map { it.toSet() }
 
     suspend fun isChapterDownloaded(chapterId: String): Boolean {
         return chapterDao.getChapterById(chapterId)?.isDownloaded == true

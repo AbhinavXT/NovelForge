@@ -53,7 +53,32 @@ data class NovelEntity(
      * imported before this column existed — those files are often gone, so
      * there is nothing to backfill from.
      */
-    val contentHash: String? = null
+    val contentHash: String? = null,
+
+    /**
+     * When the book's chapter text was dropped to save space, or null while
+     * the text is in the database.
+     *
+     * An archived book keeps everything that is the user's — progress,
+     * bookmarks, highlights, categories, codex — and loses only what the
+     * file on disk can give back. Restoring re-parses [sourceUri] and writes
+     * the text into the same chapter rows.
+     */
+    val archivedAt: Long? = null,
+
+    /**
+     * SHA-256 over the book's chapter texts, in order, as they were stored.
+     *
+     * Different from [contentHash] in what it vouches for. Two files can
+     * differ byte for byte (re-zipped, metadata edited) and still yield the
+     * same chapters, and the same file can yield different chapters if the
+     * parser changes between versions. Bookmarks and progress point at
+     * chapter numbers and paragraph indexes, so the text is what a restore
+     * has to match — not the bytes.
+     *
+     * Null for online sources and for books imported before v20.
+     */
+    val textFingerprint: String? = null
 )
 
 @Entity(

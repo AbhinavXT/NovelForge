@@ -69,7 +69,16 @@ data class NovelBackup(
      * detection, and the next import of files the user already owns would
      * sail straight through.
      */
-    val contentHash: String? = null
+    val contentHash: String? = null,
+
+    /**
+     * Archive state, nullable for the same reason as the fields above.
+     * Without these an archived book would restore as an ordinary book with
+     * no text, and its fingerprint — the only proof a later restore from
+     * its file lines up with its bookmarks — would be gone.
+     */
+    val archivedAt: Long? = null,
+    val textFingerprint: String? = null
 )
 
 data class ChapterBackup(
@@ -198,7 +207,9 @@ class BackupManager(
                     addedToLibraryAt = novel.addedToLibraryAt,
                     lastUpdatedAt = novel.lastUpdatedAt,
                     sourceUri = novel.sourceUri,
-                    contentHash = novel.contentHash
+                    contentHash = novel.contentHash,
+                    archivedAt = novel.archivedAt,
+                    textFingerprint = novel.textFingerprint
                 )
             }
 
@@ -357,7 +368,15 @@ class BackupManager(
                     addedToLibraryAt = novelBackup.addedToLibraryAt,
                     lastUpdatedAt = novelBackup.lastUpdatedAt,
                     sourceUri = novelBackup.sourceUri,
-                    contentHash = novelBackup.contentHash
+                    contentHash = novelBackup.contentHash,
+                    // An imported book restored without its text is an
+                    // archived book in all but name; marking it so lets the
+                    // library offer to bring the text back from the file.
+                    archivedAt = novelBackup.archivedAt
+                        ?: if (!includeDownloads && novelBackup.source == "local") {
+                            System.currentTimeMillis()
+                        } else null,
+                    textFingerprint = novelBackup.textFingerprint
                 )
                 repository.insertNovelForRestore(novelEntity)
                 novelsRestored++
