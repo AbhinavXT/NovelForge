@@ -8,6 +8,11 @@ coreKtx = "1.17.0"             # see SKEW note in review: 2025 lib vs 2024 Compo
 lifecycle = "2.10.0"           # renamed from lifecycleRuntimeKtx (it versions 3 artifacts)
 activityCompose = "1.12.2"
 composeBom = "2024.09.00"      # Compose 1.7.0 — 2 years stale, see Stage 2
+# Compose UI is pinned above the BOM: the debug-only tooling artifacts have
+# always pulled ui/foundation up to this version, so every shipped (debug)
+# build ran on it and the code depends on it (ComposeFoundationFlags).
+# Pinning it makes release builds resolve the same Compose as debug.
+composeUi = "1.9.2"
 navigationCompose = "2.7.7"
 room = "2.6.1"
 work = "2.9.0"
@@ -35,7 +40,8 @@ androidx-activity-compose = { group = "androidx.activity", name = "activity-comp
 
 # --- Compose (versions come from the BOM — do NOT add version.ref here) ---
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
-androidx-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-ui = { group = "androidx.compose.ui", name = "ui", version.ref = "composeUi" }
+androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation", version.ref = "composeUi" }
 androidx-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 androidx-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }

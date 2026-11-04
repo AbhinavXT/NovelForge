@@ -85,8 +85,25 @@ android {
         }
     }
 
+    // Release signing comes from the environment, so no key ever lives in
+    // the repository: CI sets these from secrets (see
+    // .github/workflows/release.yml), and a local release build can point
+    // them at a keystore. Without them, assembleRelease stays unsigned.
+    val releaseKeystore = System.getenv("KEYSTORE_FILE")?.takeIf { it.isNotBlank() }?.let { file(it) }
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
             // Still false — flip this only once the R8 keep rules in
             // proguard-rules.pro are in place AND you've run a release
             // build end-to-end (backup restore, TTS playback, source
@@ -127,6 +144,8 @@ dependencies {
     implementation(libs.androidx.activity.compose)
 
     implementation(libs.androidx.ui)
+    // Pinned with ui (see composeUi in the catalog) so release matches debug.
+    implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
