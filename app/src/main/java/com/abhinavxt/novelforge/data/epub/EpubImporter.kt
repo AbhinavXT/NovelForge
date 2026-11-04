@@ -15,9 +15,11 @@ import java.util.UUID
 /**
  * Handles importing EPUB files into the app's database
  */
-class EpubImporter(private val context: Context) {
+class EpubImporter(
+    private val context: Context,
+    private val database: AppDatabase = AppDatabase.getDatabase(context)
+) {
 
-    private val database = AppDatabase.getDatabase(context)
     private val novelDao = database.novelDao()
     private val chapterDao = database.chapterDao()
     private val parser = EpubParser(context)
@@ -55,15 +57,23 @@ class EpubImporter(private val context: Context) {
      * it would buy nothing but I/O and a temp file.
      */
     /**
-     * @param rememberSource when true, the novel records [uri] so a later
-     *   library-folder scan recognises the file as already imported. Callers
-     *   that import a one-off file the user picked by hand leave this off:
-     *   remembering a URI from a transient picker grant buys nothing, since
-     *   the same file picked twice does not produce the same URI.
+     * @param rememberSource when true, the novel records [uri] as its file:
+     *   a later library-folder scan recognises it as already imported, and
+     *   the book can be archived and re-read from it. Only pass true when the
+     *   app holds lasting access to [uri] — the folder's grant, or one taken
+     *   with [BookFileAccess.hold] — since a URI from a transient picker
+     *   grant stops opening once the process dies.
+     * @param archived store the book already archived: its chapters, titles
+     *   and fingerprint, but not their text, which is read from the file when
+     *   the book is opened. For library-folder scans of libraries large
+     *   enough that a second copy of every book is the problem. Ignored
+     *   without [rememberSource], since an archived book with no file could
+     *   never come back.
      */
     suspend fun importDocument(
         uri: Uri,
-        rememberSource: Boolean = false
+        rememberSource: Boolean = false,
+        archived: Boolean = false
     ): ImportResult = withContext(Dispatchers.IO) {
         val sourceUri = if (rememberSource) uri.toString() else null
         val format = DocumentFormat.detect(context, uri)
@@ -81,26 +91,118 @@ class EpubImporter(private val context: Context) {
         // rather than a cost: hashing is plain I/O, while the parse it
         // skips is zip plus XML.
         if (contentHash != null) {
-            novelDao.findTitleByContentHash(contentHash)?.let { existing ->
-                return@withContext ImportResult.Duplicate(existing)
+            novelDao.findByContentHash(contentHash)?.let { existing ->
+                // Same bytes, so this file can stand in for the book's own.
+                // A book imported by hand before files were remembered gains
+                // one here, which is what makes it archivable; one that
+                // already has a file keeps it (COALESCE).
+                if (sourceUri != null) {
+                    novelDao.linkImportedFile(existing.id, contentHash, sourceUri)
+                }
+                return@withContext ImportResult.Duplicate(existing.title)
             }
         }
 
         when (format) {
-            DocumentFormat.EPUB -> importEpub(uri, sourceUri, contentHash)
-            DocumentFormat.TEXT ->
-                importTextLike(uri, markdown = false, sourceUri = sourceUri, contentHash = contentHash)
-            DocumentFormat.MARKDOWN ->
-                importTextLike(uri, markdown = true, sourceUri = sourceUri, contentHash = contentHash)
-            DocumentFormat.PDF -> ImportResult.Error(
+            DocumentFormat.PDF -> return@withContext ImportResult.Error(
                 "PDF isn't supported. PDFs store page layout rather than text, " +
                         "so the result reads poorly. Converting to EPUB first " +
                         "(Calibre does this well) gives a much better import."
             )
-            DocumentFormat.UNSUPPORTED -> ImportResult.Error(
+            DocumentFormat.UNSUPPORTED -> return@withContext ImportResult.Error(
                 "Unsupported file type. Supported: .epub, .txt, .md"
             )
+            else -> Unit
         }
+
+        when (val parsed = parseDocument(uri, format)) {
+            is ParseResult.Failed -> ImportResult.Error(parsed.message)
+            is ParseResult.Parsed -> try {
+                persist(parsed.book, sourceUri, contentHash, archived = archived && sourceUri != null)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.e("EpubImporter", "Import failed", e)
+                ImportResult.Error("Import failed: ${e.message ?: "Unknown error"}")
+            }
+        }
+    }
+
+    /** Outcome of turning a file into an [EpubBook] without saving anything. */
+    sealed interface ParseResult {
+        data class Parsed(val book: EpubBook) : ParseResult
+        data class Failed(val message: String) : ParseResult
+    }
+
+    /**
+     * Parse a supported document into an [EpubBook], touching nothing in the
+     * database.
+     *
+     * Split out of the import so the archive can re-read a book's file and
+     * get exactly what the import stored. That only holds while both go
+     * through this one function: a second parsing path, however similar,
+     * could drift and make a restored book disagree with its own bookmarks.
+     */
+    suspend fun parseDocument(
+        uri: Uri,
+        format: DocumentFormat = DocumentFormat.detect(context, uri)
+    ): ParseResult = withContext(Dispatchers.IO) {
+        when (format) {
+            DocumentFormat.EPUB -> parseEpub(uri)
+            DocumentFormat.TEXT -> parseTextLike(uri, markdown = false)
+            DocumentFormat.MARKDOWN -> parseTextLike(uri, markdown = true)
+            DocumentFormat.PDF,
+            DocumentFormat.UNSUPPORTED ->
+                ParseResult.Failed("Unsupported file type. Supported: .epub, .txt, .md")
+        }
+    }
+
+    private fun parseEpub(uri: Uri): ParseResult = try {
+        val epub = parser.parse(uri)
+        when {
+            epub == null -> ParseResult.Failed(
+                "Failed to parse EPUB file. The file may be corrupted or in an unsupported format."
+            )
+            epub.chapters.isEmpty() ->
+                ParseResult.Failed("No readable chapters found in this EPUB.")
+            else -> ParseResult.Parsed(epub)
+        }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Logger.e("EpubImporter", "EPUB parse failed", e)
+        ParseResult.Failed("Import failed: ${e.message ?: "Unknown error"}")
+    }
+
+    private fun parseTextLike(uri: Uri, markdown: Boolean): ParseResult = try {
+        val fileName = DocumentFormat.displayName(context, uri)
+        // Text files have no declared encoding. UTF-8 covers the
+        // overwhelming majority; malformed bytes become U+FFFD rather
+        // than throwing, so a mis-encoded file still imports with a few
+        // bad glyphs instead of failing outright.
+        val raw = context.contentResolver.openInputStream(uri)?.use { stream ->
+            stream.readBytes().toString(Charsets.UTF_8)
+        }
+        when {
+            raw == null -> ParseResult.Failed("Could not open file.")
+            raw.isBlank() -> ParseResult.Failed("File is empty.")
+            else -> {
+                val book = TextDocumentParser.parse(raw, fileName, markdown)
+                if (book.chapters.isEmpty()) {
+                    ParseResult.Failed("No readable text found in this file.")
+                } else {
+                    ParseResult.Parsed(book)
+                }
+            }
+        }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: OutOfMemoryError) {
+        // A multi-hundred-MB .txt is the realistic way to hit this.
+        ParseResult.Failed("File is too large to import.")
+    } catch (e: Exception) {
+        Logger.e("EpubImporter", "Text parse failed", e)
+        ParseResult.Failed("Import failed: ${e.message ?: "Unknown error"}")
     }
 
     /**
@@ -131,65 +233,6 @@ class EpubImporter(private val context: Context) {
         }
     }
 
-    private suspend fun importTextLike(
-        uri: Uri,
-        markdown: Boolean,
-        sourceUri: String? = null,
-        contentHash: String? = null
-    ): ImportResult =
-        withContext(Dispatchers.IO) {
-            try {
-                val fileName = DocumentFormat.displayName(context, uri)
-                val raw = context.contentResolver.openInputStream(uri)?.use { stream ->
-                    // Text files have no declared encoding. UTF-8 covers the
-                    // overwhelming majority; malformed bytes become U+FFFD
-                    // rather than throwing, so a mis-encoded file still imports
-                    // with a few bad glyphs instead of failing outright.
-                    stream.readBytes().toString(Charsets.UTF_8)
-                } ?: return@withContext ImportResult.Error("Could not open file.")
-
-                if (raw.isBlank()) return@withContext ImportResult.Error("File is empty.")
-
-                val book = TextDocumentParser.parse(raw, fileName, markdown)
-                if (book.chapters.isEmpty()) {
-                    return@withContext ImportResult.Error("No readable text found in this file.")
-                }
-                persist(book, sourceUri, contentHash)
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: OutOfMemoryError) {
-                // A multi-hundred-MB .txt is the realistic way to hit this.
-                ImportResult.Error("File is too large to import.")
-            } catch (e: Exception) {
-                Logger.e("EpubImporter", "Text import failed", e)
-                ImportResult.Error("Import failed: ${e.message ?: "Unknown error"}")
-            }
-        }
-
-    suspend fun importEpub(
-        uri: Uri,
-        sourceUri: String? = null,
-        contentHash: String? = null
-    ): ImportResult = withContext(Dispatchers.IO) {
-        try {
-            // Step 1: Parse the EPUB
-            val epub = parser.parse(uri)
-                ?: return@withContext ImportResult.Error("Failed to parse EPUB file. The file may be corrupted or in an unsupported format.")
-
-            if (epub.chapters.isEmpty()) {
-                return@withContext ImportResult.Error("No readable chapters found in this EPUB.")
-            }
-
-            persist(epub, sourceUri, contentHash)
-
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Logger.e("EpubImporter", "Import failed", e)
-            ImportResult.Error("Import failed: ${e.message ?: "Unknown error"}")
-        }
-    }
-
     /**
      * Shared tail of every import path: assign an id, save the cover, write the
      * novel and its chapters. Identical for EPUB, TXT and Markdown, so it lives
@@ -198,7 +241,8 @@ class EpubImporter(private val context: Context) {
     private suspend fun persist(
         epub: EpubBook,
         sourceUri: String? = null,
-        contentHash: String? = null
+        contentHash: String? = null,
+        archived: Boolean = false
     ): ImportResult {
         // Second duplicate check, after parsing rather than before it.
         //
@@ -231,6 +275,7 @@ class EpubImporter(private val context: Context) {
         }
 
         // Step 4: Create novel entity
+        val now = System.currentTimeMillis()
         val novelEntity = NovelEntity(
             id = novelId,
             title = epub.title,
@@ -243,7 +288,12 @@ class EpubImporter(private val context: Context) {
             addedToLibraryAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
             sourceUri = sourceUri,
-            contentHash = contentHash
+            contentHash = contentHash,
+            // Computed from the text either way. For an archived import it
+            // is the only trace of that text the database keeps, and what
+            // the first restore checks the file against.
+            textFingerprint = LocalBookArchive.fingerprint(epub.chapters.map { it.content }),
+            archivedAt = if (archived) now else null
         )
 
         // Step 5: Create chapter entities (with content already stored)
@@ -254,9 +304,11 @@ class EpubImporter(private val context: Context) {
                 number = chapter.order,
                 title = chapter.title,
                 url = "local://$novelId/${chapter.order}", // Fake URL for local content
-                isDownloaded = true, // Content is already available
-                content = chapter.content, // Store content directly
-                downloadedAt = System.currentTimeMillis()
+                // An archived import keeps the row — numbering, title, and
+                // a place for bookmarks to point — but not the text.
+                isDownloaded = !archived,
+                content = if (archived) null else chapter.content,
+                downloadedAt = if (archived) null else now
             )
         }
 

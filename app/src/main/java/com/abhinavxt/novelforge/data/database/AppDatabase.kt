@@ -34,7 +34,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CodexNameEntity::class,          // NEW in v16 — character codex
         CodexScanInfoEntity::class       // NEW in v16 — codex scan watermark
     ],
-    version = 19,
+    version = 20,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -347,14 +347,33 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration v19 → v20: archiving local books.
+         *
+         * `archivedAt` marks a book whose chapter text was dropped and can be
+         * re-read from its file; `textFingerprint` lets that re-read prove it
+         * produced the same chapters. Both nullable, no backfill: existing
+         * books are not archived, and their fingerprint is computed the first
+         * time they are archived, from the text still in the database.
+         */
+        internal val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `novels` ADD COLUMN `archivedAt` INTEGER")
+                db.execSQL("ALTER TABLE `novels` ADD COLUMN `textFingerprint` TEXT")
+            }
+        }
+
+        /** The file name under the app's databases directory. */
+        const val DATABASE_NAME = "novel_reader_database"
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
-                    "novel_reader_database"
+                    DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
+                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
                     // No fallbackToDestructiveMigration() — if a migration is missing,
                     // the app crashes instead of silently wiping the user's library,
                     // bookmarks, reading progress, and stats. Always write migrations.

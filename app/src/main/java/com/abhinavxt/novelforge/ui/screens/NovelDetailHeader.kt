@@ -67,6 +67,7 @@ internal fun NovelHeader(
     novel: Novel,
     isInLibrary: Boolean,
     isLocalNovel: Boolean,
+    isArchived: Boolean = false,
     downloadState: NovelDownloadState?,
     estimatedTimeToFinish: String? = null,
     onToggleLibrary: () -> Unit,
@@ -216,6 +217,22 @@ internal fun NovelHeader(
                                     style = MaterialTheme.typography.labelSmall,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                     color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+
+                        // Opening still works; the text comes back from the
+                        // file first, which is why the first open is slower.
+                        if (isArchived) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "Archived",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
                                 )
                             }
                         }

@@ -99,6 +99,7 @@ import com.abhinavxt.novelforge.data.model.Novel
 import com.abhinavxt.novelforge.ui.components.NovelCover
 import com.abhinavxt.novelforge.ui.components.novelCoverShared
 import com.abhinavxt.novelforge.ui.components.OfflineBanner
+import com.abhinavxt.novelforge.ui.components.ArchiveProblemDialog
 import com.abhinavxt.novelforge.ui.viewmodel.ImportState
 import com.abhinavxt.novelforge.ui.viewmodel.LibraryFilter
 import com.abhinavxt.novelforge.ui.viewmodel.LibrarySort
@@ -131,6 +132,7 @@ fun LibraryScreen(
     val categories by viewModel.categories.collectAsState()
     val selectedCategoryId by viewModel.selectedCategoryId.collectAsState()
     val novelCategoryMap by viewModel.novelCategoryMap.collectAsState()
+    val archivedIds by viewModel.archivedIds.collectAsState()
 
     // ── Screen-level dialog state (Phase 6) ──────────────────────
     // Long-pressing a novel (list or grid) opens the options dialog;
@@ -148,9 +150,65 @@ fun LibraryScreen(
     val exportScope = rememberCoroutineScope()
     val exportContext = LocalContext.current
 
+    // ── Archive prompts ──────────────────────────────────────────
+    // A restore that needs the user (file missing, file changed) arrives as
+    // an event; it is copied into local state so the dialog outlives the
+    // event being consumed.
+    var archiveProblem by remember {
+        mutableStateOf<com.abhinavxt.novelforge.ui.viewmodel.ArchiveEvent.NeedsFile?>(null)
+    }
+    var locateFor by remember { mutableStateOf<Novel?>(null) }
+    val locateFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        val novel = locateFor
+        locateFor = null
+        if (uri != null && novel != null) viewModel.restore(novel, fileUri = uri)
+    }
+    val snackbarHostState = remember { SnackbarHostState() }
+    // Collected once for the screen's lifetime. Keying the effect on the
+    // event instead would restart it as each event is consumed, cancelling
+    // the snackbar it had just opened.
+    LaunchedEffect(viewModel) {
+        viewModel.archiveEvent.collect { event ->
+            when (event) {
+                // A snackbar, not a toast: the refusal reasons run to two or
+                // three lines, which a toast truncates.
+                is com.abhinavxt.novelforge.ui.viewmodel.ArchiveEvent.Message ->
+                    snackbarHostState.showSnackbar(event.text, duration = SnackbarDuration.Long)
+                is com.abhinavxt.novelforge.ui.viewmodel.ArchiveEvent.NeedsFile ->
+                    archiveProblem = event
+            }
+        }
+    }
+    archiveProblem?.let { event ->
+        ArchiveProblemDialog(
+            problem = event.problem,
+            onLocateFile = {
+                archiveProblem = null
+                locateFor = event.novel
+                locateFileLauncher.launch(DocumentFormat.PICKER_MIME_TYPES)
+            },
+            onRestoreAnyway = {
+                archiveProblem = null
+                viewModel.restoreAnyway(event.novel)
+            },
+            onDismiss = { archiveProblem = null }
+        )
+    }
+
     optionsNovel?.let { novel ->
         NovelOptionsDialog(
             novel = novel,
+            isArchived = novel.id in archivedIds,
+            onArchive = {
+                optionsNovel = null
+                viewModel.archive(novel)
+            },
+            onRestore = {
+                optionsNovel = null
+                viewModel.restore(novel)
+            },
             onEditCategories = {
                 optionsNovel = null
                 categoriesNovel = novel
@@ -179,6 +237,9 @@ fun LibraryScreen(
                 optionsNovel = null
                 Toast.makeText(exportContext, "Exporting EPUB…", Toast.LENGTH_SHORT).show()
                 exportScope.launch {
+                    // An archived book has no stored text to export; bring
+                    // it back first. On failure the restore prompt is up.
+                    if (!viewModel.ensureRestored(novel)) return@launch
                     val result = EpubExporter.exportAndShare(
                         context = exportContext,
                         repository = repository,
@@ -291,7 +352,6 @@ fun LibraryScreen(
     }
 
     // Snackbar for import results
-    val snackbarHostState = remember { SnackbarHostState() }
 
     // Refresh downloads when screen is shown
     LaunchedEffect(Unit) {
@@ -731,6 +791,7 @@ fun LibraryScreen(
                                 LibraryGridItem(
                                     novel = novel,
                                     hasUpdate = novel.id in novelsWithUpdates,
+                                    isArchived = novel.id in archivedIds,
                                     onClick = {
                                         viewModel.clearUpdateBadge(novel.id)
                                         onNovelClick(novel.id)
@@ -757,6 +818,7 @@ fun LibraryScreen(
                                 LibraryNovelItem(
                                     novel = novel,
                                     hasUpdate = novel.id in novelsWithUpdates,
+                                    isArchived = novel.id in archivedIds,
                                     onClick = {
                                         viewModel.clearUpdateBadge(novel.id)
                                         onNovelClick(novel.id)
@@ -901,6 +963,7 @@ private fun EmptyFilterState(
 private fun LibraryGridItem(
     novel: Novel,
     hasUpdate: Boolean,
+    isArchived: Boolean = false,
     onClick: () -> Unit,
     onLongPress: () -> Unit
 ) {
@@ -929,6 +992,13 @@ private fun LibraryGridItem(
                         )
                 )
             }
+            if (isArchived) {
+                ArchivedBadge(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(4.dp)
+                )
+            }
         }
         Spacer(modifier = Modifier.height(6.dp))
         Text(
@@ -946,6 +1016,7 @@ private fun LibraryGridItem(
 private fun LibraryNovelItem(
     novel: Novel,
     hasUpdate: Boolean = false,
+    isArchived: Boolean = false,
     onClick: () -> Unit,
     onLongPress: () -> Unit = {},
     onRemove: () -> Unit
@@ -1050,6 +1121,10 @@ private fun LibraryNovelItem(
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
                             )
                         }
+                        if (isArchived) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            ArchivedBadge()
+                        }
                     } else {
                         Text(
                             text = novel.source,
@@ -1071,6 +1146,26 @@ private fun LibraryNovelItem(
         }
     }
 }
+/**
+ * Marks a book whose text is set aside. Not a warning: the book opens as
+ * usual, a moment slower while its text comes back from the file.
+ */
+@Composable
+private fun ArchivedBadge(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        shape = MaterialTheme.shapes.extraSmall
+    ) {
+        Text(
+            text = "Archived",
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            color = MaterialTheme.colorScheme.onTertiaryContainer
+        )
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Phase 6: category dialogs
 // ─────────────────────────────────────────────────────────────────
@@ -1081,6 +1176,9 @@ private fun LibraryNovelItem(
 @Composable
 private fun NovelOptionsDialog(
     novel: Novel,
+    isArchived: Boolean,
+    onArchive: () -> Unit,
+    onRestore: () -> Unit,
     onEditCategories: () -> Unit,
     onExportAnnotations: () -> Unit,
     onExportEpub: () -> Unit,
@@ -1110,6 +1208,21 @@ private fun NovelOptionsDialog(
                     onClick = onExportEpub,
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Export as EPUB") }
+                // Only imported books: an online book frees space by
+                // deleting its downloads, which it can fetch again.
+                if (novel.source == "local") {
+                    if (isArchived) {
+                        TextButton(
+                            onClick = onRestore,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Restore from file") }
+                    } else {
+                        TextButton(
+                            onClick = onArchive,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Archive (free up space)") }
+                    }
+                }
                 TextButton(
                     onClick = onRemove,
                     modifier = Modifier.fillMaxWidth()

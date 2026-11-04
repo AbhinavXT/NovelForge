@@ -92,6 +92,7 @@ import com.abhinavxt.novelforge.ui.viewmodel.SettingsViewModel
 import com.abhinavxt.novelforge.BuildConfig
 import com.abhinavxt.novelforge.data.UpdateChecker
 import com.abhinavxt.novelforge.ui.components.UpdateStatusRow
+import com.abhinavxt.novelforge.ui.components.LibraryStorageSection
 import com.abhinavxt.novelforge.ui.components.openUpdateUrlInBrowser
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
@@ -364,6 +365,9 @@ fun SettingsScreen(
                 mutableStateOf(LibraryFolder.getIgnoredUris(context).size)
             }
             var ignoredCleared by remember { mutableStateOf(false) }
+            var importArchived by remember {
+                mutableStateOf(LibraryFolder.importsArchived(context))
+            }
             val libraryFolderPicker = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.OpenDocumentTree()
             ) { uri ->
@@ -439,6 +443,35 @@ fun SettingsScreen(
                         }
                     }
 
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Import new books archived",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "Leaves each book's text in its file until " +
+                                        "you open it, so the app doesn't keep a second " +
+                                        "copy. For folders of hundreds or thousands " +
+                                        "of books.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = importArchived,
+                            onCheckedChange = {
+                                importArchived = it
+                                LibraryFolder.setImportsArchived(context, it)
+                            }
+                        )
+                    }
+
                     // Removing a scanned book records its file as unwanted,
                     // otherwise the next scan would import it straight back.
                     // This is the escape hatch when that was a mistake.
@@ -466,6 +499,15 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider()
             Spacer(modifier = Modifier.height(24.dp))
+
+            // ── Storage Section ──────────────────────────────────
+            (context.applicationContext as? NovelReaderApplication)?.libraryStorage?.let {
+                LibraryStorageSection(storage = it)
+
+                Spacer(modifier = Modifier.height(24.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(24.dp))
+            }
 
             // ── Backup & Restore Section ─────────────────────────
             Text(

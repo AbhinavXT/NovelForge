@@ -8,10 +8,19 @@ import androidx.lifecycle.viewModelScope
 import com.abhinavxt.novelforge.data.NovelRepository
 import com.abhinavxt.novelforge.data.database.CategoryEntity
 import com.abhinavxt.novelforge.data.database.ReadingProgressEntity
+import com.abhinavxt.novelforge.data.epub.BookFileAccess
 import com.abhinavxt.novelforge.data.epub.EpubImporter
+import com.abhinavxt.novelforge.data.epub.LocalBookArchive
+import com.abhinavxt.novelforge.NovelReaderApplication
+import com.abhinavxt.novelforge.ui.components.ArchiveProblem
+import com.abhinavxt.novelforge.ui.components.describe
+import com.abhinavxt.novelforge.ui.components.toProblem
 import com.abhinavxt.novelforge.data.epub.LibraryFolder
 import com.abhinavxt.novelforge.data.model.Novel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -54,6 +63,14 @@ sealed interface ImportState {
         val firstError: String?,
         val duplicates: Int = 0
     ) : ImportState
+}
+
+/** Something an archive action needs to tell the user, shown once. */
+sealed interface ArchiveEvent {
+    data class Message(val text: String) : ArchiveEvent
+
+    /** A restore needs the user to locate the file or accept a changed one. */
+    data class NeedsFile(val novel: Novel, val problem: ArchiveProblem) : ArchiveEvent
 }
 
 enum class LibraryFilter {
@@ -119,6 +136,27 @@ class LibraryViewModel(
     private val _novelsWithUpdates = MutableStateFlow<Set<String>>(emptySet())
     val novelsWithUpdates: StateFlow<Set<String>> = _novelsWithUpdates.asStateFlow()
 
+    // ── Archive ──────────────────────────────────────────────────
+    private val bookArchive: LocalBookArchive? =
+        (appContext as? NovelReaderApplication)?.bookArchive
+
+    private val _archivedIds = MutableStateFlow<Set<String>>(emptySet())
+    val archivedIds: StateFlow<Set<String>> = _archivedIds.asStateFlow()
+
+    // A channel, not state: each event is shown exactly once, and a message
+    // arriving while another is on screen waits its turn instead of
+    // replacing it.
+    private val archiveEvents = Channel<ArchiveEvent>(Channel.BUFFERED)
+    val archiveEvent: Flow<ArchiveEvent> = archiveEvents.receiveAsFlow()
+
+    /** Ids of books with an archive or restore running, to stop double taps. */
+    private val _archiveBusy = MutableStateFlow<Set<String>>(emptySet())
+    val archiveBusy: StateFlow<Set<String>> = _archiveBusy.asStateFlow()
+
+    // The file the user last picked for a book, so "Restore anyway" applies
+    // to it rather than to the recorded file that went missing.
+    private var pickedRestoreUri: Uri? = null
+
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
@@ -128,6 +166,86 @@ class LibraryViewModel(
         loadNovelsBeingRead()
         loadUpdateBadges()
         loadCategories()
+        viewModelScope.launch {
+            repository.getArchivedNovelIds().collect { _archivedIds.value = it }
+        }
+    }
+
+    // ── Archive actions ──────────────────────────────────────────
+
+    fun archive(novel: Novel) {
+        val archive = bookArchive ?: return
+        runBusy(novel.id) {
+            val result = archive.archive(novel.id)
+            archiveEvents.send(ArchiveEvent.Message(result.describe(novel.title)))
+            loadNovelsWithDownloads()
+        }
+    }
+
+    /**
+     * Restore an archived book. With [fileUri] the user has just pointed at
+     * its file; with [acceptChanges] they agreed to a file that differs.
+     */
+    fun restore(novel: Novel, fileUri: Uri? = null, acceptChanges: Boolean = false) {
+        runBusy(novel.id) { restoreNow(novel, fileUri, acceptChanges, announce = true) }
+    }
+
+    fun restoreAnyway(novel: Novel) = restore(novel, pickedRestoreUri, acceptChanges = true)
+
+    /**
+     * Restore if archived, for actions that need the text — exporting, for
+     * one. Returns true when the text is there. On failure the problem is
+     * raised as an event, so the user can fix it and try again.
+     */
+    suspend fun ensureRestored(novel: Novel): Boolean {
+        if (novel.id !in _archivedIds.value) return true
+        return restoreNow(novel, null, false, announce = false)
+    }
+
+    private suspend fun restoreNow(
+        novel: Novel,
+        fileUri: Uri?,
+        acceptChanges: Boolean,
+        announce: Boolean
+    ): Boolean {
+        val archive = bookArchive ?: return false
+        val result = if (fileUri != null) {
+            archive.restoreFromPickedFile(novel.id, fileUri, acceptChanges)
+        } else {
+            archive.restore(novel.id, acceptChanges = acceptChanges)
+        }
+        return when (result) {
+            is LocalBookArchive.RestoreResult.Restored -> {
+                pickedRestoreUri = null
+                if (announce) {
+                    archiveEvents.send(ArchiveEvent.Message("Restored \"${novel.title}\""))
+                }
+                loadNovelsWithDownloads()
+                true
+            }
+            LocalBookArchive.RestoreResult.NothingToRestore -> true
+            else -> {
+                pickedRestoreUri = fileUri
+                archiveEvents.send(
+                    result.toProblem()
+                        ?.let { ArchiveEvent.NeedsFile(novel, it) }
+                        ?: ArchiveEvent.Message("Couldn't restore \"${novel.title}\"")
+                )
+                false
+            }
+        }
+    }
+
+    private fun runBusy(novelId: String, block: suspend () -> Unit) {
+        if (novelId in _archiveBusy.value) return
+        _archiveBusy.value = _archiveBusy.value + novelId
+        viewModelScope.launch {
+            try {
+                block()
+            } finally {
+                _archiveBusy.value = _archiveBusy.value - novelId
+            }
+        }
     }
 
     private fun loadCategories() {
@@ -334,7 +452,7 @@ class LibraryViewModel(
         viewModelScope.launch {
             _importState.value = ImportState.Importing
 
-            when (val result = epubImporter.importDocument(uri)) {
+            when (val result = importPicked(epubImporter, uri)) {
                 is EpubImporter.ImportResult.Success -> {
                     _importState.value = ImportState.Success(
                         title = result.title,
@@ -350,6 +468,28 @@ class LibraryViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * Import one hand-picked file, keeping lasting access to it when Android
+     * allows so the book can later be archived and re-read from the file.
+     *
+     * The grant is taken before importing because the import records the URI
+     * and a recorded URI without a grant is worse than none. It is handed back
+     * afterwards if no book ended up using it — a failed import, or a
+     * duplicate of a book that already has its own file.
+     */
+    private suspend fun importPicked(
+        importer: EpubImporter,
+        uri: Uri
+    ): EpubImporter.ImportResult {
+        val context = appContext
+        val held = context != null && BookFileAccess.hold(context, uri)
+        val result = importer.importDocument(uri, rememberSource = held)
+        if (held && !repository.isSourceUriInUse(uri.toString())) {
+            BookFileAccess.release(context!!, uri)
+        }
+        return result
     }
 
     /**
@@ -376,7 +516,7 @@ class LibraryViewModel(
 
             uris.forEachIndexed { index, uri ->
                 _importState.value = ImportState.ImportingBatch(index, uris.size)
-                when (val result = epubImporter.importDocument(uri)) {
+                when (val result = importPicked(epubImporter, uri)) {
                     is EpubImporter.ImportResult.Success -> imported++
                     is EpubImporter.ImportResult.Duplicate -> duplicates++
                     is EpubImporter.ImportResult.Error -> {
@@ -436,6 +576,9 @@ class LibraryViewModel(
                     var failed = 0
                     var duplicates = 0
                     var firstError: String? = null
+                    // Read once per scan, so toggling it mid-run does not
+                    // leave a library half one way and half the other.
+                    val archived = LibraryFolder.importsArchived(context)
 
                     listing.newFiles.forEachIndexed { index, file ->
                         _importState.value =
@@ -444,7 +587,8 @@ class LibraryViewModel(
                         // rememberSource so the next scan skips this file.
                         val result = importer.importDocument(
                             uri = file.uri,
-                            rememberSource = true
+                            rememberSource = true,
+                            archived = archived
                         )
                         when (result) {
                             is EpubImporter.ImportResult.Success -> imported++
@@ -506,9 +650,16 @@ class LibraryViewModel(
             // record that the file was seen. Without this the next scan
             // would cheerfully import it again.
             val context = appContext
+            var releaseAfterRemoval: String? = null
             if (context != null) {
                 repository.getSourceUri(novelId)?.let { uri ->
-                    LibraryFolder.ignoreUri(context, uri)
+                    if (LibraryFolder.isInFolder(uri)) {
+                        LibraryFolder.ignoreUri(context, uri)
+                    } else {
+                        // A hand-picked file: its grant is released below,
+                        // once the row is gone, to free a slot in the budget.
+                        releaseAfterRemoval = uri
+                    }
                 }
             }
 
@@ -516,6 +667,13 @@ class LibraryViewModel(
                 epubImporter.deleteLocalNovel(novelId)
             }
             repository.removeFromLibrary(novelId)
+            releaseAfterRemoval?.let { uri ->
+                // Another book may hold the same file (a re-import that was
+                // linked as a duplicate); its grant must survive.
+                if (!repository.isSourceUriInUse(uri)) {
+                    BookFileAccess.release(context!!, Uri.parse(uri))
+                }
+            }
             loadNovelsWithDownloads()
         }
     }

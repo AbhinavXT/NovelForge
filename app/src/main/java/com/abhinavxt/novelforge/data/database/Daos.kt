@@ -83,6 +83,13 @@ interface NovelDao {
     @Query("SELECT title FROM novels WHERE contentHash = :hash LIMIT 1")
     suspend fun findTitleByContentHash(hash: String): String?
 
+    @Query("SELECT * FROM novels WHERE contentHash = :hash LIMIT 1")
+    suspend fun findByContentHash(hash: String): NovelEntity?
+
+    /** Whether any book records [uri] as its file, so its grant is still needed. */
+    @Query("SELECT EXISTS(SELECT 1 FROM novels WHERE sourceUri = :uri)")
+    suspend fun isSourceUriInUse(uri: String): Boolean
+
     /**
      * Fallback duplicate check for books the hash cannot see: anything
      * imported before `contentHash` existed has none, so an exact-bytes
@@ -116,6 +123,41 @@ interface NovelDao {
                 "WHERE id = :novelId"
     )
     suspend fun linkImportedFile(novelId: String, hash: String?, uri: String?)
+
+    // ── Archive ─────────────────────────────────────────────────
+
+    @Query(
+        "UPDATE novels SET archivedAt = :archivedAt, textFingerprint = :fingerprint " +
+                "WHERE id = :novelId"
+    )
+    suspend fun markArchived(novelId: String, archivedAt: Long, fingerprint: String)
+
+    /**
+     * Clear the archive mark after the text is back. [uri] replaces the
+     * stored source only when given, which is the case when the user had to
+     * point at the file again because the old one moved.
+     */
+    @Query(
+        "UPDATE novels SET archivedAt = NULL, textFingerprint = :fingerprint, " +
+                "totalChapters = :totalChapters, sourceUri = COALESCE(:uri, sourceUri) " +
+                "WHERE id = :novelId"
+    )
+    suspend fun markRestored(
+        novelId: String,
+        fingerprint: String,
+        totalChapters: Int,
+        uri: String?
+    )
+
+    @Query("SELECT id FROM novels WHERE archivedAt IS NOT NULL")
+    fun getArchivedNovelIds(): Flow<List<String>>
+
+    /** Imported books still holding their text, in the order a bulk archive works through them. */
+    @Query(
+        "SELECT id FROM novels WHERE source = 'local' AND archivedAt IS NULL " +
+                "ORDER BY title COLLATE NOCASE"
+    )
+    suspend fun getUnarchivedLocalNovelIds(): List<String>
 }
 
 /**
@@ -179,6 +221,9 @@ interface ChapterDao {
 
     @Query("DELETE FROM chapters WHERE novelId = :novelId")
     suspend fun deleteChaptersForNovel(novelId: String)
+
+    @Query("DELETE FROM chapters WHERE novelId = :novelId AND number > :maxNumber")
+    suspend fun deleteChaptersAfter(novelId: String, maxNumber: Int)
 
     @Query("UPDATE chapters SET isDownloaded = :isDownloaded, content = :content, downloadedAt = :downloadedAt WHERE id = :chapterId")
     suspend fun updateDownloadStatus(

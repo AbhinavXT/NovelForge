@@ -23,6 +23,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -47,6 +50,11 @@ class NovelDetailViewModel(
 
     // Store application context for M4B builder access
     private val appContext = context.applicationContext
+
+    /** Live, so the badge clears when the reader restores the book. */
+    val isArchived: StateFlow<Boolean> = repository.getArchivedNovelIds()
+        .map { novelId in it }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     private val _uiState = MutableStateFlow<NovelDetailUiState>(NovelDetailUiState.Loading)
     val uiState: StateFlow<NovelDetailUiState> = _uiState.asStateFlow()

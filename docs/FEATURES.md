@@ -41,6 +41,8 @@ If you just want a quick summary, see the [README](../README.md).
     - [Update checking](#update-checking)
   - [Importing and exporting books](#epub-import-and-export)
     - [Import](#import)
+    - [Library folder](#library-folder)
+    - [Archiving imported books](#archiving-imported-books)
     - [Export](#export)
   - [Text-to-speech](#text-to-speech)
     - [System TTS](#system-tts)
@@ -239,7 +241,7 @@ Every downloaded chapter is indexed on-device the moment it's downloaded - impor
 - The last word you type matches as a prefix, so results appear while you're still typing ("cultiv" matches "cultivation").
 - Tap a result and the reader opens **at that paragraph**, not just that chapter.
 
-Only downloaded chapters are searchable - the index is built from what's on your device, which is also why it works on a plane. Results are capped at 200 hits per query; if a common word maxes that out, add a second word.
+Only downloaded chapters are searchable - the index is built from what's on your device, which is also why it works on a plane. [Archived](#archiving-imported-books) books are left out until they're opened again. Results are capped at 200 hits per query; if a common word maxes that out, add a second word.
 
 ### In-book find
 
@@ -410,6 +412,52 @@ Text before the first heading — a dedication or epigraph — is kept and prepe
 **PDF is not supported.** Android has no built-in PDF text extraction, and the standard third-party library has been unmaintained since 2023 with known CVEs. PDF also stores page layout rather than text, so extraction produces markedly worse results than `.txt` or `.md`. Converting to EPUB first (Calibre does this well) gives a much better import.
 
 EPUBs and online novels live side-by-side in the same library. There's no separate "local books" section. The app distinguishes them internally for chapter-update logic (EPUBs don't get update checks).
+
+### Library folder
+
+If you already keep books on the device — for another reader app, or synced from a computer — point NovelForge at that folder instead of importing files one by one: Settings → Library Folder → **Choose folder**, then Library → **+** → **Scan library folder**.
+
+- Subfolders are followed (up to six levels deep), since author and series folders are the norm. A single scan handles up to 5,000 files.
+- Each scan imports only files it hasn't seen. Files are recognized by their location, and by their bytes, so the same book sitting in two folders is imported once.
+- The folder is read-only to NovelForge. Nothing is moved, renamed, or deleted, so sharing it with another reader app is safe.
+- Removing a scanned book from the library remembers it as unwanted, so the next scan doesn't bring it back. Settings → Library Folder → **Re-import N removed files** undoes that.
+- Leaving the Library screen stops a scan. Nothing is lost: the next scan starts where this one stopped.
+
+**Import new books archived** (switch, off by default). New books from the folder are stored [archived](#archiving-imported-books): their chapter list, cover, and details go into the library, but their text stays in the file until you open the book. Turn this on for folders of hundreds or thousands of books, where importing everything in full would put a second copy of the library on the device. The switch applies to scans, not to files you import by hand.
+
+### Archiving imported books
+
+An imported book is stored in full: its text, plus a search index over it, comes to roughly one and a half times the size of the file. When you already keep that file on the device, that's a second copy. Archiving drops the stored text and reads it from the file again when you open the book.
+
+**What stays:** everything that's yours. Reading progress, bookmarks, highlights and notes, categories, codex entries, reading stats, the cover, the chapter list.
+
+**What changes:** the first time you open an archived book, it takes a moment longer while the text is read back from the file. Until then, [full-text search](#full-text-library-search) doesn't find words in it. Books from online sources can't be archived; deleting their downloads does the same job.
+
+**Archive one book:** Library → long-press the book → **Archive (free up space)**. Archived books show a small badge on their cover. **Restore from file** in the same menu brings the text back without opening the book, and opening it, exporting it, or listening to it with TTS restores it automatically.
+
+**Archive all imported books:** Settings → Storage → **Archive all imported books**. Works through every imported book still holding its text, one at a time, then [compacts the database](#giving-the-space-back). You can leave the screen while it runs; **Stop** ends it after the current book. Each book is archived completely or not at all, so stopping — or the app being closed — leaves nothing half-done, and running it again carries on with what's left. At the end, a summary says how many books were archived and why any were left alone.
+
+#### Why a book might not be archived
+
+Bookmarks, highlights, and your reading position point at chapter numbers and paragraphs. A restore that came back with different chapters would quietly move every one of them, so archiving checks first that the file still reads back as exactly the text in the library. Books that fail the check keep their text:
+
+- **No file on record** — books imported by hand before NovelForge remembered where files came from. Import the same file again: it's recognized as a duplicate, linked to the existing book, and the book becomes archivable. Your progress isn't touched.
+- **File missing or unreadable** — moved, renamed, deleted, or on storage that isn't mounted.
+- **File changed** — edited, replaced with another edition, or read differently by a newer version of the app.
+
+Hand-picked files only stay readable for as long as Android lets the app keep its permission on them. Android caps that at 512 files (128 before Android 11); past that, hand-picked imports are stored in full and can't be archived. Books from the [library folder](#library-folder) aren't affected by this limit, so for a large library, use the folder.
+
+#### When the file has gone
+
+If an archived book's file can't be opened, opening the book explains why and offers **Locate file**: pick the file wherever it is now, and the book is restored from it and remembers the new location.
+
+If the file you pick reads differently from the book that was archived — a different edition, or an edited copy — NovelForge says so before doing anything. **Restore anyway** uses it regardless; your bookmarks and position are kept, but may land in slightly different places.
+
+#### Giving the space back
+
+Deleting data from a database doesn't make its file smaller on its own: the space is kept for reuse, and the search index keeps old entries until it's reorganized. Settings → Storage shows the database's size and how much can be reclaimed, and **Compact** rewrites it so the freed space goes back to the device. Archive all compacts automatically when it finishes; after archiving books one at a time, compact by hand.
+
+Compacting a large library takes a minute or two. It needs free storage about the size of what's left in the database afterwards, and briefly that much memory; when the library still stores more text than that comfortably allows (a few hundred MB), it reorganizes the search index and stops there, and says so. Archiving more books, or deleting downloads, makes room for a full compaction.
 
 ### Export
 
@@ -592,6 +640,7 @@ The ZIP can be saved to Drive, Dropbox, anywhere.
 **What's not in the backup:**
 
 - Downloaded chapter content (re-download after restore - the metadata knows what to fetch)
+- The text of imported books. A restore without chapter text brings them back [archived](#archiving-imported-books): opening one reads its text from the file, if the file is still on the device. Books that were archived when the backup was made stay archived.
 - The full-text search index and the codex (both are derived from downloaded content, so they rebuild after you re-download - the search index automatically, the codex with one tap of the scan button)
 - Voice models (re-download from Settings → Voice models)
 - Generated audiobooks (regenerate if needed)
@@ -616,6 +665,18 @@ Most reader settings live in the in-reader Quick Settings sheet (palette icon). 
 - Default font size, line spacing, margins
 
 Whatever's set here is the starting point for new novels; per-novel changes are saved separately. Tap-zone layout is set from Quick Settings and applies app-wide.
+
+### Library folder
+
+- **Choose folder / Change folder / Forget** - see [Library folder](#library-folder)
+- **Import new books archived** - toggle (off by default)
+- **Re-import N removed files** - shown when scanned books were removed from the library
+
+### Storage
+
+- **Library database** - current size, and how much compacting would reclaim
+- **Archive all imported books** - see [Archiving imported books](#archiving-imported-books)
+- **Compact** - see [Giving the space back](#giving-the-space-back)
 
 ### Downloads
 

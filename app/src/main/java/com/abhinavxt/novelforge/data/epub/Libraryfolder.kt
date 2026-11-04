@@ -31,6 +31,7 @@ object LibraryFolder {
     private const val PREF_LAST_SCAN = "last_scan_time"
     private const val PREF_IGNORED_URIS = "ignored_uris"
     private const val PREF_DUPLICATE_URIS = "duplicate_uris"
+    private const val PREF_IMPORT_ARCHIVED = "import_archived"
 
     /**
      * Subdirectories are followed, because organising books into
@@ -99,6 +100,35 @@ object LibraryFolder {
             it.uri == treeUri && it.isReadPermission
         }
     }
+
+    /**
+     * Whether scans bring new books in already archived: chapter list,
+     * cover and metadata stored, text left in the file until the book is
+     * opened.
+     *
+     * Off by default because it trades something away — an archived book
+     * opens a little slower the first time, and its text is not searchable
+     * until then. Worth it for a folder of thousands, where importing in
+     * full would put a second copy of the whole library in the database.
+     *
+     * Kept across [clearFolder]: it describes how the user wants their
+     * library stored, not anything about one particular folder.
+     */
+    fun importsArchived(context: Context): Boolean =
+        prefs(context).getBoolean(PREF_IMPORT_ARCHIVED, false)
+
+    fun setImportsArchived(context: Context, archived: Boolean) {
+        prefs(context).edit().putBoolean(PREF_IMPORT_ARCHIVED, archived).apply()
+    }
+
+    /**
+     * Whether [uri] was reached through a folder grant rather than picked on
+     * its own. Folder files are `…/tree/<root>/document/<id>`; a hand-picked
+     * file is `…/document/<id>` with no tree segment.
+     */
+    fun isInFolder(uri: String): Boolean =
+        runCatching { Uri.parse(uri).pathSegments.firstOrNull() == "tree" }
+            .getOrDefault(false)
 
     // ── Removed books ───────────────────────────────────────────
 

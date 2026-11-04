@@ -174,6 +174,17 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.1.0",
+        date = "Nov 2026",
+        changes = listOf(
+            "Archive imported books to free up space - the text is read back from the file when you open the book; progress, bookmarks and highlights are kept (Library → long-press → Archive)",
+            "Settings → Storage - see the database size, archive all imported books at once, and compact to give freed space back to the device",
+            "Library folder: \"Import new books archived\" switch for large folders",
+            "Locate file - if an archived book's file has moved, point NovelForge at its new location",
+            "Re-importing a book you already have links its file, so older imports become archivable"
+        )
+    ),
+    VersionEntry(
         version = "v2.0.0",
         date = "Nov 2026",
         changes = listOf(

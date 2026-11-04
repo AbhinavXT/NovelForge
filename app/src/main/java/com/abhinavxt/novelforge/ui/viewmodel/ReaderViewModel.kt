@@ -1,5 +1,6 @@
 package com.abhinavxt.novelforge.ui.viewmodel
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -10,6 +11,9 @@ import com.abhinavxt.novelforge.data.ChapterPrefetcher
 import com.abhinavxt.novelforge.data.ReadingStatsTracker
 import com.abhinavxt.novelforge.data.ThemePreferences
 import com.abhinavxt.novelforge.data.database.HighlightEntity
+import com.abhinavxt.novelforge.data.epub.LocalBookArchive
+import com.abhinavxt.novelforge.ui.components.ArchiveProblem
+import com.abhinavxt.novelforge.ui.components.toProblem
 import com.abhinavxt.novelforge.data.model.Chapter
 import com.abhinavxt.novelforge.data.model.ReaderSettings
 import com.abhinavxt.novelforge.data.model.ReaderTheme
@@ -90,6 +94,12 @@ sealed interface ReaderUiState {
         val settings: ReaderSettings
     ) : ReaderUiState
     data class Error(val message: String) : ReaderUiState
+
+    /** An archived book's text is being read back from its file. */
+    object Restoring : ReaderUiState
+
+    /** An archived book could not come back without the user's help. */
+    data class NeedsBookFile(val problem: ArchiveProblem) : ReaderUiState
 }
 
 class ReaderViewModel(
@@ -101,8 +111,13 @@ class ReaderViewModel(
     private val themePreferences: ThemePreferences? = null,
     private val statsTracker: ReadingStatsTracker? = null,
     private val prefetcher: ChapterPrefetcher? = null,
-    targetParagraph: Int = -1
+    targetParagraph: Int = -1,
+    private val bookArchive: LocalBookArchive? = null
 ) : ViewModel() {
+
+    // The file the user last picked to restore from, kept so "Restore
+    // anyway" applies to that file rather than to the one that went missing.
+    private var pickedRestoreUri: Uri? = null
 
     // One-shot deep-jump target (full-text search → "open at the
     // matching paragraph"). Consumed on the first successful chapter
@@ -219,8 +234,27 @@ class ReaderViewModel(
 
     private fun loadChapterList() {
         viewModelScope.launch {
+            // Restore before anything reads chapters: the list itself can
+            // change if the user accepts a file that no longer matches.
+            var restored = false
+            if (bookArchive != null && bookArchive.isArchived(novelId)) {
+                if (!restoreArchived(fileUri = null, acceptChanges = false)) return@launch
+                restored = true
+            }
+            restored = restored || justRestored
+            justRestored = false
+
             try {
                 val dbChapters = repository.getChapters(novelId).first()
+                if (restored && dbChapters.isNotEmpty() &&
+                    dbChapters.none { it.id == currentChapterId }
+                ) {
+                    // The accepted file is shorter than the book was and the
+                    // saved chapter no longer exists; start from the last one.
+                    val fallback = dbChapters.last()
+                    currentChapterId = fallback.id
+                    currentChapterUrl = fallback.url
+                }
 
                 if (dbChapters.isNotEmpty()) {
                     chapterList = dbChapters
@@ -237,6 +271,58 @@ class ReaderViewModel(
             } catch (e: Exception) {
                 e.printStackTrace()
                 loadChapter()
+            }
+        }
+    }
+
+    private var justRestored = false
+
+    /**
+     * Bring an archived book's text back, showing [ReaderUiState.Restoring]
+     * meanwhile. Returns true when the chapters are readable; otherwise the
+     * state explains what the user can do and false is returned.
+     */
+    private suspend fun restoreArchived(fileUri: Uri?, acceptChanges: Boolean): Boolean {
+        val archive = bookArchive ?: return false
+        _uiState.value = ReaderUiState.Restoring
+        val result = if (fileUri != null) {
+            archive.restoreFromPickedFile(novelId, fileUri, acceptChanges)
+        } else {
+            archive.restore(novelId, acceptChanges = acceptChanges)
+        }
+        return when (result) {
+            is LocalBookArchive.RestoreResult.Restored,
+            LocalBookArchive.RestoreResult.NothingToRestore -> {
+                pickedRestoreUri = null
+                prefetcher?.clear()
+                true
+            }
+            else -> {
+                pickedRestoreUri = fileUri
+                _uiState.value = result.toProblem()
+                    ?.let { ReaderUiState.NeedsBookFile(it) }
+                    ?: ReaderUiState.Error("Couldn't restore this book.")
+                false
+            }
+        }
+    }
+
+    /** The user pointed at the archived book's file. */
+    fun restoreFromFile(uri: Uri) {
+        viewModelScope.launch {
+            if (restoreArchived(uri, acceptChanges = false)) {
+                justRestored = true
+                loadChapterList()
+            }
+        }
+    }
+
+    /** The user accepted a file whose text differs from what was archived. */
+    fun restoreAnyway() {
+        viewModelScope.launch {
+            if (restoreArchived(pickedRestoreUri, acceptChanges = true)) {
+                justRestored = true
+                loadChapterList()
             }
         }
     }
@@ -927,12 +1013,13 @@ class ReaderViewModel(
             themePreferences: ThemePreferences? = null,
             statsTracker: ReadingStatsTracker? = null,
             prefetcher: ChapterPrefetcher? = null,
-            targetParagraph: Int = -1
+            targetParagraph: Int = -1,
+            bookArchive: LocalBookArchive? = null
         ): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences, statsTracker, prefetcher, targetParagraph) as T
+                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences, statsTracker, prefetcher, targetParagraph, bookArchive) as T
                 }
             }
         }

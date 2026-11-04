@@ -66,6 +66,7 @@ fun NovelDetailScreen(
     )
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val isArchived by viewModel.isArchived.collectAsState()
     val estimatedTimeToFinish by viewModel.estimatedTimeToFinish.collectAsState()
     val downloadState by downloadManager.novelDownloadState.collectAsState()
     val downloadingChapters by viewModel.downloadingChapters.collectAsState()
@@ -208,6 +209,7 @@ fun NovelDetailScreen(
                             viewModel.startReadingFrom(chapter)
                         },
                         isLocalNovel = state.isLocalNovel,
+                        isArchived = isArchived,
                         downloadState = downloadState,
                         downloadingChapters = allDownloadingChapters,
                         exportingChapters = exportingChapters,

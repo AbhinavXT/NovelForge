@@ -17,6 +17,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import com.abhinavxt.novelforge.NovelReaderApplication
+import com.abhinavxt.novelforge.data.epub.DocumentFormat
+import com.abhinavxt.novelforge.ui.components.ArchiveProblemContent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -57,10 +64,22 @@ fun ReaderScreen(
     targetParagraph: Int = -1,
     onBackClick: () -> Unit,
     viewModel: ReaderViewModel = viewModel(
-        factory = ReaderViewModel.provideFactory(novelId, chapterId, chapterUrl, novelUrl = novelUrl, repository, themePreferences, statsTracker, chapterPrefetcher, targetParagraph)
+        factory = ReaderViewModel.provideFactory(
+            novelId, chapterId, chapterUrl, novelUrl = novelUrl, repository,
+            themePreferences, statsTracker, chapterPrefetcher, targetParagraph,
+            bookArchive = (LocalContext.current.applicationContext as? NovelReaderApplication)
+                ?.bookArchive
+        )
     )
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    // Locating an archived book's file. OpenDocument rather than GetContent:
+    // only it offers a grant that can outlive the process, which is what
+    // keeps the book archivable afterwards.
+    val locateFileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) viewModel.restoreFromFile(uri) }
     val scope = rememberCoroutineScope()
 
     // TTS state
@@ -175,6 +194,31 @@ fun ReaderScreen(
     when (val state = uiState) {
         is ReaderUiState.Loading -> {
             LoadingScreen()
+        }
+
+        is ReaderUiState.Restoring -> {
+            LoadingScreen(label = "Restoring book from its file…")
+        }
+
+        is ReaderUiState.NeedsBookFile -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    ArchiveProblemContent(
+                        problem = state.problem,
+                        onLocateFile = {
+                            locateFileLauncher.launch(DocumentFormat.PICKER_MIME_TYPES)
+                        },
+                        onRestoreAnyway = { viewModel.restoreAnyway() }
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(onClick = onBackClick) { Text("Back") }
+                }
+            }
         }
 
         is ReaderUiState.Error -> {
@@ -296,7 +340,7 @@ fun ReaderScreen(
 }
 
 @Composable
-private fun LoadingScreen() {
+private fun LoadingScreen(label: String = "Loading chapter...") {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -305,7 +349,7 @@ private fun LoadingScreen() {
             CircularProgressIndicator()
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Loading chapter...",
+                text = label,
                 style = MaterialTheme.typography.bodyMedium
             )
         }
