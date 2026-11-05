@@ -150,6 +150,10 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
 
+        // First, so everything below can log. Without it Logger stays silent
+        // even in debug builds.
+        Logger.init(this)
+
         // Give the QuickNovel-ported source layer an application context
         // (needed by the Cloudflare WebView resolver).
         com.abhinavxt.novelforge.data.source.nf.NfBridge.init(this)
