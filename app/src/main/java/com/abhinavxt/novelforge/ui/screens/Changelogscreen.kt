@@ -174,6 +174,17 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.1.2",
+        date = "Nov 2026",
+        changes = listOf(
+            "Anna's Archive downloads now run in the background - keep searching or leave the screen; a notification shows progress and opens the book when it's done",
+            "Each result shows its download: waiting, downloading, in your library, or tap to retry",
+            "Filter Anna's Archive results by language and type, and sort by newest, oldest or size",
+            "Tap a result to see other editions of the same book and pick the one you want",
+            "New \"Anna's Archive\" chip on the Search tab searches what you've typed"
+        )
+    ),
+    VersionEntry(
         version = "v2.1.1",
         date = "Nov 2026",
         changes = listOf(
