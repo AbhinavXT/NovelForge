@@ -174,10 +174,15 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     )
 
     object AnnasArchive : Screen(
-        route = "annas_archive",
+        route = "annas_archive?q={q}",
         title = "Anna's Archive",
         icon = Icons.Default.MenuBook
-    )
+    ) {
+        /** @param query searched as soon as the screen opens, when not blank. */
+        fun createRoute(query: String = ""): String =
+            if (query.isBlank()) "annas_archive"
+            else "annas_archive?q=${URLEncoder.encode(query.trim(), "UTF-8")}"
+    }
 
     object Browse : Screen(
         route = "browse",
@@ -321,6 +326,9 @@ fun NavigationHost(
                             networkMonitor = networkMonitor,
                             onBrowseClick = {
                                 navController.navigate(Screen.Browse.route)
+                            },
+                            onAnnasArchiveClick = { query ->
+                                navController.navigate(Screen.AnnasArchive.createRoute(query))
                             }
                         )
                     }
@@ -394,7 +402,7 @@ fun NavigationHost(
                                 navController.navigate(Screen.ImportFromUrl.createRoute(url))
                             },
                             onAnnasArchiveClick = {
-                                navController.navigate(Screen.AnnasArchive.route)
+                                navController.navigate(Screen.AnnasArchive.createRoute())
                             },
                             networkMonitor = networkMonitor
                         )
@@ -463,8 +471,19 @@ fun NavigationHost(
                     )
                 }
 
-                composable(Screen.AnnasArchive.route) {
+                composable(
+                    route = Screen.AnnasArchive.route,
+                    arguments = listOf(
+                        navArgument("q") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        }
+                    )
+                ) { backStackEntry ->
                     AnnasArchiveScreen(
+                        initialQuery = URLDecoder.decode(
+                            backStackEntry.arguments?.getString("q").orEmpty(), "UTF-8"
+                        ),
                         networkMonitor = networkMonitor,
                         onBackClick = { navController.popBackStack() },
                         onOpenNovel = { novelId ->

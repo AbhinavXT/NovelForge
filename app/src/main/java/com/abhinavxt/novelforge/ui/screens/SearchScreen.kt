@@ -62,6 +62,7 @@ fun SearchScreen(
     onNovelClick: (NovelPreview) -> Unit,
     networkMonitor: NetworkMonitor,
     onBrowseClick: () -> Unit = {},
+    onAnnasArchiveClick: (query: String) -> Unit = {},
     viewModel: SearchViewModel = viewModel(
         factory = SearchViewModel.provideFactory(
             repository,
@@ -115,6 +116,13 @@ fun SearchScreen(
                     selected = allSourcesMode,
                     onClick = { viewModel.selectAllSources() },
                     label = { Text("All sources") }
+                )
+                // Not a source like the others (whole EPUBs, not chapters), so
+                // it opens its own screen, carrying over whatever was typed.
+                FilterChip(
+                    selected = false,
+                    onClick = { onAnnasArchiveClick(searchQuery) },
+                    label = { Text("Anna's Archive") }
                 )
                 FilterChip(
                     selected = !allSourcesMode,

@@ -22,6 +22,33 @@ import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
+/**
+ * Search filters, as the site's own search form names them. An empty value
+ * means "any". Values are the site's: `lang=en`, `content=book_fiction`,
+ * `sort=newest`.
+ */
+data class AnnasFilters(
+    val language: String = "",
+    val content: String = "",
+    val sort: String = ""
+) {
+    companion object {
+        val LANGUAGES = listOf(
+            "" to "Any language", "en" to "English", "es" to "Spanish", "fr" to "French",
+            "de" to "German", "it" to "Italian", "pt" to "Portuguese", "ru" to "Russian",
+            "zh" to "Chinese", "ja" to "Japanese",
+        )
+        val CONTENTS = listOf(
+            "" to "Any type", "book_fiction" to "Fiction", "book_nonfiction" to "Non-fiction",
+            "book_comic" to "Comics",
+        )
+        val SORTS = listOf(
+            "" to "Most relevant", "newest" to "Newest", "oldest" to "Oldest",
+            "largest" to "Largest", "smallest" to "Smallest",
+        )
+    }
+}
+
 /** A failure worth showing the user as-is. */
 open class AnnasArchiveException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
@@ -72,14 +99,18 @@ class AnnasArchiveClient(
     // ── Search ──────────────────────────────────────────────────────────
 
     /** @param page 1-based. EPUB only, since that's what the importer reads. */
-    suspend fun search(query: String, page: Int): List<AnnasBook> = withContext(Dispatchers.IO) {
+    suspend fun search(
+        query: String,
+        page: Int,
+        filters: AnnasFilters = AnnasFilters()
+    ): List<AnnasBook> = withContext(Dispatchers.IO) {
         val preferred = prefs.baseUrl
         val mirrors = listOf(preferred) + AnnasArchivePrefs.KNOWN_MIRRORS.filter { it != preferred }
         var lastError: AnnasArchiveException? = null
 
         for (base in mirrors) {
             try {
-                val books = searchOn(base, query, page)
+                val books = searchOn(base, query, page, filters)
                 if (base != preferred) prefs.baseUrl = base
                 return@withContext books
             } catch (e: MirrorDown) {
@@ -96,11 +127,21 @@ class AnnasArchiveClient(
     /** The mirror itself is unusable (offline, parked), so the next one may do. */
     private class MirrorDown(message: String, cause: Throwable? = null) : Exception(message, cause)
 
-    private suspend fun searchOn(base: String, query: String, page: Int): List<AnnasBook> {
+    private suspend fun searchOn(
+        base: String,
+        query: String,
+        page: Int,
+        filters: AnnasFilters
+    ): List<AnnasBook> {
         val url = base.toHttpUrl().newBuilder()
             .addPathSegment("search")
             .addQueryParameter("q", query)
             .addQueryParameter("ext", "epub")
+            .apply {
+                if (filters.language.isNotEmpty()) addQueryParameter("lang", filters.language)
+                if (filters.content.isNotEmpty()) addQueryParameter("content", filters.content)
+                if (filters.sort.isNotEmpty()) addQueryParameter("sort", filters.sort)
+            }
             .apply { if (page > 1) addQueryParameter("page", page.toString()) }
             .build()
             .toString()
