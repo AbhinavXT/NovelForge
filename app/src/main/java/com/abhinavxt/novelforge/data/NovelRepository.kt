@@ -45,7 +45,9 @@ class NovelRepository(
      * needs a Context and a file parser, and the repository stays free of
      * both. Null in tests.
      */
-    private val restoreArchived: (suspend (novelId: String) -> Boolean)? = null
+    private val restoreArchived: (suspend (novelId: String) -> Boolean)? = null,
+    /** Imported books' formatting and contents. Null in tests. */
+    private val formatting: com.abhinavxt.novelforge.data.epub.BookFormattingStore? = null
 ) {
 
     private val novelDao = database.novelDao()
@@ -127,6 +129,17 @@ class NovelRepository(
     suspend fun isSourceUriInUse(uri: String): Boolean =
         novelDao.isSourceUriInUse(uri)
 
+    /** How an imported chapter looked in its EPUB; null for online chapters and plain books. */
+    suspend fun getChapterFormatting(chapterId: String): com.abhinavxt.novelforge.data.epub.ChapterFormatting? =
+        formatting?.getFormatting(chapterId)
+
+    /** An imported book's own table of contents; empty when it has none. */
+    suspend fun getBookToc(novelId: String): List<com.abhinavxt.novelforge.data.epub.TocEntry> =
+        formatting?.getToc(novelId).orEmpty()
+
+    /** Where a book's pictures are stored. */
+    fun bookImagesDir(novelId: String): java.io.File? = formatting?.imagesDir(novelId)
+
     suspend fun removeFromLibrary(novelId: String) {
         database.withTransaction {
             novelDao.deleteNovelById(novelId)
@@ -137,6 +150,7 @@ class NovelRepository(
             categoryDao.clearNovelCategories(novelId)       // Phase 6: category links
             updateDao.deleteForNovel(novelId)               // Phase 6: updates feed rows
         }
+        formatting?.clearAll(novelId)
         // Widget hook — if the removed novel was the widget's novel, the
         // callback will clear the widget. If not, it re-picks the most
         // recent progress. Either way, widget stays consistent.

@@ -44,6 +44,7 @@ class LocalBookArchive(
 
     private val novelDao = database.novelDao()
     private val chapterDao = database.chapterDao()
+    private val formatting = BookFormattingStore(appContext, database)
 
     sealed interface ArchiveResult {
         /** [freedBytes] approximates the stored text, UTF-16, before SQLite overhead. */
@@ -124,6 +125,7 @@ class LocalBookArchive(
                 chapterDao.deleteAllDownloadsForNovel(novelId)
                 novelDao.markArchived(novelId, System.currentTimeMillis(), fingerprint(fileTexts))
             }
+            formatting.clearFormatting(novelId)
             ArchiveResult.Archived(freedBytes = freedChars * 2)
         }
     }
@@ -170,7 +172,7 @@ class LocalBookArchive(
                     // Books from before v20 have no fingerprint. Chapter
                     // count and titles are the strongest evidence left.
                     ?: (rows.size == chapters.size &&
-                            rows.zip(chapters).all { (row, ch) -> row.title == ch.title })
+                            rows.zip(chapters).all { (row, ch) -> row.title == ch.title || row.title == ch.tocTitle })
                 if (!same) {
                     return@withLock RestoreResult.DifferentText(chapters.size, rows.size)
                 }
@@ -190,7 +192,7 @@ class LocalBookArchive(
                                 id = "${novelId}_ch$number",
                                 novelId = novelId,
                                 number = number,
-                                title = chapter.title,
+                                title = chapter.displayTitle,
                                 url = "local://$novelId/$number",
                                 isDownloaded = true,
                                 content = chapter.content,
@@ -208,6 +210,11 @@ class LocalBookArchive(
                     uri = if (rememberFile) fileUri?.toString() else null
                 )
             }
+            // Books imported before formatting existed gain it here.
+            formatting.saveFormatting(novelId, book) { number ->
+                existing[number]?.id ?: "${novelId}_ch$number"
+            }
+            formatting.saveToc(novelId, book.toc)
             Logger.d(TAG, "Restored ${chapters.size} chapters for $novelId")
             RestoreResult.Restored(chapters.size)
         }

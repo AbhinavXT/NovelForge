@@ -16,7 +16,11 @@ data class EpubBook(
     val author: String,
     val description: String,
     val coverImage: ByteArray?, // Cover image bytes (can be saved to file)
-    val chapters: List<EpubChapter>
+    val chapters: List<EpubChapter>,
+    /** The book's own table of contents, mapped onto [chapters]. Empty when it has none. */
+    val toc: List<TocEntry> = emptyList(),
+    /** Bytes of every image a chapter's [ChapterFormatting] refers to, by path in the EPUB. */
+    val images: Map<String, ByteArray> = emptyMap()
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -36,8 +40,19 @@ data class EpubBook(
 data class EpubChapter(
     val title: String,
     val content: String, // Plain text content (HTML stripped)
-    val order: Int
-)
+    val order: Int,
+    /** Italics, images, footnotes and so on, described beside [content]; null when there are none. */
+    val formatting: ChapterFormatting? = null,
+    /**
+     * The chapter's name in the book's own table of contents. Kept apart
+     * from [title], which books archived before fingerprints existed are
+     * still matched against on restore.
+     */
+    val tocTitle: String? = null
+) {
+    /** What the library shows for a newly imported chapter. */
+    val displayTitle: String get() = tocTitle ?: title
+}
 
 /**
  * Parser for EPUB files
@@ -70,7 +85,7 @@ class EpubParser(private val context: Context) {
     /**
      * Parse EPUB from InputStream
      */
-    private fun parseEpub(inputStream: InputStream): EpubBook? {
+    internal fun parseEpub(inputStream: InputStream): EpubBook? {
         val zipEntries = mutableMapOf<String, ByteArray>()
 
         // Read all ZIP entries into memory
@@ -101,15 +116,27 @@ class EpubParser(private val context: Context) {
         // Step 3: Extract cover image if available
         val coverImage = opfData.coverPath?.let { resolveEntry(zipEntries, opfDir, it) }
 
+        // Formatting and the table of contents are extras: whatever goes
+        // wrong with them, the chapters below must come out exactly as they
+        // always have, because archived books are checked against them.
+        val extras = try {
+            BookExtras(zipEntries, opfDir, opfData)
+        } catch (e: Exception) {
+            Logger.e(TAG, "Could not read styles or contents; importing text only", e)
+            null
+        }
+
         // Step 4: Parse chapters in spine order
         val chapters = mutableListOf<EpubChapter>()
         opfData.spineItems.forEachIndexed { index, spineItem ->
-            val chapterContent = resolveEntry(zipEntries, opfDir, spineItem.href)
+            val chapterKey = resolveEntryKey(zipEntries, opfDir, spineItem.href)
+            val chapterContent = chapterKey?.let { zipEntries[it] }
 
             if (chapterContent != null) {
                 val htmlContent = chapterContent.decodeToString()
                 val headingTitle = extractChapterTitle(htmlContent)
-                val plainText = extractTextFromHtml(htmlContent)
+                val body = prepareBody(htmlContent)
+                val plainText = bodyToText(body)
 
                 // Threshold lowered from 100. It exists to skip title pages and
                 // image-only front matter, but it used to be measured against
@@ -118,18 +145,25 @@ class EpubParser(private val context: Context) {
                 // measures actual prose, so the old number would have started
                 // discarding genuinely short chapters.
                 if (plainText.length > 40) {
+                    val order = chapters.size + 1
+                    val formatting = extras?.formatChapter(index, chapterKey, body, plainText, order)
                     chapters.add(
                         EpubChapter(
                             title = headingTitle
                                 ?: spineItem.title
-                                ?: "Chapter ${chapters.size + 1}",
+                                ?: "Chapter $order",
                             content = plainText,
-                            order = chapters.size + 1
+                            order = order,
+                            formatting = formatting,
+                            tocTitle = extras?.tocTitle(chapterKey)
                         )
                     )
+                } else {
+                    extras?.skipChapter(index, chapterKey, body)
                 }
             }
         }
+        val finished = extras?.finish(chapters)
 
         return EpubBook(
             title = opfData.title ?: "Unknown Title",
@@ -138,8 +172,227 @@ class EpubParser(private val context: Context) {
                 ?.let { com.abhinavxt.novelforge.util.HtmlText.stripHtml(it) }
                 ?: "",
             coverImage = coverImage,
-            chapters = chapters
+            chapters = finished?.chapters ?: chapters,
+            toc = finished?.toc.orEmpty(),
+            images = finished?.images.orEmpty()
         )
+    }
+
+    /**
+     * Everything beyond the plain text: stylesheets, images, footnotes and the
+     * table of contents. Built once per book; [formatChapter] runs for each
+     * kept chapter in order and [finish] once at the end.
+     */
+    private inner class BookExtras(
+        private val zipEntries: Map<String, ByteArray>,
+        opfDir: String,
+        opfData: OpfData
+    ) {
+        private val coverKey = opfData.coverPath?.let { resolvePath(zipEntries, opfDir, it) }
+        private val spineKeys = opfData.spineItems.map { resolveEntryKey(zipEntries, opfDir, it.href) }
+        private val spineIndexOf: Map<String, Int> = buildMap {
+            spineKeys.forEachIndexed { i, key -> if (key != null) putIfAbsent(key, i) }
+        }
+
+        private val classStyles: Map<String, CssStyle> = buildMap {
+            opfData.manifest.filter { it.mediaType == "text/css" }.forEach { item ->
+                val css = resolvePath(zipEntries, opfDir, item.href)?.let { zipEntries[it] } ?: return@forEach
+                EpubMarkup.parseClassStyles(css.decodeToString()).forEach { (cls, style) ->
+                    put(cls, get(cls)?.plus(style) ?: style)
+                }
+            }
+        }
+
+        private val rawToc: List<EpubToc.RawEntry> = readToc(opfData, opfDir)
+        private val anchorsWanted: Map<String, Set<String>> = rawToc
+            .filter { it.fragment != null }
+            .groupBy({ it.path }, { percentDecode(it.fragment!!) })
+            .mapValues { it.value.toSet() }
+
+        private val images = mutableMapOf<String, ByteArray>()
+        private val noteDocuments = mutableMapOf<String, org.jsoup.nodes.Document?>()
+
+        /** Where each spine item ended up. */
+        private val placed = mutableMapOf<Int, Placement>()
+        /** Spine indexes of items too short to be chapters, waiting for the next chapter. */
+        private val skipped = mutableListOf<Int>()
+        /** Images from skipped items, shown at the top of the next chapter. */
+        private val carriedImages = mutableListOf<ChapterImage>()
+
+        fun tocTitle(chapterKey: String): String? = rawToc
+            .firstOrNull { it.path == chapterKey && it.fragment == null }
+            ?.title?.takeIf { it.length <= 120 }
+
+        fun formatChapter(spineIndex: Int, key: String, body: String, text: String, order: Int): ChapterFormatting? {
+            skipped.forEach { placed[it] = Placement(order, emptyMap(), kept = false) }
+            skipped.clear()
+
+            val result = try {
+                markChapter(spineIndex, key, body, text)
+            } catch (e: Exception) {
+                Logger.e(TAG, "Formatting for $key could not be read; showing it plain", e)
+                null
+            }
+            placed[spineIndex] = Placement(order, result?.anchors ?: emptyMap(), kept = true)
+
+            var formatting = result?.formatting ?: ChapterFormatting()
+            if (carriedImages.isNotEmpty()) {
+                formatting = formatting.copy(images = carriedImages.toList() + formatting.images)
+                carriedImages.clear()
+            }
+            return formatting.takeUnless { it.isEmpty }
+        }
+
+        /** An item with too little text to be a chapter: keep its pictures for the next one. */
+        fun skipChapter(spineIndex: Int, key: String, body: String) {
+            skipped += spineIndex
+            try {
+                val (_, events) = EpubMarkup.markUp(body, EpubMarkup.Context(resolveImage = { imageKey(key, it) }))
+                events.filterIsInstance<EpubMarkup.Event.Image>()
+                    .forEach { carriedImages += ChapterImage(0, it.path, it.alt) }
+            } catch (e: Exception) {
+                Logger.e(TAG, "Images in $key could not be read", e)
+            }
+        }
+
+        private fun markChapter(spineIndex: Int, key: String, body: String, text: String): EpubMarkup.Result? {
+            val context = EpubMarkup.Context(
+                classStyles = classStyles,
+                resolveImage = { imageKey(key, it) },
+                resolveNote = { href, explicit, linkOffset -> noteText(spineIndex, key, body, href, explicit, linkOffset) },
+                wantedAnchors = anchorsWanted[key].orEmpty()
+            )
+            val (marked, events) = EpubMarkup.markUp(body, context)
+            if (events.isEmpty()) return null
+            return EpubMarkup.resolve(bodyToText(marked), text, events)
+        }
+
+        private fun imageKey(chapterKey: String, src: String): String? {
+            val key = resolvePath(zipEntries, chapterKey.substringBeforeLast('/', ""), src) ?: return null
+            if (key == coverKey) return null
+            val bytes = zipEntries[key] ?: return null
+            images[key] = bytes
+            return key
+        }
+
+        private fun noteText(
+            spineIndex: Int,
+            chapterKey: String,
+            body: String,
+            href: String,
+            explicit: Boolean,
+            linkOffset: Int
+        ): String? {
+            val fragment = href.substringAfter('#', "").takeIf { it.isNotEmpty() }?.let(::percentDecode)
+                ?: return null
+            val target = if (href.startsWith("#")) chapterKey
+            else resolvePath(zipEntries, chapterKey.substringBeforeLast('/', ""), href) ?: return null
+
+            // A link to something EARLIER is a note's link back to its
+            // reference, not a reference: the two look identical otherwise.
+            if (!explicit) {
+                val later = if (target == chapterKey) {
+                    val idAt = Regex("\\bid\\s*=\\s*[\"']" + Regex.escape(fragment) + "[\"']").find(body)?.range?.first
+                    idAt != null && idAt > linkOffset
+                } else {
+                    spineIndexOf[target]?.let { it > spineIndex } ?: true
+                }
+                if (!later) return null
+            }
+
+            val doc = noteDocuments.getOrPut(target) {
+                zipEntries[target]?.let { org.jsoup.Jsoup.parse(it.decodeToString()) }
+            } ?: return null
+            var element: org.jsoup.nodes.Element = doc.getElementById(fragment) ?: return null
+            // Targets are often an empty anchor or a bare label inside the
+            // note's paragraph; climb to the block that holds the note.
+            while (element.normalName() !in NOTE_BLOCKS || element.text().length < 3) {
+                element = element.parent() ?: break
+                if (element.normalName() == "body") return null
+            }
+            return element.text().takeIf { it.isNotBlank() }
+        }
+
+        private fun readToc(opfData: OpfData, opfDir: String): List<EpubToc.RawEntry> {
+            fun read(item: ManifestItem?, parse: (String, (String) -> String?) -> List<EpubToc.RawEntry>): List<EpubToc.RawEntry> {
+                val key = item?.let { resolvePath(zipEntries, opfDir, it.href) } ?: return emptyList()
+                val bytes = zipEntries[key] ?: return emptyList()
+                val dir = key.substringBeforeLast('/', "")
+                return parse(bytes.decodeToString()) { href -> resolvePath(zipEntries, dir, href) }
+            }
+            val nav = opfData.manifest.firstOrNull { it.properties.split(' ').contains("nav") }
+            val fromNav = try { read(nav, EpubToc::parseNav) } catch (e: Exception) { emptyList() }
+            if (fromNav.isNotEmpty()) return fromNav
+            val ncx = opfData.manifest.firstOrNull { it.id == opfData.spineToc }
+                ?: opfData.manifest.firstOrNull { it.mediaType == "application/x-dtbncx+xml" }
+            return try { read(ncx, EpubToc::parseNcx) } catch (e: Exception) { emptyList() }
+        }
+
+        fun finish(chapters: List<EpubChapter>): Finished {
+            var result = chapters
+            // Pictures after the last chapter (an illustrated back page)
+            // go at the end of it rather than nowhere.
+            if (carriedImages.isNotEmpty() && result.isNotEmpty()) {
+                val last = result.last()
+                val count = com.abhinavxt.novelforge.util.ParagraphSplitter.split(last.content).size
+                val previous = last.formatting ?: ChapterFormatting()
+                val formatting = previous.copy(images = previous.images + carriedImages.map { it.copy(beforeParagraph = count) })
+                result = result.dropLast(1) + last.copy(formatting = formatting)
+                carriedImages.clear()
+            }
+
+            val toc = rawToc.mapIndexedNotNull { i, entry ->
+                val spineIndex = spineIndexOf[entry.path] ?: return@mapIndexedNotNull null
+                val place = placed[spineIndex] ?: return@mapIndexedNotNull null
+                // A skipped item (a part title page) only earns a line when
+                // it heads a group of entries.
+                if (!place.kept && (rawToc.getOrNull(i + 1)?.depth ?: -1) <= entry.depth) return@mapIndexedNotNull null
+                val paragraph = entry.fragment?.let { place.anchors[percentDecode(it)] } ?: 0
+                TocEntry(entry.title, entry.depth, place.chapter, paragraph)
+            }
+
+            val used = result.mapNotNull { it.formatting }.flatMap { it.images }.map { it.path }.toSet()
+            return Finished(result, toc, images.filterKeys { it in used })
+        }
+    }
+
+    /** A spine item's chapter: its own when [kept], else the next one's. */
+    private class Placement(val chapter: Int, val anchors: Map<String, Int>, val kept: Boolean)
+
+    private class Finished(
+        val chapters: List<EpubChapter>,
+        val toc: List<TocEntry>,
+        val images: Map<String, ByteArray>
+    )
+
+    /**
+     * An href relative to [baseDir] -> its entry name in the ZIP, resolving
+     * `..` and percent-encoding. Used for images, notes and the contents; the
+     * chapters themselves keep going through [resolveEntryKey], unchanged.
+     */
+    private fun resolvePath(zipEntries: Map<String, ByteArray>, baseDir: String, href: String): String? {
+        val clean = href.substringBefore('#').substringBefore('?').trim()
+        if (clean.isEmpty() || clean.contains("://") || clean.startsWith("data:")) return null
+        for (raw in linkedSetOf(clean, percentDecode(clean))) {
+            val joined = if (raw.startsWith("/") || baseDir.isEmpty()) raw.removePrefix("/") else "$baseDir/$raw"
+            val normalized = normalizePath(joined)
+            if (normalized in zipEntries) return normalized
+        }
+        val fileName = percentDecode(clean).substringAfterLast('/')
+        if (fileName.isEmpty()) return null
+        return zipEntries.keys.firstOrNull { it.substringAfterLast('/') == fileName }
+    }
+
+    private fun normalizePath(path: String): String {
+        val parts = ArrayDeque<String>()
+        for (segment in path.split('/')) {
+            when (segment) {
+                "", "." -> Unit
+                ".." -> parts.removeLastOrNull()
+                else -> parts.addLast(segment)
+            }
+        }
+        return parts.joinToString("/")
     }
 
     /**
@@ -162,7 +415,14 @@ class EpubParser(private val context: Context) {
         zipEntries: Map<String, ByteArray>,
         opfDir: String,
         href: String
-    ): ByteArray? {
+    ): ByteArray? = resolveEntryKey(zipEntries, opfDir, href)?.let { zipEntries[it] }
+
+    /** The ZIP entry name [resolveEntry] finds. */
+    private fun resolveEntryKey(
+        zipEntries: Map<String, ByteArray>,
+        opfDir: String,
+        href: String
+    ): String? {
         val clean = href.substringBefore('#')
         val candidates = LinkedHashSet<String>()
         fun add(path: String) {
@@ -173,14 +433,14 @@ class EpubParser(private val context: Context) {
         add(clean)
 
         for (candidate in candidates) {
-            zipEntries[candidate]?.let { return it }
+            if (zipEntries.containsKey(candidate)) return candidate
         }
 
         val fileName = percentDecode(clean).substringAfterLast('/')
         if (fileName.isNotEmpty()) {
-            zipEntries.entries
-                .firstOrNull { it.key.substringAfterLast('/') == fileName }
-                ?.let { return it.value }
+            zipEntries.keys
+                .firstOrNull { it.substringAfterLast('/') == fileName }
+                ?.let { return it }
         }
         return null
     }
@@ -245,7 +505,17 @@ class EpubParser(private val context: Context) {
         val author: String?,
         val description: String?,
         val coverPath: String?,
-        val spineItems: List<SpineItem>
+        val spineItems: List<SpineItem>,
+        val manifest: List<ManifestItem> = emptyList(),
+        /** The spine's `toc` attribute: the manifest id of the NCX. */
+        val spineToc: String? = null
+    )
+
+    private data class ManifestItem(
+        val id: String,
+        val href: String,
+        val mediaType: String,
+        val properties: String
     )
 
     private data class SpineItem(
@@ -269,6 +539,8 @@ class EpubParser(private val context: Context) {
         var coverIdFromMeta: String? = null         // EPUB 2: <meta name="cover">
         var coverIdByGuess: String? = null          // filename/id heuristic
         val manifest = mutableMapOf<String, String>() // id -> href
+        val manifestItems = mutableListOf<ManifestItem>()
+        var spineToc: String? = null
         val spineIds = mutableListOf<String>()
 
         try {
@@ -344,6 +616,7 @@ class EpubParser(private val context: Context) {
 
                                 if (id != null && href != null) {
                                     manifest[id] = href
+                                    manifestItems += ManifestItem(id, href, mediaType.orEmpty(), properties.orEmpty())
 
                                     if (mediaType?.startsWith("image/") == true) {
                                         // EPUB 3 declares the cover explicitly.
@@ -357,6 +630,7 @@ class EpubParser(private val context: Context) {
                                     }
                                 }
                             }
+                            "spine" -> spineToc = parser.getAttributeValue(null, "toc")
                             "itemref" -> {
                                 val idref = parser.getAttributeValue(null, "idref")
                                 if (idref != null) {
@@ -418,9 +692,14 @@ class EpubParser(private val context: Context) {
             author = author,
             description = description,
             coverPath = coverPath,
-            spineItems = spineItems
+            spineItems = spineItems,
+            manifest = manifestItems,
+            spineToc = spineToc
         )
     }
+
+    /** Elements that can hold a footnote's text. */
+    private val NOTE_BLOCKS = setOf("p", "li", "div", "aside", "section", "dd", "td", "blockquote", "footer")
 
     private val HEAD_BLOCK = Regex("<head[^>]*>.*?</head>",
         setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
@@ -460,10 +739,18 @@ class EpubParser(private val context: Context) {
             .trim()
 
     /**
-     * Extract plain text from HTML content
-     * Strips all tags and normalizes whitespace
+     * Chapter text is [prepareBody] then [bodyToText]: tags stripped,
+     * entities decoded, whitespace normalised.
+     *
+     * Archived books are verified against this output, so it must keep
+     * returning exactly the same text for the same file. It is two steps
+     * only so that [EpubMarkup] can run the second on a marked-up body;
+     * together they do what the single function always did.
+     *
+     * This step: the chapter document without its <head> and the heading
+     * taken as its title.
      */
-    private fun extractTextFromHtml(html: String): String {
+    private fun prepareBody(html: String): String {
         // Remove <head> BEFORE stripping tags. Tag removal keeps element TEXT,
         // and <head> contains <title> -- so the chapter title was landing at the
         // top of the body text of EVERY imported chapter. Combined with the
@@ -475,12 +762,15 @@ class EpubParser(private val context: Context) {
         // Drop the leading heading too, but only the one we promoted to the
         // chapter title -- otherwise the reader shows the title in the app bar
         // and again as the first paragraph.
-        val body = if (extractChapterTitle(html) != null) {
+        return if (extractChapterTitle(html) != null) {
             HEADING_BLOCK.replaceFirst(withoutHead, "")
         } else {
             withoutHead
         }
+    }
 
+    /** Tags stripped, entities decoded, whitespace normalised. */
+    private fun bodyToText(body: String): String {
         return body
             // Remove scripts and styles
             .replace(Regex("<script[^>]*>.*?</script>", RegexOption.DOT_MATCHES_ALL), "")

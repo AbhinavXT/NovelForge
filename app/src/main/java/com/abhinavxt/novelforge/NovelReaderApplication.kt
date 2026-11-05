@@ -76,9 +76,15 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
         )
     }
 
+    /** Imported books' formatting, pictures and contents. */
+    val bookFormatting by lazy {
+        com.abhinavxt.novelforge.data.epub.BookFormattingStore(this, database)
+    }
+
     val repository: NovelRepository by lazy {
         NovelRepository(
             database = database,
+            formatting = bookFormatting,
             restoreArchived = { novelId ->
                 bookArchive.restore(novelId) is
                         com.abhinavxt.novelforge.data.epub.LocalBookArchive.RestoreResult.Restored

@@ -747,3 +747,24 @@ data class HistoryRowData(
     val readingTimeMs: Long,
     val completedAt: Long
 )
+/** Formatting and contents of imported books (v21). */
+@Dao
+interface BookFormattingDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFormatting(rows: List<ChapterFormattingEntity>)
+
+    @Query("SELECT json FROM chapter_formatting WHERE chapterId = :chapterId")
+    suspend fun getFormattingJson(chapterId: String): String?
+
+    @Query("DELETE FROM chapter_formatting WHERE novelId = :novelId")
+    suspend fun deleteFormattingForNovel(novelId: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertToc(rows: List<TocEntryEntity>)
+
+    @Query("SELECT * FROM book_toc WHERE novelId = :novelId ORDER BY position")
+    suspend fun getToc(novelId: String): List<TocEntryEntity>
+
+    @Query("DELETE FROM book_toc WHERE novelId = :novelId")
+    suspend fun deleteTocForNovel(novelId: String)
+}

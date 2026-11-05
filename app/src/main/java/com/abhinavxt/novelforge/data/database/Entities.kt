@@ -374,3 +374,32 @@ data class CodexScanInfoEntity(
     val scannedChapters: Int,
     val updatedAt: Long
 )
+/**
+ * How one chapter of an imported book looked: italics, images, footnotes.
+ * A [com.abhinavxt.novelforge.data.epub.ChapterFormatting] as JSON, kept
+ * apart from the chapter's text, which must stay plain. Goes with the text:
+ * dropped when a book is archived, written again when it is restored.
+ * NEW in v21.
+ */
+@Entity(tableName = "chapter_formatting", indices = [Index("novelId")])
+data class ChapterFormattingEntity(
+    @PrimaryKey
+    val chapterId: String,
+    val novelId: String,
+    val json: String
+)
+
+/**
+ * One line of an imported book's own table of contents, in book order.
+ * Points at a chapter number and paragraph, so it survives archiving like
+ * bookmarks do. NEW in v21.
+ */
+@Entity(tableName = "book_toc", primaryKeys = ["novelId", "position"])
+data class TocEntryEntity(
+    val novelId: String,
+    val position: Int,
+    val title: String,
+    val depth: Int,
+    val chapterNumber: Int,
+    val paragraph: Int
+)

@@ -23,6 +23,7 @@ class EpubImporter(
     private val novelDao = database.novelDao()
     private val chapterDao = database.chapterDao()
     private val parser = EpubParser(context)
+    private val formatting = BookFormattingStore(context, database)
 
     /**
      * Import result sealed class
@@ -302,7 +303,7 @@ class EpubImporter(
                 id = "${novelId}_ch${chapter.order}",
                 novelId = novelId,
                 number = chapter.order,
-                title = chapter.title,
+                title = chapter.displayTitle,
                 url = "local://$novelId/${chapter.order}", // Fake URL for local content
                 // An archived import keeps the row — numbering, title, and
                 // a place for bookmarks to point — but not the text.
@@ -315,6 +316,10 @@ class EpubImporter(
         // Step 6: Save to database
         novelDao.insertNovel(novelEntity)
         chapterDao.insertChapters(chapterEntities)
+        // Formatting and pictures go with the text; the contents list goes
+        // with the chapter list, which an archived import keeps too.
+        if (!archived) formatting.saveFormatting(novelId, epub) { number -> "${novelId}_ch$number" }
+        formatting.saveToc(novelId, epub.toc)
 
         return ImportResult.Success(
             novelId = novelId,
