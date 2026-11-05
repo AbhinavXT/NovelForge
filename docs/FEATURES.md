@@ -389,6 +389,8 @@ Quietly checks for new chapters in the background when you're on wifi. Off by de
 
 Use the system file picker (Library → top bar → "Import a book"). Three formats are supported: `.epub`, `.txt`, and `.md`.
 
+**From Anna's Archive.** Library → + → "Search Anna's Archive" searches for EPUBs; tapping a result downloads it and imports it exactly like a picked file. The first search may show the site's "I'm not a robot" check, which you complete once; it isn't asked again until its cookies expire. Members can enter their secret key (⚙ on that screen) to skip the check and use fast downloads. Without a key, files come from LibGen by the same MD5. Every download is checked against that MD5 before import. The site changes domains often: if search stops working, set a working mirror there too.
+
 **EPUB.** The app extracts:
 
 - Cover image

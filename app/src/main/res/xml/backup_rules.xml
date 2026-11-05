@@ -10,4 +10,6 @@
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>
 -->
+    <!-- Holds an Anna's Archive account key. -->
+    <exclude domain="sharedpref" path="annas_archive.xml"/>
 </full-backup-content>

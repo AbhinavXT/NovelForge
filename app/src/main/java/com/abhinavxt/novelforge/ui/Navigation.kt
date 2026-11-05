@@ -173,6 +173,12 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
         icon = Icons.Default.MenuBook
     )
 
+    object AnnasArchive : Screen(
+        route = "annas_archive",
+        title = "Anna's Archive",
+        icon = Icons.Default.MenuBook
+    )
+
     object Browse : Screen(
         route = "browse",
         title = "Browse",
@@ -387,6 +393,9 @@ fun NavigationHost(
                             onImportUrlClick = { url ->
                                 navController.navigate(Screen.ImportFromUrl.createRoute(url))
                             },
+                            onAnnasArchiveClick = {
+                                navController.navigate(Screen.AnnasArchive.route)
+                            },
                             networkMonitor = networkMonitor
                         )
 
@@ -451,6 +460,18 @@ fun NavigationHost(
                 composable(Screen.Changelog.route) {
                     ChangelogScreen(
                         onBackClick = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Screen.AnnasArchive.route) {
+                    AnnasArchiveScreen(
+                        networkMonitor = networkMonitor,
+                        onBackClick = { navController.popBackStack() },
+                        onOpenNovel = { novelId ->
+                            navController.navigate(
+                                Screen.Detail.createRoute(novelId, constructNovelUrl(novelId))
+                            )
+                        }
                     )
                 }
 

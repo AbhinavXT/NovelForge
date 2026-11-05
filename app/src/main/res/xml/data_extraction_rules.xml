@@ -5,15 +5,10 @@
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <!-- Holds an Anna's Archive account key. -->
+        <exclude domain="sharedpref" path="annas_archive.xml"/>
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="sharedpref" path="annas_archive.xml"/>
     </device-transfer>
-    -->
 </data-extraction-rules>
