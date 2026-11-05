@@ -12,4 +12,6 @@
 -->
     <!-- Holds an Anna's Archive account key. -->
     <exclude domain="sharedpref" path="annas_archive.xml"/>
+    <!-- Holds OPDS catalog passwords; the catalogs themselves are kept. -->
+    <exclude domain="sharedpref" path="opds_credentials.xml"/>
 </full-backup-content>

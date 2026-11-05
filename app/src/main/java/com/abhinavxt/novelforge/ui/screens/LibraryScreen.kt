@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.TravelExplore
+import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.ManageSearch
 import androidx.compose.material.icons.filled.MenuBook
@@ -118,6 +119,7 @@ fun LibraryScreen(
     /** Hands a pasted URL to the add-from-URL screen. */
     onImportUrlClick: (String) -> Unit = {},
     onAnnasArchiveClick: () -> Unit = {},
+    onCatalogsClick: () -> Unit = {},
     networkMonitor: NetworkMonitor,
     viewModel: LibraryViewModel = viewModel(
         factory = LibraryViewModel.provideFactory(repository, LocalContext.current)
@@ -499,6 +501,16 @@ fun LibraryScreen(
                         onClick = {
                             addMenuExpanded = false
                             onAnnasArchiveClick()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Browse book catalogs") },
+                        leadingIcon = {
+                            Icon(Icons.AutoMirrored.Filled.LibraryBooks, contentDescription = null)
+                        },
+                        onClick = {
+                            addMenuExpanded = false
+                            onCatalogsClick()
                         }
                     )
                     DropdownMenuItem(

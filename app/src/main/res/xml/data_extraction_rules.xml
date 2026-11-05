@@ -7,8 +7,10 @@
     <cloud-backup>
         <!-- Holds an Anna's Archive account key. -->
         <exclude domain="sharedpref" path="annas_archive.xml"/>
+        <exclude domain="sharedpref" path="opds_credentials.xml"/>
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="annas_archive.xml"/>
+        <exclude domain="sharedpref" path="opds_credentials.xml"/>
     </device-transfer>
 </data-extraction-rules>

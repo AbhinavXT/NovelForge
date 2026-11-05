@@ -5,8 +5,8 @@ import androidx.work.workDataOf
 import com.abhinavxt.novelforge.data.annas.AnnasBook
 import com.abhinavxt.novelforge.ui.viewmodel.AnnasArchiveViewModel.Companion.editionsOf
 import com.abhinavxt.novelforge.ui.viewmodel.AnnasArchiveViewModel.Companion.titleKey
-import com.abhinavxt.novelforge.ui.viewmodel.AnnasArchiveViewModel.Companion.toDownloadStates
-import com.abhinavxt.novelforge.ui.viewmodel.AnnasArchiveViewModel.DownloadState
+import com.abhinavxt.novelforge.worker.BookDownloadState as DownloadState
+import com.abhinavxt.novelforge.worker.BookDownloadWorker
 import com.abhinavxt.novelforge.worker.AnnasDownloadWorker
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -14,6 +14,10 @@ import org.junit.Test
 import java.util.UUID
 
 class AnnasArchiveViewModelTest {
+
+    private fun states(infos: List<WorkInfo>) =
+        BookDownloadWorker.statesByKey(infos, AnnasDownloadWorker.TAG_DOWNLOAD)
+
 
     private fun book(md5: Char, title: String, author: String = "") =
         AnnasBook(md5 = md5.toString().repeat(32), title = title, author = author)
@@ -57,22 +61,22 @@ class AnnasArchiveViewModelTest {
 
     @Test
     fun `work states map to download states by md5`() {
-        val states = toDownloadStates(
+        val states = states(
             listOf(
                 info('a', WorkInfo.State.ENQUEUED),
                 info(
                     'b', WorkInfo.State.RUNNING,
-                    progress = workDataOf(AnnasDownloadWorker.KEY_BYTES to 50L, AnnasDownloadWorker.KEY_TOTAL to 100L)
+                    progress = workDataOf(BookDownloadWorker.KEY_BYTES to 50L, BookDownloadWorker.KEY_TOTAL to 100L)
                 ),
                 info(
                     'c', WorkInfo.State.SUCCEEDED,
-                    output = workDataOf(AnnasDownloadWorker.KEY_NOVEL_ID to "local_1", AnnasDownloadWorker.KEY_RESULT_TITLE to "Dune")
+                    output = workDataOf(BookDownloadWorker.KEY_NOVEL_ID to "local_1", BookDownloadWorker.KEY_RESULT_TITLE to "Dune")
                 ),
                 info(
                     'd', WorkInfo.State.SUCCEEDED,
-                    output = workDataOf(AnnasDownloadWorker.KEY_DUPLICATE to true, AnnasDownloadWorker.KEY_RESULT_TITLE to "Emma")
+                    output = workDataOf(BookDownloadWorker.KEY_DUPLICATE to true, BookDownloadWorker.KEY_RESULT_TITLE to "Emma")
                 ),
-                info('e', WorkInfo.State.FAILED, output = workDataOf(AnnasDownloadWorker.KEY_ERROR to "No mirror")),
+                info('e', WorkInfo.State.FAILED, output = workDataOf(BookDownloadWorker.KEY_ERROR to "No mirror")),
                 info('f', WorkInfo.State.CANCELLED),
             )
         )
@@ -87,17 +91,17 @@ class AnnasArchiveViewModelTest {
 
     @Test
     fun `a retry in progress hides the failure before it, in either order`() {
-        val failed = info('a', WorkInfo.State.FAILED, output = workDataOf(AnnasDownloadWorker.KEY_ERROR to "x"))
+        val failed = info('a', WorkInfo.State.FAILED, output = workDataOf(BookDownloadWorker.KEY_ERROR to "x"))
         val retry = info('a', WorkInfo.State.ENQUEUED)
         val md5 = "a".repeat(32)
-        assertEquals(DownloadState.Queued, toDownloadStates(listOf(failed, retry))[md5])
-        assertEquals(DownloadState.Queued, toDownloadStates(listOf(retry, failed))[md5])
+        assertEquals(DownloadState.Queued, states(listOf(failed, retry))[md5])
+        assertEquals(DownloadState.Queued, states(listOf(retry, failed))[md5])
     }
 
     @Test
     fun `running progress without a size reports no total`() {
-        val states = toDownloadStates(
-            listOf(info('a', WorkInfo.State.RUNNING, progress = workDataOf(AnnasDownloadWorker.KEY_BYTES to 10L, AnnasDownloadWorker.KEY_TOTAL to -1L)))
+        val states = states(
+            listOf(info('a', WorkInfo.State.RUNNING, progress = workDataOf(BookDownloadWorker.KEY_BYTES to 10L, BookDownloadWorker.KEY_TOTAL to -1L)))
         )
         assertEquals(DownloadState.Running(10, null), states["a".repeat(32)])
     }
