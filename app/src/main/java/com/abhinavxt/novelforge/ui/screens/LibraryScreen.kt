@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.ManageSearch
 import androidx.compose.material.icons.filled.MenuBook
@@ -116,6 +117,7 @@ fun LibraryScreen(
     onTextSearchClick: () -> Unit = {},
     /** Hands a pasted URL to the add-from-URL screen. */
     onImportUrlClick: (String) -> Unit = {},
+    onAnnasArchiveClick: () -> Unit = {},
     networkMonitor: NetworkMonitor,
     viewModel: LibraryViewModel = viewModel(
         factory = LibraryViewModel.provideFactory(repository, LocalContext.current)
@@ -489,6 +491,16 @@ fun LibraryScreen(
                             }
                         )
                     }
+                    DropdownMenuItem(
+                        text = { Text("Search Anna's Archive") },
+                        leadingIcon = {
+                            Icon(Icons.Default.TravelExplore, contentDescription = null)
+                        },
+                        onClick = {
+                            addMenuExpanded = false
+                            onAnnasArchiveClick()
+                        }
+                    )
                     DropdownMenuItem(
                         text = { Text("Save a web page") },
                         leadingIcon = {

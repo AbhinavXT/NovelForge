@@ -174,6 +174,17 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.1.1",
+        date = "Nov 2026",
+        changes = listOf(
+            "Search Anna's Archive for EPUBs and add them to your library in one tap (Library → + → Search Anna's Archive)",
+            "If the site asks you to confirm you're a person, the check opens in the app; you shouldn't be asked again for a while",
+            "Members can add their secret key (⚙ on that screen) to skip the check and use fast downloads; otherwise files come from LibGen",
+            "Every download is checked against its fingerprint before it's imported",
+            "The site changes addresses often: NovelForge tries the known ones and you can set a working mirror yourself"
+        )
+    ),
+    VersionEntry(
         version = "v2.1.0",
         date = "Nov 2026",
         changes = listOf(
