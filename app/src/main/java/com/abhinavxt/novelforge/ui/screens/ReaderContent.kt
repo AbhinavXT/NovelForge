@@ -58,7 +58,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalContext
@@ -67,14 +66,12 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.platform.TextToolbar
 import androidx.compose.ui.platform.TextToolbarStatus
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.abhinavxt.novelforge.data.DictionaryState
@@ -88,6 +85,17 @@ import com.abhinavxt.novelforge.data.model.TapAction
 import com.abhinavxt.novelforge.data.database.HighlightEntity
 import com.abhinavxt.novelforge.ui.components.QuickSettingsSheet
 import com.abhinavxt.novelforge.ui.components.PagedReaderContent
+import com.abhinavxt.novelforge.ui.components.BookImage
+import com.abhinavxt.novelforge.ui.components.FootnoteDialog
+import com.abhinavxt.novelforge.ui.components.ParagraphFormat
+import com.abhinavxt.novelforge.ui.components.QUOTE_INDENT_DP
+import com.abhinavxt.novelforge.ui.components.ReaderFormatting
+import com.abhinavxt.novelforge.ui.components.IMAGE_SPACING
+import com.abhinavxt.novelforge.ui.components.addBookFormatting
+import com.abhinavxt.novelforge.ui.components.forBlock
+import com.abhinavxt.novelforge.ui.components.sentenceRange
+import com.abhinavxt.novelforge.data.epub.BlockStyle
+import com.abhinavxt.novelforge.data.epub.Footnote
 import com.abhinavxt.novelforge.ui.viewmodel.ReaderChapterData
 import com.abhinavxt.novelforge.ui.viewmodel.StitchedChapter
 import com.abhinavxt.novelforge.ui.viewmodel.StitchTailState
@@ -229,7 +237,8 @@ internal fun ReaderContent(
                     number = chapter.chapterNumber,
                     paragraphs = chapter.paragraphs,
                     content = chapter.content,
-                    startIndex = 0
+                    startIndex = 0,
+                    formatting = chapter.formatting
                 )
             )
             var offset = chapter.paragraphs.size
@@ -241,7 +250,8 @@ internal fun ReaderContent(
                         number = stitched.nav.number,
                         paragraphs = stitched.paragraphs,
                         content = stitched.content,
-                        startIndex = offset + 1  // +1 = divider item
+                        startIndex = offset + 1,  // +1 = divider item
+                        formatting = stitched.formatting
                     )
                 )
                 offset += 1 + stitched.paragraphs.size
@@ -327,6 +337,10 @@ internal fun ReaderContent(
     // "Pronounce" from the selection toolbar — holds the selected word
     // while the add-pronunciation dialog is open. Null = dialog closed.
     var pronunciationWord by remember { mutableStateOf<String?>(null) }
+
+    // A footnote opened by tapping its reference. Null = closed.
+    var openNote by remember { mutableStateOf<Footnote?>(null) }
+    val showNote: (Footnote) -> Unit = { note -> openNote = note }
 
     // Wrap onLookupWord to also clear selection
     val lookupWordAndClearSelection: (String) -> Unit = { word ->
@@ -653,6 +667,8 @@ internal fun ReaderContent(
                 // Paged mode — horizontal pages with swipe + tap-to-turn
                 PagedReaderContent(
                     paragraphs = chapter.paragraphs,
+                    formatting = chapter.formatting,
+                    onFootnoteClick = showNote,
                     settings = settings,
                     colors = colors,
                     savedParagraphIndex = chapter.savedParagraphIndex,
@@ -821,6 +837,8 @@ internal fun ReaderContent(
                             BookmarkableParagraph(
                                 paragraph = paragraph,
                                 index = index,
+                                format = seg.formatting?.get(index),
+                                onNoteClick = showNote,
                                 selectionKey = selectionKey,
                                 isInLibrary = isInLibrary,
                                 isCurrentTTSParagraph = isCurrentParagraph,
@@ -1002,6 +1020,17 @@ internal fun ReaderContent(
             onDismiss = { pronunciationWord = null }
         )
     }
+
+    // Footnote popup — opened by tapping a note reference in either mode
+    openNote?.let { note ->
+        FootnoteDialog(
+            note = note,
+            textColor = colors.text,
+            containerColor = colors.background,
+            fontSize = settings.fontSize,
+            onDismiss = { openNote = null }
+        )
+    }
 }
 
 /**
@@ -1015,6 +1044,8 @@ internal fun ReaderContent(
 private fun BookmarkableParagraph(
     paragraph: String,
     index: Int,
+    format: ParagraphFormat? = null,
+    onNoteClick: ((Footnote) -> Unit)? = null,
     selectionKey: Int,
     isInLibrary: Boolean,
     isCurrentTTSParagraph: Boolean,
@@ -1047,88 +1078,83 @@ private fun BookmarkableParagraph(
         )
     }
 
-    CompositionLocalProvider(LocalTextToolbar provides textToolbar) {
-        key(selectionKey) {
-            SelectionContainer {
-                if (isCurrentTTSParagraph) {
-                    HighlightedParagraph(
-                        paragraph = paragraph,
-                        currentSentenceIndex = ttsManager.currentSentenceInParagraph.collectAsState().value,
-                        textColor = colors.text,
-                        highlightColor = colors.text.copy(alpha = 0.15f),
-                        fontSize = settings.fontSize,
-                        lineSpacing = settings.lineSpacing,
-                        fontFamily = settings.font.toFontFamily(),
-                        justify = settings.justifyText,
-                        indent = settings.paragraphIndent,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-                } else {
+    Column(Modifier.fillMaxWidth()) {
+        // Pictures sit outside the selectable text: they can't be copied,
+        // and a long-press on one shouldn't start a selection.
+        format?.imagesBefore?.forEach { image ->
+            BookImage(image, Modifier.padding(bottom = IMAGE_SPACING))
+        }
+
+        CompositionLocalProvider(LocalTextToolbar provides textToolbar) {
+            key(selectionKey) {
+                SelectionContainer {
                     // In-book find occurrences for this paragraph.
                     // remember-ed: the scan reruns only when the text
                     // or query changes, not on every recomposition.
                     val searchRanges = remember(paragraph, searchQuery) {
                         MatchHighlight.findOccurrences(paragraph, searchQuery)
                     }
+                    val ttsSentence = if (isCurrentTTSParagraph) {
+                        ttsManager.currentSentenceInParagraph.collectAsState().value
+                    } else -1
 
-                    if (highlights.isNotEmpty() || searchRanges.isNotEmpty()) {
-                        // Highlight overlays + search matches share one
-                        // AnnotatedString. Search spans are added LAST so
-                        // they win where the two overlap — a find match
-                        // must stay visible inside a yellow highlight.
-                        val annotatedText = buildAnnotatedString {
-                            append(paragraph)
-                            highlights.forEach { hl ->
-                                val s = hl.startOffset.coerceIn(0, paragraph.length)
-                                val e = hl.endOffset.coerceIn(s, paragraph.length)
-                                if (s < e) {
-                                    addStyle(
-                                        SpanStyle(background = getHighlightColor(hl.color)),
-                                        s, e
-                                    )
-                                }
-                            }
-                            with(MatchHighlight) {
-                                addSearchSpans(
-                                    ranges = searchRanges,
-                                    activeRange = activeSearchRange,
-                                    textColor = colors.text,
-                                    backgroundColor = colors.background
+                    // One AnnotatedString, layered bottom to top: the
+                    // book's own formatting, the TTS sentence, highlights,
+                    // then search matches, so a find match stays visible
+                    // inside a highlight. The text itself is never changed.
+                    val noteColor = MaterialTheme.colorScheme.primary
+                    val annotatedText = buildAnnotatedString {
+                        append(paragraph)
+                        addBookFormatting(format, noteColor, onNoteClick)
+                        sentenceRange(paragraph, ttsSentence)?.let { r ->
+                            addStyle(
+                                SpanStyle(background = colors.text.copy(alpha = 0.15f)),
+                                r.first, r.last + 1
+                            )
+                        }
+                        highlights.forEach { hl ->
+                            val s = hl.startOffset.coerceIn(0, paragraph.length)
+                            val e = hl.endOffset.coerceIn(s, paragraph.length)
+                            if (s < e) {
+                                addStyle(
+                                    SpanStyle(background = getHighlightColor(hl.color)),
+                                    s, e
                                 )
                             }
                         }
-                        Text(
-                            text = annotatedText,
-                            color = colors.text,
-                            fontSize = settings.fontSize.sp,
-                            fontFamily = settings.font.toFontFamily(),
-                            lineHeight = (settings.fontSize * settings.lineSpacing).sp,
-                            textAlign = if (settings.justifyText) TextAlign.Justify else TextAlign.Start,
-                            style = TextStyle(
-                                textIndent = if (settings.paragraphIndent) {
-                                    TextIndent(firstLine = (settings.fontSize * 1.5).sp)
-                                } else TextIndent.None
-                            ),
-                            modifier = Modifier.padding(bottom = 16.dp)
-                        )
-                    } else {
-                        Text(
-                            text = paragraph,
-                            color = colors.text,
-                            fontSize = settings.fontSize.sp,
-                            fontFamily = settings.font.toFontFamily(),
-                            lineHeight = (settings.fontSize * settings.lineSpacing).sp,
-                            textAlign = if (settings.justifyText) TextAlign.Justify else TextAlign.Start,
-                            style = TextStyle(
-                                textIndent = if (settings.paragraphIndent) {
-                                    TextIndent(firstLine = (settings.fontSize * 1.5).sp)
-                                } else TextIndent.None
-                            ),
-                            modifier = Modifier.padding(bottom = 16.dp)
-                        )
+                        with(MatchHighlight) {
+                            addSearchSpans(
+                                ranges = searchRanges,
+                                activeRange = activeSearchRange,
+                                textColor = colors.text,
+                                backgroundColor = colors.background
+                            )
+                        }
                     }
+                    val block = format?.block
+                    Text(
+                        text = annotatedText,
+                        color = colors.text,
+                        style = TextStyle(
+                            fontSize = settings.fontSize.sp,
+                            fontFamily = settings.font.toFontFamily(),
+                            lineHeight = (settings.fontSize * settings.lineSpacing).sp,
+                            textAlign = if (settings.justifyText) TextAlign.Justify else TextAlign.Start,
+                            textIndent = if (settings.paragraphIndent) {
+                                TextIndent(firstLine = (settings.fontSize * 1.5).sp)
+                            } else TextIndent.None
+                        ).forBlock(block),
+                        modifier = Modifier.padding(
+                            start = if (block == BlockStyle.QUOTE) QUOTE_INDENT_DP.dp else 0.dp,
+                            bottom = 16.dp
+                        )
+                    )
                 }
             }
+        }
+
+        format?.imagesAfter?.forEach { image ->
+            BookImage(image, Modifier.padding(bottom = IMAGE_SPACING))
         }
     }
 }
@@ -1257,66 +1283,6 @@ private class ReaderTextToolbar(
         private const val MENU_BOOKMARK = 4
         private const val MENU_PRONOUNCE = 5
     }
-}
-
-/**
- * Paragraph with highlighted current sentence for TTS
- */
-@Composable
-private fun HighlightedParagraph(
-    paragraph: String,
-    currentSentenceIndex: Int,
-    textColor: Color,
-    highlightColor: Color,
-    fontSize: Int,
-    lineSpacing: Float = 1.6f,
-    fontFamily: FontFamily,
-    justify: Boolean = true,
-    indent: Boolean = false,
-    modifier: Modifier = Modifier
-) {
-
-    // Split paragraph into sentences
-    val sentences = remember(paragraph) {
-        paragraph.split(Regex("(?<=[.!?])\\s+"))
-            .filter { it.isNotBlank() }
-    }
-
-    val annotatedString = buildAnnotatedString {
-        sentences.forEachIndexed { index, sentence ->
-            if (index == currentSentenceIndex) {
-                // Highlight current sentence
-                withStyle(
-                    style = SpanStyle(
-                        background = highlightColor
-                    )
-                ) {
-                    append(sentence)
-                }
-            } else {
-                append(sentence)
-            }
-
-            // Add space between sentences (except after last)
-            if (index < sentences.size - 1) {
-                append(" ")
-            }
-        }
-    }
-
-    Text(
-        text = annotatedString,
-        color = textColor,
-        fontSize = fontSize.sp,
-        fontFamily = fontFamily,
-        lineHeight = (fontSize * lineSpacing).sp,
-        textAlign = if (justify) TextAlign.Justify else TextAlign.Start,
-        style = TextStyle(
-            textIndent = if (indent) TextIndent(firstLine = (fontSize * 1.5).sp)
-            else TextIndent.None
-        ),
-        modifier = modifier
-    )
 }
 
 /**
@@ -1524,7 +1490,8 @@ internal data class ReaderSegment(
     val number: Int,
     val paragraphs: List<String>,
     val content: String,
-    val startIndex: Int
+    val startIndex: Int,
+    val formatting: ReaderFormatting? = null
 )
 
 /**

@@ -13,6 +13,7 @@ import com.abhinavxt.novelforge.data.ThemePreferences
 import com.abhinavxt.novelforge.data.database.HighlightEntity
 import com.abhinavxt.novelforge.data.epub.LocalBookArchive
 import com.abhinavxt.novelforge.ui.components.ArchiveProblem
+import com.abhinavxt.novelforge.ui.components.ReaderFormatting
 import com.abhinavxt.novelforge.ui.components.toProblem
 import com.abhinavxt.novelforge.data.model.Chapter
 import com.abhinavxt.novelforge.data.model.ReaderSettings
@@ -25,6 +26,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 // Navigation info for a chapter
 data class ChapterNav(
@@ -43,7 +46,9 @@ data class ChapterNav(
 data class StitchedChapter(
     val nav: ChapterNav,
     val paragraphs: List<String>,
-    val content: String
+    val content: String,
+    /** The book's own formatting, for imported EPUBs that kept it. */
+    val formatting: ReaderFormatting? = null
 )
 
 /**
@@ -84,7 +89,9 @@ data class ReaderChapterData(
     val nextChapter: ChapterNav?,
     val isFirstChapter: Boolean,
     val isLastChapter: Boolean,
-    val savedParagraphIndex: Int = 0  // Which paragraph user was reading
+    val savedParagraphIndex: Int = 0,  // Which paragraph user was reading
+    /** The book's own formatting, for imported EPUBs that kept it. */
+    val formatting: ReaderFormatting? = null
 )
 
 sealed interface ReaderUiState {
@@ -347,6 +354,24 @@ class ReaderViewModel(
         return com.abhinavxt.novelforge.util.ParagraphSplitter.split(content)
     }
 
+    /**
+     * An imported book's formatting for this chapter, matched to the text
+     * being shown. Null for web chapters, books imported before formatting
+     * was kept, or anything unreadable: the chapter then shows plain.
+     */
+    private suspend fun loadFormatting(chapterId: String, paragraphs: List<String>): ReaderFormatting? =
+        try {
+            val stored = repository.getChapterFormatting(chapterId)
+            if (stored == null) null else withContext(Dispatchers.IO) {
+                ReaderFormatting.build(stored, paragraphs, repository.bookImagesDir(novelId))
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.e("Could not load formatting for $chapterId", e)
+            null
+        }
+
     private var autoRetryEnabled = false
     private val maxAutoRetries = 3
     private var autoRetryCount = 0
@@ -423,7 +448,8 @@ class ReaderViewModel(
                         nextChapter = nextChapter,
                         isFirstChapter = isFirst,
                         isLastChapter = isLast,
-                        savedParagraphIndex = savedParagraphIndex
+                        savedParagraphIndex = savedParagraphIndex,
+                        formatting = loadFormatting(currentChapterId, paragraphs)
                     )
 
                     _uiState.value = ReaderUiState.Success(
@@ -840,10 +866,17 @@ class ReaderViewModel(
                 // were loading — if so, this result belongs to a dead window.
                 val cur = _uiState.value as? ReaderUiState.Success
                 if (content != null && cur?.chapter?.chapterId == state.chapter.chapterId) {
+                    val paragraphs = splitIntoParagraphs(content)
+                    val formatting = loadFormatting(next.id, paragraphs)
+                    // Re-check: loading the formatting suspended too.
+                    if ((_uiState.value as? ReaderUiState.Success)?.chapter?.chapterId != state.chapter.chapterId) {
+                        return@launch
+                    }
                     _stitchedChapters.value = _stitchedChapters.value + StitchedChapter(
                         nav = next.toChapterNav(),
-                        paragraphs = splitIntoParagraphs(content),
-                        content = content
+                        paragraphs = paragraphs,
+                        content = content,
+                        formatting = formatting
                     )
                     // Keep the prefetch pipeline warm past the new window end
                     prefetcher?.prefetchAround(

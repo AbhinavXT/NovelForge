@@ -22,9 +22,15 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.MaterialTheme
+import coil.compose.AsyncImage
+import com.abhinavxt.novelforge.data.epub.BlockStyle
+import com.abhinavxt.novelforge.data.epub.Footnote
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
@@ -51,7 +57,8 @@ import kotlin.math.abs
  *  1. Measure the available content height (screen height minus top/bottom bars minus padding)
  *  2. For each paragraph, measure its rendered height using TextMeasurer
  *  3. Greedily fill pages: keep adding paragraphs until the next one would overflow
- *  4. Store the result as a List<List<String>> (pages → paragraphs)
+ *  4. Store the result as pages of [PageItem]s (paragraph indexes and
+ *     the book's pictures, each measured at the size it is drawn)
  *
  * This recalculates whenever font size, line spacing, margins, or screen
  * dimensions change. The pager state tracks the current page index, and
@@ -70,6 +77,9 @@ import kotlin.math.abs
 @Composable
 fun PagedReaderContent(
     paragraphs: List<String>,
+    /** The book's own formatting; null shows plain text. */
+    formatting: ReaderFormatting? = null,
+    onFootnoteClick: ((Footnote) -> Unit)? = null,
     settings: ReaderSettings,
     colors: ThemeColors,
     savedParagraphIndex: Int,
@@ -109,21 +119,42 @@ fun PagedReaderContent(
         TextStyle(
             fontSize = settings.fontSize.sp,
             lineHeight = (settings.fontSize * settings.lineSpacing).sp,
-            fontFamily = settings.font.toFontFamily()
+            fontFamily = settings.font.toFontFamily(),
+            textAlign = TextAlign.Justify
         )
     }
+    val noteColor = MaterialTheme.colorScheme.primary
+    val quoteIndentPx = with(density) { QUOTE_INDENT_DP.dp.toPx() }
+    val imageSpacingPx = with(density) { IMAGE_SPACING.toPx() }
 
     // ── Pagination: split paragraphs into pages ─────────────────
     // Recalculates when any display parameter changes.
     val pages = remember(
-        paragraphs, settings.fontSize, settings.lineSpacing,
+        paragraphs, formatting, settings.fontSize, settings.lineSpacing,
         settings.font, settings.horizontalMargin,
         contentHeightPx, contentWidthPx
     ) {
         paginateParagraphs(
             paragraphs = paragraphs,
-            textMeasurer = textMeasurer,
-            textStyle = textStyle,
+            measureParagraph = { index, widthPx ->
+                val format = formatting?.get(index)
+                textMeasurer.measure(
+                    // Styles change widths (bold) and heights (superscript),
+                    // so measure what is drawn. Links don't affect layout.
+                    text = buildAnnotatedString {
+                        append(paragraphs[index])
+                        addBookFormatting(format, noteColor, null)
+                    },
+                    style = textStyle.forBlock(format?.block),
+                    constraints = Constraints(
+                        maxWidth = (widthPx - if (format?.block == BlockStyle.QUOTE) quoteIndentPx else 0f)
+                            .toInt().coerceAtLeast(100)
+                    )
+                ).size.height.toFloat()
+            },
+            imagesBefore = { formatting?.get(it)?.imagesBefore.orEmpty() },
+            imagesAfter = { formatting?.get(it)?.imagesAfter.orEmpty() },
+            imageSize = { image -> imageDisplaySize(image, contentWidthPx, contentHeightPx - imageSpacingPx, density) },
             maxHeightPx = contentHeightPx,
             maxWidthPx = contentWidthPx,
             paragraphSpacingPx = with(density) { 16.dp.toPx() }
@@ -156,20 +187,9 @@ fun PagedReaderContent(
     )
 
     // ── In-book find support ────────────────────────────────────
-    // Prefix sums: pageStartIndices[p] = chapter-level index of the
-    // first paragraph on page p. Lets a rendered paragraph know its
-    // chapter index (for active-match emphasis) without indexOf
-    // lookups, which break on duplicate paragraph strings.
-    val pageStartIndices = remember(pages) {
-        buildList {
-            var acc = 0
-            pages.forEach { page ->
-                add(acc)
-                acc += page.size
-            }
-        }
-    }
-
+    // Pages hold paragraph indexes, so a rendered paragraph knows its
+    // chapter index (for active-match emphasis) without indexOf lookups,
+    // which break on duplicate paragraph strings.
     // Turn to the page containing the requested match paragraph.
     // Keyed on the whole request pair — its monotonic id makes
     // repeat jumps to the same paragraph re-trigger.
@@ -184,11 +204,7 @@ fun PagedReaderContent(
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage }.collect { pageIndex ->
             if (pageIndex in pages.indices) {
-                val firstParagraphOnPage = pages[pageIndex].firstOrNull()
-                val paragraphIndex = paragraphs.indexOf(firstParagraphOnPage)
-                if (paragraphIndex >= 0) {
-                    onParagraphIndexChanged(paragraphIndex)
-                }
+                firstParagraphOf(pages, pageIndex)?.let(onParagraphIndexChanged)
             }
         }
     }
@@ -308,45 +324,53 @@ fun PagedReaderContent(
                 Column(
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    // Render each paragraph on this page
-                    val pageParagraphs = pages.getOrNull(pageIndex) ?: emptyList()
-                    val pageStart = pageStartIndices.getOrElse(pageIndex) { 0 }
-                    pageParagraphs.forEachIndexed { i, paragraph ->
-                        // In-book find: mark occurrences; the active
-                        // match gets inverted emphasis only on the
-                        // paragraph that actually holds it.
-                        val annotated = if (searchQuery.length >= MatchHighlight.MIN_QUERY_LENGTH) {
-                            MatchHighlight.annotateMatches(
-                                text = paragraph,
-                                query = searchQuery,
-                                activeRange = if (pageStart + i == activeSearchParagraph) {
-                                    activeSearchRange
-                                } else null,
-                                textColor = colors.text,
-                                backgroundColor = colors.background
-                            )
-                        } else null
-
-                        if (annotated != null) {
-                            Text(
-                                text = annotated,
-                                color = colors.text,
-                                fontSize = settings.fontSize.sp,
-                                fontFamily = settings.font.toFontFamily(),
-                                lineHeight = (settings.fontSize * settings.lineSpacing).sp,
-                                textAlign = TextAlign.Justify,
-                                modifier = Modifier.padding(bottom = 16.dp)
-                            )
-                        } else {
-                            Text(
-                                text = paragraph,
-                                color = colors.text,
-                                fontSize = settings.fontSize.sp,
-                                fontFamily = settings.font.toFontFamily(),
-                                lineHeight = (settings.fontSize * settings.lineSpacing).sp,
-                                textAlign = TextAlign.Justify,
-                                modifier = Modifier.padding(bottom = 16.dp)
-                            )
+                    // Render this page's paragraphs and pictures
+                    pages.getOrNull(pageIndex).orEmpty().forEach { item ->
+                        when (item) {
+                            is PageItem.Picture -> {
+                                val (w, h) = item.sizePx
+                                AsyncImage(
+                                    model = item.image.file,
+                                    contentDescription = item.image.alt,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .align(Alignment.CenterHorizontally)
+                                        .padding(bottom = IMAGE_SPACING)
+                                        .size(with(density) { w.toDp() }, with(density) { h.toDp() })
+                                )
+                            }
+                            is PageItem.Paragraph -> {
+                                val index = item.index
+                                val paragraph = paragraphs[index]
+                                val format = formatting?.get(index)
+                                // Book formatting first, then in-book find
+                                // marks on top; the active match gets
+                                // inverted emphasis only on the paragraph
+                                // that actually holds it.
+                                val annotated = buildAnnotatedString {
+                                    append(paragraph)
+                                    addBookFormatting(format, noteColor, onFootnoteClick)
+                                    if (searchQuery.length >= MatchHighlight.MIN_QUERY_LENGTH) {
+                                        with(MatchHighlight) {
+                                            addSearchSpans(
+                                                ranges = MatchHighlight.findOccurrences(paragraph, searchQuery),
+                                                activeRange = if (index == activeSearchParagraph) activeSearchRange else null,
+                                                textColor = colors.text,
+                                                backgroundColor = colors.background
+                                            )
+                                        }
+                                    }
+                                }
+                                Text(
+                                    text = annotated,
+                                    color = colors.text,
+                                    style = textStyle.forBlock(format?.block),
+                                    modifier = Modifier.padding(
+                                        start = if (format?.block == BlockStyle.QUOTE) QUOTE_INDENT_DP.dp else 0.dp,
+                                        bottom = 16.dp
+                                    )
+                                )
+                            }
                         }
                     }
                 }
@@ -369,55 +393,63 @@ fun PagedReaderContent(
 // Pagination logic
 // ═══════════════════════════════════════════════════════════════
 
+/** One thing on a page: a paragraph (by index) or one of the book's pictures. */
+internal sealed interface PageItem {
+    data class Paragraph(val index: Int) : PageItem
+    /** [sizePx] is the (width, height) it is drawn at. */
+    data class Picture(val image: ReaderImage, val sizePx: Pair<Float, Float>) : PageItem
+}
+
 /**
- * Split a list of paragraphs into pages that fit within [maxHeightPx].
+ * Split a chapter into pages that fit within [maxHeightPx].
  *
- * Uses TextMeasurer to calculate the rendered height of each paragraph,
- * then greedily fills pages. A paragraph is never split across pages
- * (this is a deliberate simplification — splitting mid-paragraph requires
- * much more complex layout logic and isn't worth it for novel content
- * where paragraphs are typically short).
+ * Greedily fills pages with measured items. A paragraph is never split
+ * across pages (this is a deliberate simplification — splitting
+ * mid-paragraph requires much more complex layout logic and isn't worth it
+ * for novel content where paragraphs are typically short). Pictures are
+ * items of their own, placed before (or, at the end, after) the paragraph
+ * they belong to; [imageSize] already caps them to the page.
  *
  * If a single paragraph is taller than the page, it gets its own page
  * (will overflow, but better than being invisible).
  */
-private fun paginateParagraphs(
+internal fun paginateParagraphs(
     paragraphs: List<String>,
-    textMeasurer: TextMeasurer,
-    textStyle: TextStyle,
+    measureParagraph: (index: Int, maxWidthPx: Float) -> Float,
+    imagesBefore: (Int) -> List<ReaderImage>,
+    imagesAfter: (Int) -> List<ReaderImage>,
+    imageSize: (ReaderImage) -> Pair<Float, Float>,
     maxHeightPx: Float,
     maxWidthPx: Float,
     paragraphSpacingPx: Float
-): List<List<String>> {
+): List<List<PageItem>> {
     if (paragraphs.isEmpty()) return emptyList()
 
-    val pages = mutableListOf<List<String>>()
-    var currentPage = mutableListOf<String>()
+    val pages = mutableListOf<List<PageItem>>()
+    var currentPage = mutableListOf<PageItem>()
     var currentHeight = 0f
 
-    val constraints = Constraints(
-        maxWidth = maxWidthPx.toInt().coerceAtLeast(100)
-    )
-
-    for (paragraph in paragraphs) {
-        // Measure the paragraph's rendered height
-        val measurement = textMeasurer.measure(
-            text = paragraph,
-            style = textStyle,
-            constraints = constraints
-        )
-        val paragraphHeight = measurement.size.height.toFloat() + paragraphSpacingPx
-
-        // Check if adding this paragraph would overflow the page
-        if (currentPage.isNotEmpty() && currentHeight + paragraphHeight > maxHeightPx) {
+    fun place(item: PageItem, height: Float) {
+        // Check if adding this item would overflow the page
+        if (currentPage.isNotEmpty() && currentHeight + height > maxHeightPx) {
             // Save current page and start a new one
             pages.add(currentPage.toList())
             currentPage = mutableListOf()
             currentHeight = 0f
         }
+        currentPage.add(item)
+        currentHeight += height
+    }
 
-        currentPage.add(paragraph)
-        currentHeight += paragraphHeight
+    fun placeImages(images: List<ReaderImage>) = images.forEach { image ->
+        val size = imageSize(image)
+        place(PageItem.Picture(image, size), size.second + paragraphSpacingPx)
+    }
+
+    for (index in paragraphs.indices) {
+        placeImages(imagesBefore(index))
+        place(PageItem.Paragraph(index), measureParagraph(index, maxWidthPx) + paragraphSpacingPx)
+        placeImages(imagesAfter(index))
     }
 
     // Don't forget the last page
@@ -429,19 +461,32 @@ private fun paginateParagraphs(
 }
 
 /**
+ * The paragraph a page stands for when saving the reading position: its
+ * first paragraph, or for a page of pictures only, the paragraph after them.
+ */
+internal fun firstParagraphOf(pages: List<List<PageItem>>, pageIndex: Int): Int? {
+    for (page in pageIndex until pages.size) {
+        pages[page].firstNotNullOfOrNull { (it as? PageItem.Paragraph)?.index }?.let { return it }
+    }
+    // Pictures after the last paragraph.
+    for (page in pageIndex downTo 0) {
+        pages[page].lastOrNull { it is PageItem.Paragraph }?.let { return (it as PageItem.Paragraph).index }
+    }
+    return null
+}
+
+/**
  * Find which page a given paragraph index falls on.
  * Returns 0 if not found (safe default for the pager).
  */
-private fun findPageForParagraph(
-    pages: List<List<String>>,
+internal fun findPageForParagraph(
+    pages: List<List<PageItem>>,
     targetParagraphIndex: Int
 ): Int {
-    var paragraphCounter = 0
     for ((pageIndex, page) in pages.withIndex()) {
-        if (targetParagraphIndex < paragraphCounter + page.size) {
+        if (page.any { it is PageItem.Paragraph && it.index >= targetParagraphIndex }) {
             return pageIndex
         }
-        paragraphCounter += page.size
     }
     return 0
 }
