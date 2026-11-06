@@ -403,3 +403,20 @@ data class TocEntryEntity(
     val chapterNumber: Int,
     val paragraph: Int
 )
+
+// ============ Text replacement while reading ============
+
+/**
+ * A rule the reader applies to what it shows: [find] -> [replace]. Matching
+ * follows the pronunciation dictionary (whole words, any case); an empty
+ * [replace] removes the match. [novelId] null means every book.
+ */
+@Entity(tableName = "text_replacements", indices = [Index("novelId")])
+data class TextReplacementEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val novelId: String? = null,
+    val find: String,
+    val replace: String,
+    val createdAt: Long = System.currentTimeMillis()
+)

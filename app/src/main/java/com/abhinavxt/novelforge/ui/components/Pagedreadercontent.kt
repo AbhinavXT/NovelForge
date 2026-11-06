@@ -342,6 +342,7 @@ fun PagedReaderContent(
                             is PageItem.Paragraph -> {
                                 val index = item.index
                                 val paragraph = paragraphs[index]
+                                if (paragraph.isBlank()) return@forEach
                                 val format = formatting?.get(index)
                                 // Book formatting first, then in-book find
                                 // marks on top; the active match gets
@@ -448,7 +449,9 @@ internal fun paginateParagraphs(
 
     for (index in paragraphs.indices) {
         placeImages(imagesBefore(index))
-        place(PageItem.Paragraph(index), measureParagraph(index, maxWidthPx) + paragraphSpacingPx)
+        // A paragraph emptied by a text replacement takes no space.
+        val height = if (paragraphs[index].isBlank()) 0f else measureParagraph(index, maxWidthPx) + paragraphSpacingPx
+        place(PageItem.Paragraph(index), height)
         placeImages(imagesAfter(index))
     }
 

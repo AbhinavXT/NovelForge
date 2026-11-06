@@ -82,6 +82,15 @@ fun ReaderScreen(
     ) { uri -> if (uri != null) viewModel.restoreFromFile(uri) }
     val scope = rememberCoroutineScope()
 
+    // Text replacement rules: this book's own, then those for every book.
+    val textReplacements = (LocalContext.current.applicationContext as? NovelReaderApplication)
+        ?.textReplacements
+    val allReplacementRules by (textReplacements?.rules ?: remember { kotlinx.coroutines.flow.MutableStateFlow(emptyList()) })
+        .collectAsState()
+    val replacementRules = remember(allReplacementRules, novelId) {
+        textReplacements?.rulesFor(novelId, allReplacementRules).orEmpty()
+    }
+
     // TTS state
     val ttsState by ttsManager.state.collectAsState()
     val currentSentence by ttsManager.currentSentenceIndex.collectAsState()
@@ -306,13 +315,10 @@ fun ReaderScreen(
                 // Highlight parameters
                 chapterHighlights = chapterHighlights,
                 highlightSaved = highlightSavedFlag,
-                onAddHighlight = { paragraphIndex, selectedText, paragraphText ->
-                    // Offsets computed against the exact paragraph the
-                    // selection happened in — passed up by the reader so
-                    // this works for stitched chapters too.
-                    val startOffset = paragraphText.indexOf(selectedText).coerceAtLeast(0)
-                    val endOffset = (startOffset + selectedText.length)
-                        .coerceAtMost(paragraphText.length)
+                onAddHighlight = { paragraphIndex, startOffset, endOffset, selectedText ->
+                    // Offsets come from the reader, computed against the
+                    // exact paragraph the selection happened in (so stitched
+                    // chapters work) and mapped back to the stored text.
                     viewModel.addHighlight(paragraphIndex, startOffset, endOffset, selectedText)
                 },
                 onHighlightSavedShown = { highlightSavedFlag = false },
@@ -325,7 +331,15 @@ fun ReaderScreen(
                     }
                 },
                 contents = contents,
-                onOpenContentsEntry = { entry -> viewModel.openContentsEntry(entry) }
+                onOpenContentsEntry = { entry -> viewModel.openContentsEntry(entry) },
+                replacementRules = replacementRules,
+                onSaveReplacement = { id, ruleNovelId, find, replace ->
+                    scope.launch {
+                        if (id == null) textReplacements?.add(ruleNovelId, find, replace)
+                        else textReplacements?.update(id, ruleNovelId, find, replace)
+                    }
+                },
+                onDeleteReplacement = { id -> scope.launch { textReplacements?.delete(id) } }
             )
         }
     }

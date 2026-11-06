@@ -15,6 +15,7 @@ If you just want a quick summary, see the [README](../README.md).
     - [Tap zones](#tap-zones)
     - [Volume key navigation](#volume-key-navigation)
     - [Contents](#contents)
+    - [Text replacement](#text-replacement)
     - [Keep screen on](#keep-screen-on)
   - [Reading modes](#reading-modes)
     - [Scroll mode](#scroll-mode)
@@ -111,6 +112,18 @@ Audio focus is handled correctly so phone calls, podcasts, and music keep workin
 ### Contents
 
 The list icon in the top bar opens the book's table of contents, or its chapter list when it has none (web novels, plain text, and EPUBs imported by earlier versions of the app). The entry you're reading is marked, and the list opens scrolled to it. Tap an entry to go there: within the chapter on screen it just scrolls or turns the page; other chapters open at the entry's place.
+
+### Text replacement
+
+Change what the reader shows without touching the book: fix a name a translation keeps spelling three ways, swap a term you'd rather read differently, or remove a site watermark pasted into every chapter.
+
+**Add one:** select the text → **Replace**, then type what to show instead, or leave it empty to remove the text. Choose **This book** (the default) or **All books**. To see, edit, or delete your rules: Quick Settings → **Text Replacements**.
+
+Matching works like the [pronunciation dictionary](#pronunciation-dictionary): whole words only ("Li" doesn't match inside "Lisa"), any case, longest rule first, and one pass, so a replacement is never replaced again. Symbols are matched anywhere. The replacement follows the case of what it replaces: a rule "he" → "she" shows "She" at the start of a sentence and "SHE" in capitals. When a book's own rule and an all-books rule match the same text, the book's rule wins. Removing text also removes the space beside it, and a paragraph that ends up empty takes no space on the page.
+
+**What it affects:** the text in both reading modes, in-book find (it searches what you see), and TTS, which reads the replaced text and then applies the pronunciation dictionary. Highlights you make on replaced text save the text you saw, and still land in the right place if you later change or delete the rule.
+
+**What it doesn't:** the stored text, so [library search](#full-text-library-search), the codex, chapter titles, and [EPUB export](#export) still see the original. Rules are included in [backups](#backup-and-restore).
 
 ### Keep screen on
 
@@ -646,6 +659,7 @@ The widget refreshes itself when you save reading position, so it's always curre
 - Reading progress (per-novel paragraph positions)
 - Bookmarks and highlights with notes
 - Pronunciation dictionary
+- Text replacement rules
 - Reading stats history
 
 The ZIP can be saved to Drive, Dropbox, anywhere.

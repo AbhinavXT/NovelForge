@@ -34,9 +34,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CodexNameEntity::class,          // NEW in v16 — character codex
         CodexScanInfoEntity::class,      // NEW in v16 — codex scan watermark
         ChapterFormattingEntity::class,  // NEW in v21 — EPUB formatting beside the text
-        TocEntryEntity::class            // NEW in v21 — EPUB table of contents
+        TocEntryEntity::class,           // NEW in v21 — EPUB table of contents
+        TextReplacementEntity::class     // NEW in v22 — text replacement while reading
     ],
-    version = 21,
+    version = 22,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -53,6 +54,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun categoryDao(): CategoryDao              // NEW in v12
     abstract fun updateDao(): UpdateDao                  // NEW in v12
     abstract fun bookFormattingDao(): BookFormattingDao  // NEW in v21
+    abstract fun textReplacementDao(): TextReplacementDao // NEW in v22
 
     companion object {
         @Volatile
@@ -390,6 +392,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v22: rules the reader applies to what it shows, for one book or
+         * all of them. The chapter text itself is never rewritten.
+         */
+        internal val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `text_replacements` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`novelId` TEXT, `find` TEXT NOT NULL, `replace` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_text_replacements_novelId` ON `text_replacements` (`novelId`)"
+                )
+            }
+        }
+
         /** The file name under the app's databases directory. */
         const val DATABASE_NAME = "novel_reader_database"
 
@@ -400,7 +418,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
+                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
                     // No fallbackToDestructiveMigration() — if a migration is missing,
                     // the app crashes instead of silently wiping the user's library,
                     // bookmarks, reading progress, and stats. Always write migrations.

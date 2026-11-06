@@ -6,6 +6,7 @@ import com.abhinavxt.novelforge.data.database.ChapterEntity
 import com.abhinavxt.novelforge.data.database.BookmarkEntity
 import com.abhinavxt.novelforge.data.database.NovelEntity
 import com.abhinavxt.novelforge.data.database.PronunciationEntry
+import com.abhinavxt.novelforge.data.database.TextReplacementEntity
 import com.abhinavxt.novelforge.data.database.ReadingProgressEntity
 import com.abhinavxt.novelforge.util.Logger
 import com.google.gson.Gson
@@ -29,7 +30,8 @@ data class BackupData(
     val ttsSettings: TTSSettingsBackup?,
     val bookmarks: List<BookmarkBackup>? = null,
     val pronunciationEntries: List<PronunciationBackup>? = null,
-    val readingStats: List<ReadingStatBackup>? = null
+    val readingStats: List<ReadingStatBackup>? = null,
+    val textReplacements: List<TextReplacementBackup>? = null
 ) {
     companion object {
         const val BACKUP_VERSION = 2
@@ -135,6 +137,13 @@ data class PronunciationBackup(
     val replacement: String
 )
 
+/** [novelId] null = applies to every book. */
+data class TextReplacementBackup(
+    val novelId: String?,
+    val find: String,
+    val replace: String
+)
+
 data class ReadingStatBackup(
     val novelId: String,
     val chapterId: String,
@@ -158,6 +167,7 @@ class BackupManager(
     private val context: Context,
     private val repository: NovelRepository,
     var pronunciationManager: PronunciationManager? = null,
+    var textReplacements: TextReplacementManager? = null,
     var readingStatsTracker: ReadingStatsTracker? = null
 ) {
     private val gson: Gson = GsonBuilder()
@@ -276,6 +286,11 @@ class BackupManager(
                 PronunciationBackup(word = entry.word, replacement = entry.replacement)
             }
 
+            // Text replacement rules
+            val textReplacementBackups = textReplacements?.getAllForBackup()?.map { rule ->
+                TextReplacementBackup(novelId = rule.novelId, find = rule.find, replace = rule.replace)
+            }
+
             // Reading stats
             val readingStatBackups = readingStatsTracker?.getAllForBackup()?.map { event ->
                 ReadingStatBackup(
@@ -296,7 +311,8 @@ class BackupManager(
                 ttsSettings = ttsBackup,
                 bookmarks = bookmarkBackups,
                 pronunciationEntries = pronunciationBackups,
-                readingStats = readingStatBackups
+                readingStats = readingStatBackups,
+                textReplacements = textReplacementBackups
             )
 
             // Write to file
@@ -470,6 +486,17 @@ class BackupManager(
                 } catch (e: Exception) {
                     Logger.w("BackupManager", "Failed to restore pronunciation: ${e.message}")
                 }
+            }
+
+            // Restore text replacement rules
+            try {
+                backup.textReplacements?.let { rules ->
+                    textReplacements?.insertForRestore(rules.map {
+                        TextReplacementEntity(novelId = it.novelId, find = it.find, replace = it.replace)
+                    })
+                }
+            } catch (e: Exception) {
+                Logger.w("BackupManager", "Failed to restore text replacements: ${e.message}")
             }
 
             // Restore reading stats

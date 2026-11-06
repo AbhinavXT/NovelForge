@@ -8,6 +8,7 @@ import com.abhinavxt.novelforge.data.ChapterPrefetcher
 import com.abhinavxt.novelforge.data.DownloadManager
 import com.abhinavxt.novelforge.data.NovelRepository
 import com.abhinavxt.novelforge.data.PronunciationManager
+import com.abhinavxt.novelforge.data.TextReplacementManager
 import com.abhinavxt.novelforge.data.ReadingStatsTracker
 import com.abhinavxt.novelforge.data.TTSManager
 import com.abhinavxt.novelforge.data.ThemePreferences
@@ -116,6 +117,9 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
     // Pronunciation manager
     val pronunciationManager by lazy { PronunciationManager(database.pronunciationDao()) }
 
+    // Text replacement while reading (shown text and TTS)
+    val textReplacements by lazy { TextReplacementManager(database.textReplacementDao()) }
+
     // Reading stats tracker
     val readingStatsTracker by lazy { ReadingStatsTracker(database.readingStatDao()) }
 
@@ -171,11 +175,14 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
         // Load pronunciation cache so substitutions work immediately
         appScope.launch {
             pronunciationManager.loadCache()
+            textReplacements.loadCache()
         }
 
         // Wire pronunciation manager into TTS and backup
         ttsManager.pronunciationManager = pronunciationManager
+        ttsManager.textReplacements = textReplacements
         backupManager.pronunciationManager = pronunciationManager
+        backupManager.textReplacements = textReplacements
         backupManager.readingStatsTracker = readingStatsTracker
 
         appScope.launch {

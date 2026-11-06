@@ -768,3 +768,24 @@ interface BookFormattingDao {
     @Query("DELETE FROM book_toc WHERE novelId = :novelId")
     suspend fun deleteTocForNovel(novelId: String)
 }
+
+// ============ Text replacement DAO ============
+
+@Dao
+interface TextReplacementDao {
+
+    @Query("SELECT * FROM text_replacements ORDER BY find COLLATE NOCASE ASC")
+    fun observeAll(): Flow<List<TextReplacementEntity>>
+
+    @Query("SELECT * FROM text_replacements ORDER BY find COLLATE NOCASE ASC")
+    suspend fun getAll(): List<TextReplacementEntity>
+
+    @Insert
+    suspend fun insert(rule: TextReplacementEntity): Long
+
+    @Query("UPDATE text_replacements SET novelId = :novelId, find = :find, `replace` = :replace WHERE id = :id")
+    suspend fun update(id: Long, novelId: String?, find: String, replace: String)
+
+    @Query("DELETE FROM text_replacements WHERE id = :id")
+    suspend fun delete(id: Long)
+}

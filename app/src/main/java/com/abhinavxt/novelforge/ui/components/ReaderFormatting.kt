@@ -14,6 +14,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.em
+import com.abhinavxt.novelforge.data.TextReplacements
 import com.abhinavxt.novelforge.data.epub.BlockStyle
 import com.abhinavxt.novelforge.data.epub.ChapterFormatting
 import com.abhinavxt.novelforge.data.epub.Footnote
@@ -44,6 +45,15 @@ data class ParagraphFormat(
 data class ReaderFormatting(private val byParagraph: Map<Int, ParagraphFormat>) {
 
     operator fun get(paragraph: Int): ParagraphFormat? = byParagraph[paragraph]
+
+    /**
+     * This formatting moved onto paragraphs shown with text replacements,
+     * [shown] holding one entry per paragraph.
+     */
+    fun mapped(shown: List<TextReplacements.Mapped>): ReaderFormatting =
+        ReaderFormatting(byParagraph.mapValues { (p, format) ->
+            shown.getOrNull(p)?.let(format::mapped) ?: format
+        })
 
     companion object {
 
@@ -124,6 +134,23 @@ data class ReaderFormatting(private val byParagraph: Map<Int, ParagraphFormat>) 
             } else null
         }
     }
+}
+
+/**
+ * The paragraph's spans and notes moved onto its replaced text. A span over
+ * something removed entirely is dropped; one touching a replacement covers
+ * all of it.
+ */
+fun ParagraphFormat.mapped(shown: TextReplacements.Mapped): ParagraphFormat {
+    if (!shown.isChanged) return this
+    return copy(
+        spans = spans.mapNotNull { span ->
+            shown.rangeToDisplay(span.start, span.end)?.let { span.copy(start = it.first, end = it.last + 1) }
+        },
+        notes = notes.mapNotNull { note ->
+            shown.rangeToDisplay(note.start, note.end)?.let { note.copy(start = it.first, end = it.last + 1) }
+        }
+    )
 }
 
 /** Start indent for a block quote, in dp. */
