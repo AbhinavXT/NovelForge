@@ -14,6 +14,7 @@ If you just want a quick summary, see the [README](../README.md).
     - [Saving your position](#saving-your-position)
     - [Tap zones](#tap-zones)
     - [Volume key navigation](#volume-key-navigation)
+    - [Contents](#contents)
     - [Keep screen on](#keep-screen-on)
   - [Reading modes](#reading-modes)
     - [Scroll mode](#scroll-mode)
@@ -77,7 +78,7 @@ The reader is where you'll spend most of your time. The screen has three layers:
 
 **The text** - paragraphs flow vertically (scroll mode) or horizontally as pages (paged mode). Long-press any paragraph to bookmark it or pull a highlight from it. Select text the normal way to copy or look it up in the inline dictionary.
 
-**The chrome** - top bar (back, chapter title, find, fullscreen toggle, auto-scroll, TTS) and bottom bar (previous chapter, settings, brightness, scroll-to-top, next chapter). Both can be hidden via the dedicated fullscreen button in the top bar.
+**The chrome** - top bar (back, chapter title, contents, find, fullscreen toggle, auto-scroll, TTS) and bottom bar (previous chapter, settings, brightness, scroll-to-top, next chapter). Both can be hidden via the dedicated fullscreen button in the top bar.
 
 **Quick Settings** - a bottom sheet reachable from the palette icon in the bottom bar. This is where you change reading mode, font, theme, font size, line spacing, margins, page-turn animation, tap zones, and a few toggles. See [Settings reference](#settings-reference) for the full list.
 
@@ -106,6 +107,10 @@ Off by default. Turn it on in Quick Settings → More → Volume Key Navigation.
 - **Volume down** → scroll down / next page
 
 Audio focus is handled correctly so phone calls, podcasts, and music keep working normally when you're not actively in the reader.
+
+### Contents
+
+The list icon in the top bar opens the book's table of contents, or its chapter list when it has none (web novels, plain text, and EPUBs imported by earlier versions of the app). The entry you're reading is marked, and the list opens scrolled to it. Tap an entry to go there: within the chapter on screen it just scrolls or turns the page; other chapters open at the entry's place.
 
 ### Keep screen on
 
@@ -397,9 +402,15 @@ Use the system file picker (Library → top bar → "Import a book"). Three form
 
 - Cover image
 - Chapters, one per spine entry
-- Chapter titles, taken from the chapter's own first heading (falling back to its `<title>`)
+- Chapter titles, taken from the book's own table of contents, then the chapter's first heading, then its `<title>`
 - Author and title metadata
 - Description (if present in the EPUB metadata)
+- Formatting: italic, bold, underline, strikethrough, superscript and subscript, including styles set through the book's stylesheets (Calibre's class-based italics, for example); headings, centred lines and block quotes
+- Pictures inside chapters. The cover isn't repeated, and pages that are only a picture are shown at the start of the next chapter. SVG images aren't shown
+- Footnotes: tapping a note marker opens the note in a popup, without turning the page or opening the menu
+- The book's table of contents, for the [contents sheet](#contents)
+
+Formatting is kept beside the text rather than inside it, so search, highlights, bookmarks, the codex and TTS work on exactly the same text as before. If a chapter's formatting can't be matched to its text, that chapter shows plain text instead. EPUBs imported by earlier versions of the app show plain text until they're [archived and restored](#archiving-imported-books), which keeps your progress. Export and backups don't carry the formatting, pictures or footnotes: a restored book gets them back when its text is restored from the file.
 
 **Plain text and Markdown.** There's no conversion step to EPUB — text files are parsed straight into the same internal shape an EPUB produces, so they behave identically once imported. Chapters are detected by trying five strategies in descending confidence, and the first one that yields at least two chapters wins:
 
