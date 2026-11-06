@@ -260,7 +260,7 @@ Select text the normal way (long-press → drag handles), then tap "Highlight" i
 
 Highlights are tied to the paragraph + offset within it. If a source updates a chapter and the text changes, highlights on changed paragraphs are preserved but may shift visually - the underlying offsets don't auto-correct because we can't tell whether the change is meaningful or cosmetic.
 
-Highlights are included in backup/restore and exportable to JSON. They're also cross-referenced by [the codex](#the-codex) - open a character and see every line you've marked about them.
+Highlights are included in backup/restore. To take them elsewhere, Library → long-press a novel → **Export highlights & notes** shares a Markdown file with your highlights, their notes and your bookmark notes, in reading order under each chapter. They're also cross-referenced by [the codex](#the-codex) - open a character and see every line you've marked about them.
 
 ---
 

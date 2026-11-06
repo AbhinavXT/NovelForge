@@ -503,7 +503,7 @@ interface BookmarkDao {
     suspend fun getAllBookmarksOnce(): List<BookmarkEntity>
 
     // Phase 7: annotation export
-    @Query("SELECT * FROM bookmarks WHERE novelId = :novelId ORDER BY chapterId, paragraphIndex")
+    @Query("SELECT * FROM bookmarks WHERE novelId = :novelId ORDER BY chapterNumber, paragraphIndex")
     suspend fun getBookmarksForNovelOnce(novelId: String): List<BookmarkEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -670,7 +670,7 @@ interface HighlightDao {
     suspend fun getAllHighlightsOnce(): List<HighlightEntity>
 
     // Phase 7: annotation export
-    @Query("SELECT * FROM highlights WHERE novelId = :novelId ORDER BY chapterId, paragraphIndex, startOffset")
+    @Query("SELECT * FROM highlights WHERE novelId = :novelId ORDER BY chapterNumber, paragraphIndex, startOffset")
     suspend fun getHighlightsForNovelOnce(novelId: String): List<HighlightEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
