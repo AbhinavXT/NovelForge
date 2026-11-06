@@ -16,4 +16,6 @@
     <exclude domain="sharedpref" path="opds_credentials.xml"/>
     <!-- Offline dictionaries can exceed the 25 MB backup quota on their own. -->
     <exclude domain="file" path="dictionaries/"/>
+    <!-- Same for an imported font: CJK fonts run to tens of MB. -->
+    <exclude domain="file" path="fonts/"/>
 </full-backup-content>

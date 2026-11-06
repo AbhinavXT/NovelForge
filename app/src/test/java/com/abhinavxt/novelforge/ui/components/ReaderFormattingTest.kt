@@ -127,6 +127,24 @@ class ReaderFormattingTest {
     }
 
     @Test
+    fun `pictures keep their own spacing when paragraph spacing is zero`() {
+        val image = ReaderImage(File(dir, "0.jpg"), null, 100, 100)
+        // 40 + (50 + 20) overflows 100px; counting paragraph spacing would fit it.
+        val pages = paginateParagraphs(
+            paragraphs = listOf("a"),
+            measureParagraph = { _, _ -> 40f },
+            imagesBefore = { emptyList() },
+            imagesAfter = { listOf(image) },
+            imageSize = { 50f to 50f },
+            maxHeightPx = 100f,
+            maxWidthPx = 300f,
+            paragraphSpacingPx = 0f,
+            imageSpacingPx = 20f
+        )
+        assertEquals(2, pages.size)
+    }
+
+    @Test
     fun `pages keep pictures with their paragraph and save positions by paragraph`() {
         val image = ReaderImage(File(dir, "0.jpg"), null, 100, 100)
         // Page holds 100px; each paragraph is 40 + 10 spacing, the picture 80 + 10.
@@ -138,7 +156,8 @@ class ReaderFormattingTest {
             imageSize = { 80f to 80f },
             maxHeightPx = 100f,
             maxWidthPx = 300f,
-            paragraphSpacingPx = 10f
+            paragraphSpacingPx = 10f,
+            imageSpacingPx = 10f
         )
         assertEquals(
             listOf(

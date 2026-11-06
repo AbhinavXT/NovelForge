@@ -276,7 +276,7 @@ fun ReaderScreen(
                     viewModel.updateSettings(state.settings.copy(theme = theme))
                 },
                 onSetFont = { font ->
-                    viewModel.updateSettings(state.settings.copy(font = font))
+                    viewModel.updateSettings(state.settings.copy(font = font, customFont = null))
                 },
                 onUpdateSettings = { newSettings ->
                     viewModel.updateSettings(newSettings)

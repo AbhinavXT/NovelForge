@@ -489,6 +489,9 @@ class NovelRepository(
             customBackgroundColor = settings.customBackgroundColor,
             customTextColor = settings.customTextColor,
             tapZoneLayout = settings.tapZoneLayout.name,
+            customFont = settings.customFont,
+            hyphenation = settings.hyphenation,
+            paragraphSpacing = settings.paragraphSpacing,
         )
         settingsDao.saveSettings(entity)
     }
@@ -580,6 +583,10 @@ class NovelRepository(
             } catch (e: Exception) {
                 com.abhinavxt.novelforge.data.model.TapZoneLayout.SIDES
             },
+            // Fonts aren't in cloud backups, and drawing a missing one crashes.
+            customFont = this.customFont?.takeIf { java.io.File(it).isFile },
+            hyphenation = this.hyphenation,
+            paragraphSpacing = this.paragraphSpacing.coerceIn(0, 32),
         )
     }
 

@@ -139,6 +139,11 @@ data class ReaderSettingsEntity(
 
     // ── Tap zones (v15) ─────────────────────────────────────────
     val tapZoneLayout: String = "SIDES",
+
+    // ── Typography (v23) ────────────────────────────────────────
+    val customFont: String? = null,
+    val hyphenation: Boolean = false,
+    val paragraphSpacing: Int = 16,
 )
 
 @Entity(

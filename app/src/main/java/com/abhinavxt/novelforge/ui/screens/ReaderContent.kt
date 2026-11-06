@@ -69,9 +69,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.platform.TextToolbar
 import androidx.compose.ui.platform.TextToolbarStatus
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.dp
@@ -1274,18 +1272,10 @@ private fun BookmarkableParagraph(
                     Text(
                         text = annotatedText,
                         color = colors.text,
-                        style = TextStyle(
-                            fontSize = settings.fontSize.sp,
-                            fontFamily = settings.font.toFontFamily(),
-                            lineHeight = (settings.fontSize * settings.lineSpacing).sp,
-                            textAlign = if (settings.justifyText) TextAlign.Justify else TextAlign.Start,
-                            textIndent = if (settings.paragraphIndent) {
-                                TextIndent(firstLine = (settings.fontSize * 1.5).sp)
-                            } else TextIndent.None
-                        ).forBlock(block),
+                        style = settings.textStyle().forBlock(block),
                         modifier = Modifier.padding(
                             start = if (block == BlockStyle.QUOTE) QUOTE_INDENT_DP.dp else 0.dp,
-                            bottom = 16.dp
+                            bottom = settings.paragraphSpacing.dp
                         )
                     )
                 }

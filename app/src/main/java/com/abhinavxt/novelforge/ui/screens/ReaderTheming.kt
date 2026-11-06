@@ -6,12 +6,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextIndent
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.TextStyle
 import com.abhinavxt.novelforge.R
 import com.abhinavxt.novelforge.data.model.ReaderSettings
 import com.abhinavxt.novelforge.data.model.ReaderTheme
 import com.abhinavxt.novelforge.data.model.ReaderFont
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
 // ─────────────────────────────────────────────────────────────────
 // Split out of the original ReaderScreen.kt (Phase 3 refactor).
@@ -137,6 +144,28 @@ fun getThemeColors(settings: ReaderSettings): ThemeColors {
     }
     return getThemeColors(settings.theme)
 }
+
+// One family per file: this runs for every paragraph, and a fresh family
+// could mean reading the font file again each time.
+private val customFontFamilies = ConcurrentHashMap<String, FontFamily>()
+
+fun customFontFamily(path: String): FontFamily =
+    customFontFamilies.getOrPut(path) { FontFamily(Font(File(path))) }
+
+/** Call when a font is removed, so one re-added under its name isn't the old file. */
+fun forgetCustomFontFamily(path: String) {
+    customFontFamilies.remove(path)
+}
+
+/** The reader's body text style. Scroll and paged share it, and pages are measured with it. */
+fun ReaderSettings.textStyle(): TextStyle = TextStyle(
+    fontSize = fontSize.sp,
+    fontFamily = customFont?.let(::customFontFamily) ?: font.toFontFamily(),
+    lineHeight = (fontSize * lineSpacing).sp,
+    textAlign = if (justifyText) TextAlign.Justify else TextAlign.Start,
+    textIndent = if (paragraphIndent) TextIndent(firstLine = (fontSize * 1.5).sp) else TextIndent.None,
+    hyphens = if (hyphenation) Hyphens.Auto else Hyphens.None
+)
 
 fun ReaderFont.toFontFamily(): FontFamily {
     return when (this) {

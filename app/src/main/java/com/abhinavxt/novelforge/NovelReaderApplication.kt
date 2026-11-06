@@ -120,6 +120,7 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
     // Text replacement while reading (shown text and TTS)
     val textReplacements by lazy { TextReplacementManager(database.textReplacementDao()) }
     val offlineDictionaries by lazy { com.abhinavxt.novelforge.data.StarDictManager(this) }
+    val readerFonts by lazy { com.abhinavxt.novelforge.data.ReaderFontManager(this) }
 
     // Reading stats tracker
     val readingStatsTracker by lazy { ReadingStatsTracker(database.readingStatDao()) }
@@ -178,6 +179,7 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
             pronunciationManager.loadCache()
             textReplacements.loadCache()
             offlineDictionaries.loadCache()
+            readerFonts.loadCache()
         }
 
         // Wire pronunciation manager into TTS and backup

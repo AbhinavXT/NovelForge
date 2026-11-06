@@ -750,14 +750,14 @@ class ReaderViewModel(
                 ReaderFont.OPEN_DYSLEXIC -> ReaderFont.JETBRAINS_MONO
                 ReaderFont.JETBRAINS_MONO -> ReaderFont.LITERATA
             }
-            updateSettings(currentState.settings.copy(font = nextFont))
+            updateSettings(currentState.settings.copy(font = nextFont, customFont = null))
         }
     }
 
     fun setFont(font: ReaderFont) {
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
-            updateSettings(currentState.settings.copy(font = font))
+            updateSettings(currentState.settings.copy(font = font, customFont = null))
         }
     }
 

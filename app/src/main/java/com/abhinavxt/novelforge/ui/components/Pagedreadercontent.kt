@@ -22,7 +22,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.layout.ContentScale
@@ -31,7 +30,6 @@ import androidx.compose.material3.MaterialTheme
 import coil.compose.AsyncImage
 import com.abhinavxt.novelforge.data.epub.BlockStyle
 import com.abhinavxt.novelforge.data.epub.Footnote
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,7 +39,7 @@ import com.abhinavxt.novelforge.data.model.TapAction
 import com.abhinavxt.novelforge.NovelReaderApplication
 import com.abhinavxt.novelforge.VolumeKeyEvent
 import com.abhinavxt.novelforge.ui.screens.ThemeColors
-import com.abhinavxt.novelforge.ui.screens.toFontFamily
+import com.abhinavxt.novelforge.ui.screens.textStyle
 import com.abhinavxt.novelforge.util.MatchHighlight
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -115,14 +113,7 @@ fun PagedReaderContent(
     val contentWidthPx = with(density) { contentWidthDp.dp.toPx() }
 
     // Build the text style used for measurement — must match rendering exactly
-    val textStyle = remember(settings.fontSize, settings.lineSpacing, settings.font) {
-        TextStyle(
-            fontSize = settings.fontSize.sp,
-            lineHeight = (settings.fontSize * settings.lineSpacing).sp,
-            fontFamily = settings.font.toFontFamily(),
-            textAlign = TextAlign.Justify
-        )
-    }
+    val textStyle = remember(settings) { settings.textStyle() }
     val noteColor = MaterialTheme.colorScheme.primary
     val quoteIndentPx = with(density) { QUOTE_INDENT_DP.dp.toPx() }
     val imageSpacingPx = with(density) { IMAGE_SPACING.toPx() }
@@ -130,9 +121,8 @@ fun PagedReaderContent(
     // ── Pagination: split paragraphs into pages ─────────────────
     // Recalculates when any display parameter changes.
     val pages = remember(
-        paragraphs, formatting, settings.fontSize, settings.lineSpacing,
-        settings.font, settings.horizontalMargin,
-        contentHeightPx, contentWidthPx
+        paragraphs, formatting, textStyle, settings.horizontalMargin,
+        settings.paragraphSpacing, contentHeightPx, contentWidthPx
     ) {
         paginateParagraphs(
             paragraphs = paragraphs,
@@ -157,7 +147,8 @@ fun PagedReaderContent(
             imageSize = { image -> imageDisplaySize(image, contentWidthPx, contentHeightPx - imageSpacingPx, density) },
             maxHeightPx = contentHeightPx,
             maxWidthPx = contentWidthPx,
-            paragraphSpacingPx = with(density) { 16.dp.toPx() }
+            paragraphSpacingPx = with(density) { settings.paragraphSpacing.dp.toPx() },
+            imageSpacingPx = imageSpacingPx
         )
     }
 
@@ -368,7 +359,7 @@ fun PagedReaderContent(
                                     style = textStyle.forBlock(format?.block),
                                     modifier = Modifier.padding(
                                         start = if (format?.block == BlockStyle.QUOTE) QUOTE_INDENT_DP.dp else 0.dp,
-                                        bottom = 16.dp
+                                        bottom = settings.paragraphSpacing.dp
                                     )
                                 )
                             }
@@ -422,7 +413,8 @@ internal fun paginateParagraphs(
     imageSize: (ReaderImage) -> Pair<Float, Float>,
     maxHeightPx: Float,
     maxWidthPx: Float,
-    paragraphSpacingPx: Float
+    paragraphSpacingPx: Float,
+    imageSpacingPx: Float
 ): List<List<PageItem>> {
     if (paragraphs.isEmpty()) return emptyList()
 
@@ -444,7 +436,7 @@ internal fun paginateParagraphs(
 
     fun placeImages(images: List<ReaderImage>) = images.forEach { image ->
         val size = imageSize(image)
-        place(PageItem.Picture(image, size), size.second + paragraphSpacingPx)
+        place(PageItem.Picture(image, size), size.second + imageSpacingPx)
     }
 
     for (index in paragraphs.indices) {

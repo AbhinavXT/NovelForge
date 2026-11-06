@@ -12,6 +12,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.em
 import com.abhinavxt.novelforge.data.TextReplacements
@@ -168,7 +169,8 @@ fun TextStyle.forBlock(block: BlockStyle?): TextStyle = when (block) {
         fontWeight = FontWeight.Bold,
         fontSize = fontSize * HEADING_SCALE,
         lineHeight = lineHeight * HEADING_SCALE,
-        textIndent = TextIndent.None
+        textIndent = TextIndent.None,
+        hyphens = Hyphens.None
     )
     BlockStyle.CENTER -> copy(textAlign = TextAlign.Center, textIndent = TextIndent.None)
     BlockStyle.QUOTE, null -> this

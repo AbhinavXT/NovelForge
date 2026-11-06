@@ -1,5 +1,7 @@
 package com.abhinavxt.novelforge.ui.components
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FindReplace
 import androidx.compose.material.icons.filled.FormatLineSpacing
 import androidx.compose.material.icons.filled.FormatSize
@@ -33,36 +36,54 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.ViewDay
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.abhinavxt.novelforge.NovelReaderApplication
+import com.abhinavxt.novelforge.data.ReaderFontException
 import com.abhinavxt.novelforge.data.model.PageTransition
 import com.abhinavxt.novelforge.data.model.ReaderFont
 import com.abhinavxt.novelforge.data.model.ReaderSettings
 import com.abhinavxt.novelforge.data.model.ReaderTheme
 import com.abhinavxt.novelforge.data.model.ReadingMode
 import com.abhinavxt.novelforge.data.model.TapZoneLayout
+import com.abhinavxt.novelforge.ui.screens.customFontFamily
+import com.abhinavxt.novelforge.ui.screens.forgetCustomFontFamily
 import com.abhinavxt.novelforge.ui.screens.getThemeColors
 import com.abhinavxt.novelforge.ui.screens.toFontFamily
+import com.abhinavxt.novelforge.util.Logger
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * Unified quick-settings bottom sheet for the reader.
@@ -147,6 +168,7 @@ fun QuickSettingsSheet(
                     fontSize = settings.fontSize,
                     lineSpacing = settings.lineSpacing,
                     horizontalMargin = settings.horizontalMargin,
+                    paragraphSpacing = settings.paragraphSpacing,
                     onFontSizeChanged = { size ->
                         onSettingsChanged(settings.copy(fontSize = size))
                     },
@@ -155,6 +177,9 @@ fun QuickSettingsSheet(
                     },
                     onMarginChanged = { margin ->
                         onSettingsChanged(settings.copy(horizontalMargin = margin))
+                    },
+                    onParagraphSpacingChanged = { spacing ->
+                        onSettingsChanged(settings.copy(paragraphSpacing = spacing))
                     }
                 )
 
@@ -166,6 +191,13 @@ fun QuickSettingsSheet(
                     checked = settings.justifyText,
                     onCheckedChange = { checked ->
                         onSettingsChanged(settings.copy(justifyText = checked))
+                    }
+                )
+                SettingToggleRow(
+                    label = "Hyphenate words",
+                    checked = settings.hyphenation,
+                    onCheckedChange = { checked ->
+                        onSettingsChanged(settings.copy(hyphenation = checked))
                     }
                 )
                 SettingToggleRow(
@@ -213,6 +245,7 @@ fun QuickSettingsSheet(
             // ── Section 4: Font List (each font is its own item) ─
             item {
                 SectionHeader(title = "Font")
+                CustomFonts(settings, onSettingsChanged)
             }
 
             // Emit each font category + its fonts as individual items
@@ -233,9 +266,10 @@ fun QuickSettingsSheet(
                     key = { "font_${it.name}" }
                 ) { font ->
                     FontRow(
-                        font = font,
-                        isSelected = font == settings.font,
-                        onClick = { onSettingsChanged(settings.copy(font = font)) }
+                        name = font.displayName,
+                        family = font.toFontFamily(),
+                        isSelected = settings.customFont == null && font == settings.font,
+                        onClick = { onSettingsChanged(settings.copy(font = font, customFont = null)) }
                     )
                 }
 
@@ -437,9 +471,11 @@ private fun TypographySection(
     fontSize: Int,
     lineSpacing: Float,
     horizontalMargin: Int,
+    paragraphSpacing: Int,
     onFontSizeChanged: (Int) -> Unit,
     onLineSpacingChanged: (Float) -> Unit,
-    onMarginChanged: (Int) -> Unit
+    onMarginChanged: (Int) -> Unit,
+    onParagraphSpacingChanged: (Int) -> Unit
 ) {
     // Font Size ± row
     Row(
@@ -494,6 +530,18 @@ private fun TypographySection(
         onValueChange = onLineSpacingChanged,
         valueRange = 1.2f..2.4f,
         steps = 5
+    )
+
+    Spacer(modifier = Modifier.height(4.dp))
+
+    CompactSlider(
+        icon = Icons.Default.ViewDay,
+        label = "Paragraph Spacing",
+        value = paragraphSpacing.toFloat(),
+        valueDisplay = "${paragraphSpacing}dp",
+        onValueChange = { onParagraphSpacingChanged(it.toInt()) },
+        valueRange = 0f..32f,
+        steps = 7
     )
 
     Spacer(modifier = Modifier.height(4.dp))
@@ -616,11 +664,80 @@ private fun ThemeCircle(
     }
 }
 
+/** The user's own fonts and the button that adds one. */
+@Composable
+private fun CustomFonts(settings: ReaderSettings, onSettingsChanged: (ReaderSettings) -> Unit) {
+    val manager = (LocalContext.current.applicationContext as? NovelReaderApplication)?.readerFonts ?: return
+    val fonts by manager.fonts.collectAsState()
+    val scope = rememberCoroutineScope()
+    var importing by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var toDelete by remember { mutableStateOf<File?>(null) }
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        importing = true
+        error = null
+        scope.launch {
+            try {
+                val font = manager.import(uri)
+                onSettingsChanged(settings.copy(customFont = font.path))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.e("ReaderFonts", "Import failed", e)
+                error = (e as? ReaderFontException)?.message ?: "Couldn't read that font."
+            } finally {
+                importing = false
+            }
+        }
+    }
+
+    fonts.forEach { font ->
+        FontRow(
+            name = font.nameWithoutExtension,
+            family = customFontFamily(font.path),
+            isSelected = settings.customFont == font.path,
+            onClick = { onSettingsChanged(settings.copy(customFont = font.path)) },
+            onDelete = { toDelete = font }
+        )
+    }
+    OutlinedButton(
+        onClick = { picker.launch(arrayOf("*/*")) },  // Providers rarely agree on a font's MIME type
+        enabled = !importing,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(if (importing) "Adding…" else "Add font (TTF or OTF)")
+    }
+    error?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+
+    toDelete?.let { font ->
+        AlertDialog(
+            onDismissRequest = { toDelete = null },
+            title = { Text("Remove ${font.nameWithoutExtension}?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    toDelete = null
+                    if (settings.customFont == font.path) onSettingsChanged(settings.copy(customFont = null))
+                    forgetCustomFontFamily(font.path)
+                    scope.launch { manager.delete(font) }
+                }) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { toDelete = null }) { Text("Cancel") } }
+        )
+    }
+}
+
 @Composable
 private fun FontRow(
-    font: ReaderFont,
+    name: String,
+    family: FontFamily,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDelete: (() -> Unit)? = null
 ) {
     Surface(
         modifier = Modifier
@@ -642,16 +759,16 @@ private fun FontRow(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = font.displayName,
+                    text = name,
                     style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = font.toFontFamily(),
+                    fontFamily = family,
                     color = if (isSelected) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     text = "The quick brown fox jumps over the lazy dog",
                     style = MaterialTheme.typography.bodySmall,
-                    fontFamily = font.toFontFamily(),
+                    fontFamily = family,
                     color = MaterialTheme.colorScheme.outline,
                     maxLines = 1
                 )
@@ -661,6 +778,11 @@ private fun FontRow(
                     Icons.Default.Check, contentDescription = "Selected",
                     tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)
                 )
+            }
+            if (onDelete != null) {
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = "Remove $name")
+                }
             }
         }
     }

@@ -172,7 +172,7 @@ Auto-scroll is not available in paged mode (the button is hidden when paged is a
 
 ## Themes and typography
 
-11 themes, 8 fonts, all switchable from Quick Settings. Changes apply immediately and are saved per-app, not per-novel.
+11 themes, 8 fonts plus your own, all switchable from Quick Settings. Changes apply immediately and are saved per-app, not per-novel.
 
 ### Themes
 
@@ -219,15 +219,23 @@ Eight fonts in three categories:
 
 - JetBrains Mono - for the hell of it; some users like reading code-shaped text
 
+**Your own fonts**
+
+Quick Settings → Font → **Add font** imports a TTF or OTF file, which is picked at once and listed above the built-in fonts. Remove one with its delete icon; the reader goes back to the built-in font you had. Imported fonts stay on this device: they aren't in backups, so after a restore the reader uses the built-in font until you add yours again. Only the font's regular style is used, and bold and italics are drawn from it, as with the built-in fonts.
+
 ### Sizing
 
 Quick Settings → Typography section:
 
 - **Font size:** 12–32 pt, ±1 step
 - **Line spacing:** 1.2× to 2.4×, slider
+- **Paragraph spacing:** 0–32 dp, slider
 - **Horizontal margins:** 8–40 dp, slider
+- **Justify text**, **Hyphenate words**, **Paragraph indent:** toggles
 
-All three are saved per-app. New novels open with your last-used settings.
+All of these are saved per-app and apply in both scroll and paged mode. New novels open with your last-used settings.
+
+Hyphenation is off by default. It follows your device language, not the book's, so a book in another language may break words in odd places, and some languages have no hyphenation rules on Android. Headings are never hyphenated.
 
 ---
 
