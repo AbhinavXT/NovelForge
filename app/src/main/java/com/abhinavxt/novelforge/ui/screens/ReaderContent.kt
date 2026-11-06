@@ -86,6 +86,9 @@ import com.abhinavxt.novelforge.data.database.HighlightEntity
 import com.abhinavxt.novelforge.ui.components.QuickSettingsSheet
 import com.abhinavxt.novelforge.ui.components.PagedReaderContent
 import com.abhinavxt.novelforge.ui.components.BookImage
+import com.abhinavxt.novelforge.ui.components.ContentsSheet
+import com.abhinavxt.novelforge.ui.viewmodel.ReaderContents
+import com.abhinavxt.novelforge.ui.viewmodel.ReaderContentsEntry
 import com.abhinavxt.novelforge.ui.components.FootnoteDialog
 import com.abhinavxt.novelforge.ui.components.ParagraphFormat
 import com.abhinavxt.novelforge.ui.components.QUOTE_INDENT_DP
@@ -172,7 +175,12 @@ internal fun ReaderContent(
     onAddHighlight: (paragraphIndex: Int, selectedText: String, paragraphText: String) -> Unit = { _, _, _ -> },
     onHighlightSavedShown: () -> Unit = {},
     // Pronunciation: save word → spoken replacement from the selection toolbar
-    onSavePronunciation: (word: String, replacement: String) -> Unit = { _, _ -> }
+    onSavePronunciation: (word: String, replacement: String) -> Unit = { _, _ -> },
+    // Contents sheet: the book's own table of contents, else its chapters.
+    // Entries in a chapter on screen are scrolled to here; others are
+    // handed to onOpenContentsEntry to load.
+    contents: ReaderContents = ReaderContents.EMPTY,
+    onOpenContentsEntry: (ReaderContentsEntry) -> Unit = {}
 ) {
     val colors = getThemeColors(settings)
 
@@ -201,6 +209,9 @@ internal fun ReaderContent(
 
     // Appearance bottom sheet state
     var showAppearanceSheet by remember { mutableStateOf(false) }
+    var showContents by remember { mutableStateOf(false) }
+    // Paged mode's current paragraph, for marking the contents entry.
+    var pagedParagraph by remember(chapter.chapterId) { mutableIntStateOf(chapter.savedParagraphIndex) }
 
     // ── In-book find ────────────────────────────────────────────
     // Transient UI state, deliberately NOT in the ViewModel: closing
@@ -524,6 +535,43 @@ internal fun ReaderContent(
         }
     }
 
+    // ── Contents sheet ──
+    if (showContents) {
+        val paged = settings.readingMode == ReadingMode.PAGED
+        val (here, paragraph) = if (paged) {
+            chapter.chapterId to pagedParagraph
+        } else {
+            resolvePosition(listState.firstVisibleItemIndex).let { (seg, within) -> seg.chapterId to within }
+        }
+        ContentsSheet(
+            contents = contents,
+            currentIndex = contents.currentIndex(here, paragraph),
+            onSelect = { entry ->
+                showContents = false
+                if (paged) {
+                    // Paged mode only holds the anchor chapter.
+                    if (entry.chapterId == chapter.chapterId) {
+                        pagedFindRequest = ((pagedFindRequest?.first ?: 0) + 1) to entry.paragraph
+                    } else {
+                        onOpenContentsEntry(entry)
+                    }
+                } else {
+                    val seg = segments.firstOrNull { it.chapterId == entry.chapterId }
+                    if (seg != null && seg.paragraphs.isNotEmpty()) {
+                        findScope.launch {
+                            listState.scrollToItem(
+                                seg.startIndex + entry.paragraph.coerceIn(0, seg.paragraphs.size - 1)
+                            )
+                        }
+                    } else {
+                        onOpenContentsEntry(entry)
+                    }
+                }
+            },
+            onDismiss = { showContents = false }
+        )
+    }
+
     // ── Quick settings bottom sheet: reading mode, themes, fonts, etc. ──
     if (showAppearanceSheet) {
         QuickSettingsSheet(
@@ -586,6 +634,9 @@ internal fun ReaderContent(
                             findActive = true
                             isImmersive = false
                         },
+                        onContentsClick = if (contents.entries.isNotEmpty()) {
+                            { showContents = true }
+                        } else null,
                         isAutoScrollActive = isAutoScrollActive,
                         onAutoScrollClick = {
                             when (autoScrollState) {
@@ -676,7 +727,10 @@ internal fun ReaderContent(
                     activeSearchParagraph = activeFindMatch?.paragraphIndex ?: -1,
                     activeSearchRange = activeFindMatch?.range,
                     searchJumpRequest = pagedFindRequest,
-                    onParagraphIndexChanged = { index -> onSaveParagraphIndex(index) },
+                    onParagraphIndexChanged = { index ->
+                        pagedParagraph = index
+                        onSaveParagraphIndex(index)
+                    },
                     onToggleImmersive = { isImmersive = !isImmersive },
                     onPreviousChapter = onPreviousChapter,
                     onNextChapter = onNextChapter,

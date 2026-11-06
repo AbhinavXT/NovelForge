@@ -274,6 +274,7 @@ class ReaderViewModel(
 
                 _isInLibrary.value = repository.isInLibrary(novelId)
 
+                loadContents()
                 loadChapter()
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -283,6 +284,35 @@ class ReaderViewModel(
     }
 
     private var justRestored = false
+
+    // ============ CONTENTS ============
+
+    private val _contents = MutableStateFlow(ReaderContents.EMPTY)
+    /** The contents sheet: the book's own table of contents, else its chapters. */
+    val contents: StateFlow<ReaderContents> = _contents.asStateFlow()
+
+    private suspend fun loadContents() {
+        val toc = try {
+            repository.getBookToc(novelId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.e("Could not load the book's contents", e)
+            emptyList()
+        }
+        _contents.value = ReaderContents.build(toc, chapterList)
+    }
+
+    /**
+     * Opens a contents entry in another chapter at its paragraph. A jump
+     * within a chapter already on screen is the reader's to make (it just
+     * scrolls), so this is only for chapters that need loading.
+     */
+    fun openContentsEntry(entry: ReaderContentsEntry) {
+        viewModelScope.launch { statsTracker?.endSession() }
+        pendingTargetParagraph = entry.paragraph
+        goToChapter(entry.chapterId, entry.chapterUrl)
+    }
 
     /**
      * Bring an archived book's text back, showing [ReaderUiState.Restoring]
@@ -543,6 +573,7 @@ class ReaderViewModel(
                 if (dbChapters.isNotEmpty()) {
                     chapterList = dbChapters
                 }
+                loadContents()
             } catch (e: Exception) { /* Ignore */ }
             loadChapter()
         }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Close
@@ -155,6 +156,8 @@ internal fun ReaderTopBar(
     onBackClick: () -> Unit,
     onTTSClick: () -> Unit,
     onFindClick: () -> Unit = {},
+    /** Null hides the contents button (no chapters to list). */
+    onContentsClick: (() -> Unit)? = null,
     isAutoScrollActive: Boolean = false,
     onAutoScrollClick: () -> Unit = {},
     backgroundColor: Color,
@@ -209,6 +212,16 @@ internal fun ReaderTopBar(
                         color = contentColor.copy(alpha = 0.5f)
                     )
                 }
+            }
+        }
+
+        if (onContentsClick != null) {
+            IconButton(onClick = onContentsClick) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.List,
+                    contentDescription = "Contents",
+                    tint = contentColor
+                )
             }
         }
 

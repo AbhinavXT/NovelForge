@@ -110,6 +110,7 @@ fun ReaderScreen(
 
     // Infinite scroll (stitching)
     val stitchedChapters by viewModel.stitchedChapters.collectAsState()
+    val contents by viewModel.contents.collectAsState()
     val stitchTail by viewModel.stitchTail.collectAsState()
     val activeChapterInfo by viewModel.activeChapterInfo.collectAsState()
 
@@ -322,7 +323,9 @@ fun ReaderScreen(
                     scope.launch {
                         pronunciationManager?.addEntry(word, replacement)
                     }
-                }
+                },
+                contents = contents,
+                onOpenContentsEntry = { entry -> viewModel.openContentsEntry(entry) }
             )
         }
     }
