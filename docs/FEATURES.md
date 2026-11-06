@@ -16,6 +16,7 @@ If you just want a quick summary, see the [README](../README.md).
     - [Volume key navigation](#volume-key-navigation)
     - [Contents](#contents)
     - [Text replacement](#text-replacement)
+    - [Offline dictionaries](#offline-dictionaries)
     - [Keep screen on](#keep-screen-on)
   - [Reading modes](#reading-modes)
     - [Scroll mode](#scroll-mode)
@@ -77,7 +78,7 @@ If you just want a quick summary, see the [README](../README.md).
 
 The reader is where you'll spend most of your time. The screen has three layers:
 
-**The text** - paragraphs flow vertically (scroll mode) or horizontally as pages (paged mode). Long-press any paragraph to bookmark it or pull a highlight from it. Select text the normal way to copy or look it up in the inline dictionary.
+**The text** - paragraphs flow vertically (scroll mode) or horizontally as pages (paged mode). Long-press any paragraph to bookmark it or pull a highlight from it. Select text the normal way to copy or look it up in the inline dictionary, online or [offline](#offline-dictionaries).
 
 **The chrome** - top bar (back, chapter title, contents, find, fullscreen toggle, auto-scroll, TTS) and bottom bar (previous chapter, settings, brightness, scroll-to-top, next chapter). Both can be hidden via the dedicated fullscreen button in the top bar.
 
@@ -124,6 +125,16 @@ Matching works like the [pronunciation dictionary](#pronunciation-dictionary): w
 **What it affects:** the text in both reading modes, in-book find (it searches what you see), and TTS, which reads the replaced text and then applies the pronunciation dictionary. Highlights you make on replaced text save the text you saw, and still land in the right place if you later change or delete the rule.
 
 **What it doesn't:** the stored text, so [library search](#full-text-library-search), the codex, chapter titles, and [EPUB export](#export) still see the original. Rules are included in [backups](#backup-and-restore).
+
+### Offline dictionaries
+
+Select a word and tap **Define**. Your offline dictionaries are checked first, and if none has the word it's looked up online in your [dictionary language](#settings-reference). With a dictionary that covers your book, lookups need no connection and send nothing anywhere.
+
+**Add one:** Settings → Offline Dictionaries → **Add dictionary**. NovelForge reads the StarDict format: pick a single `.zip`, `.tar.gz`, or `.tar`, or select the `.ifo`, `.idx`, and `.dict` files together (`.idx.gz` and `.dict.dz` are fine, and `.syn` too if there is one). `.tar.xz` and `.tar.bz2` archives have to be extracted first. No dictionaries come with the app; [FreeDict](https://freedict.org/downloads/) has free ones for many language pairs.
+
+When several dictionaries have the word, the sheet shows up to five entries from each, under the dictionary's name. Matching ignores case and surrounding punctuation, but not word endings: "houses" is only found if the dictionary lists it or maps it to "house" in its `.syn` file. Images and sounds in entries are skipped.
+
+Dictionaries stay on this device. They aren't in [backups](#backup-and-restore), so keep the original file if you'll want it again.
 
 ### Keep screen on
 

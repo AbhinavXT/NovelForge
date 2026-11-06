@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.abhinavxt.novelforge.data.DictionaryRepository
 import com.abhinavxt.novelforge.data.DictionaryState
+import com.abhinavxt.novelforge.data.StarDictManager
 import com.abhinavxt.novelforge.data.NovelRepository
 import com.abhinavxt.novelforge.data.ChapterPrefetcher
 import com.abhinavxt.novelforge.data.ReadingStatsTracker
@@ -119,7 +120,8 @@ class ReaderViewModel(
     private val statsTracker: ReadingStatsTracker? = null,
     private val prefetcher: ChapterPrefetcher? = null,
     targetParagraph: Int = -1,
-    private val bookArchive: LocalBookArchive? = null
+    private val bookArchive: LocalBookArchive? = null,
+    private val offlineDictionaries: StarDictManager? = null
 ) : ViewModel() {
 
     // The file the user last picked to restore from, kept so "Restore
@@ -222,7 +224,8 @@ class ReaderViewModel(
         val languageCode = themePreferences?.dictionaryLanguage?.value?.code ?: "en"
 
         viewModelScope.launch {
-            val result = DictionaryRepository.lookup(cleanWord, languageCode)
+            val result = offlineDictionaries?.lookup(cleanWord)
+                ?: DictionaryRepository.lookup(cleanWord, languageCode)
             _dictionaryState.value = if (result != null) {
                 DictionaryState.Success(result)
             } else {
@@ -1078,12 +1081,13 @@ class ReaderViewModel(
             statsTracker: ReadingStatsTracker? = null,
             prefetcher: ChapterPrefetcher? = null,
             targetParagraph: Int = -1,
-            bookArchive: LocalBookArchive? = null
+            bookArchive: LocalBookArchive? = null,
+            offlineDictionaries: StarDictManager? = null
         ): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences, statsTracker, prefetcher, targetParagraph, bookArchive) as T
+                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences, statsTracker, prefetcher, targetParagraph, bookArchive, offlineDictionaries) as T
                 }
             }
         }

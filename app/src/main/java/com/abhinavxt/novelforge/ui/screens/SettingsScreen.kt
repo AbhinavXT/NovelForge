@@ -93,6 +93,7 @@ import com.abhinavxt.novelforge.BuildConfig
 import com.abhinavxt.novelforge.data.UpdateChecker
 import com.abhinavxt.novelforge.ui.components.UpdateStatusRow
 import com.abhinavxt.novelforge.ui.components.LibraryStorageSection
+import com.abhinavxt.novelforge.ui.components.OfflineDictionariesSection
 import com.abhinavxt.novelforge.ui.components.openUpdateUrlInBrowser
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
@@ -323,6 +324,11 @@ fun SettingsScreen(
                 repeat(3 - DictionaryLanguage.entries.drop(3).size) {
                     Spacer(modifier = Modifier.weight(1f))
                 }
+            }
+
+            (context.applicationContext as? NovelReaderApplication)?.offlineDictionaries?.let {
+                Spacer(modifier = Modifier.height(16.dp))
+                OfflineDictionariesSection(manager = it)
             }
 
             Spacer(modifier = Modifier.height(24.dp))

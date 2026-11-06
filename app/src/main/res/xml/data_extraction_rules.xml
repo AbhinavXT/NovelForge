@@ -8,6 +8,8 @@
         <!-- Holds an Anna's Archive account key. -->
         <exclude domain="sharedpref" path="annas_archive.xml"/>
         <exclude domain="sharedpref" path="opds_credentials.xml"/>
+        <!-- Offline dictionaries can exceed the 25 MB backup quota on their own. -->
+        <exclude domain="file" path="dictionaries/"/>
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="annas_archive.xml"/>

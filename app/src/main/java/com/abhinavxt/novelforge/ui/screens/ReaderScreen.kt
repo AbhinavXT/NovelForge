@@ -68,7 +68,9 @@ fun ReaderScreen(
             novelId, chapterId, chapterUrl, novelUrl = novelUrl, repository,
             themePreferences, statsTracker, chapterPrefetcher, targetParagraph,
             bookArchive = (LocalContext.current.applicationContext as? NovelReaderApplication)
-                ?.bookArchive
+                ?.bookArchive,
+            offlineDictionaries = (LocalContext.current.applicationContext as? NovelReaderApplication)
+                ?.offlineDictionaries
         )
     )
 ) {
