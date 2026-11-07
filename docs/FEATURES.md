@@ -14,6 +14,9 @@ If you just want a quick summary, see the [README](../README.md).
     - [Saving your position](#saving-your-position)
     - [Tap zones](#tap-zones)
     - [Volume key navigation](#volume-key-navigation)
+    - [Contents](#contents)
+    - [Text replacement](#text-replacement)
+    - [Offline dictionaries](#offline-dictionaries)
     - [Keep screen on](#keep-screen-on)
   - [Reading modes](#reading-modes)
     - [Scroll mode](#scroll-mode)
@@ -75,9 +78,9 @@ If you just want a quick summary, see the [README](../README.md).
 
 The reader is where you'll spend most of your time. The screen has three layers:
 
-**The text** - paragraphs flow vertically (scroll mode) or horizontally as pages (paged mode). Long-press any paragraph to bookmark it or pull a highlight from it. Select text the normal way to copy or look it up in the inline dictionary.
+**The text** - paragraphs flow vertically (scroll mode) or horizontally as pages (paged mode). Long-press any paragraph to bookmark it or pull a highlight from it. Select text the normal way to copy or look it up in the inline dictionary, online or [offline](#offline-dictionaries).
 
-**The chrome** - top bar (back, chapter title, find, fullscreen toggle, auto-scroll, TTS) and bottom bar (previous chapter, settings, brightness, scroll-to-top, next chapter). Both can be hidden via the dedicated fullscreen button in the top bar.
+**The chrome** - top bar (back, chapter title, contents, find, fullscreen toggle, auto-scroll, TTS) and bottom bar (previous chapter, settings, brightness, scroll-to-top, next chapter). Both can be hidden via the dedicated fullscreen button in the top bar.
 
 **Quick Settings** - a bottom sheet reachable from the palette icon in the bottom bar. This is where you change reading mode, font, theme, font size, line spacing, margins, page-turn animation, tap zones, and a few toggles. See [Settings reference](#settings-reference) for the full list.
 
@@ -106,6 +109,34 @@ Off by default. Turn it on in Quick Settings → More → Volume Key Navigation.
 - **Volume down** → scroll down / next page
 
 Audio focus is handled correctly so phone calls, podcasts, and music keep working normally when you're not actively in the reader.
+
+### Contents
+
+The list icon in the top bar opens the book's table of contents, or its chapter list when it has none (web novels, plain text, and EPUBs imported by earlier versions of the app). The entry you're reading is marked, and the list opens scrolled to it. Tap an entry to go there: within the chapter on screen it just scrolls or turns the page; other chapters open at the entry's place.
+
+### Text replacement
+
+Change what the reader shows without touching the book: fix a name a translation keeps spelling three ways, swap a term you'd rather read differently, or remove a site watermark pasted into every chapter.
+
+**Add one:** select the text → **Replace**, then type what to show instead, or leave it empty to remove the text. Choose **This book** (the default) or **All books**. To see, edit, or delete your rules: Quick Settings → **Text Replacements**.
+
+Matching works like the [pronunciation dictionary](#pronunciation-dictionary): whole words only ("Li" doesn't match inside "Lisa"), any case, longest rule first, and one pass, so a replacement is never replaced again. Symbols are matched anywhere. The replacement follows the case of what it replaces: a rule "he" → "she" shows "She" at the start of a sentence and "SHE" in capitals. When a book's own rule and an all-books rule match the same text, the book's rule wins. Removing text also removes the space beside it, and a paragraph that ends up empty takes no space on the page.
+
+**What it affects:** the text in both reading modes, in-book find (it searches what you see), and TTS, which reads the replaced text and then applies the pronunciation dictionary. Highlights you make on replaced text save the text you saw, and still land in the right place if you later change or delete the rule.
+
+**Changing a replacement:** rules work on the book's own text, so selecting a word you already replaced and tapping Replace edits that rule instead of adding a second one.
+
+**What it doesn't:** the stored text, so [library search](#full-text-library-search), the codex, chapter titles, and [EPUB export](#export) still see the original. Rules are included in [backups](#backup-and-restore).
+
+### Offline dictionaries
+
+Select a word and tap **Define**. Your offline dictionaries are checked first, and if none has the word it's looked up online in your [dictionary language](#settings-reference). With a dictionary that covers your book, lookups need no connection and send nothing anywhere.
+
+**Add one:** Settings → Offline Dictionaries → **Add dictionary**. NovelForge reads the StarDict format: pick a single `.zip`, `.tar.gz`, or `.tar`, or select the `.ifo`, `.idx`, and `.dict` files together (`.idx.gz` and `.dict.dz` are fine, and `.syn` too if there is one). `.tar.xz` and `.tar.bz2` archives have to be extracted first. No dictionaries come with the app; [FreeDict](https://freedict.org/downloads/) has free ones for many language pairs.
+
+When several dictionaries have the word, the sheet shows up to five entries from each, under the dictionary's name. Matching ignores case and surrounding punctuation, but not word endings: "houses" is only found if the dictionary lists it or maps it to "house" in its `.syn` file. Images and sounds in entries are skipped.
+
+Dictionaries stay on this device. They aren't in [backups](#backup-and-restore), so keep the original file if you'll want it again.
 
 ### Keep screen on
 
@@ -143,7 +174,7 @@ Auto-scroll is not available in paged mode (the button is hidden when paged is a
 
 ## Themes and typography
 
-11 themes, 8 fonts, all switchable from Quick Settings. Changes apply immediately and are saved per-app, not per-novel.
+11 themes, 8 fonts plus your own, all switchable from Quick Settings. Changes apply immediately and are saved per-app, not per-novel.
 
 ### Themes
 
@@ -190,15 +221,23 @@ Eight fonts in three categories:
 
 - JetBrains Mono - for the hell of it; some users like reading code-shaped text
 
+**Your own fonts**
+
+Quick Settings → Font → **Add font** imports a TTF or OTF file, which is picked at once and listed above the built-in fonts. Remove one with its delete icon; the reader goes back to the built-in font you had. Imported fonts stay on this device: they aren't in backups, so after a restore the reader uses the built-in font until you add yours again. Only the font's regular style is used, and bold and italics are drawn from it, as with the built-in fonts.
+
 ### Sizing
 
 Quick Settings → Typography section:
 
 - **Font size:** 12–32 pt, ±1 step
 - **Line spacing:** 1.2× to 2.4×, slider
+- **Paragraph spacing:** 0–32 dp, slider
 - **Horizontal margins:** 8–40 dp, slider
+- **Justify text**, **Hyphenate words**, **Paragraph indent:** toggles
 
-All three are saved per-app. New novels open with your last-used settings.
+All of these are saved per-app and apply in both scroll and paged mode. New novels open with your last-used settings.
+
+Hyphenation is off by default. It follows your device language, not the book's, so a book in another language may break words in odd places, and some languages have no hyphenation rules on Android. Headings are never hyphenated.
 
 ---
 
@@ -223,7 +262,7 @@ Select text the normal way (long-press → drag handles), then tap "Highlight" i
 
 Highlights are tied to the paragraph + offset within it. If a source updates a chapter and the text changes, highlights on changed paragraphs are preserved but may shift visually - the underlying offsets don't auto-correct because we can't tell whether the change is meaningful or cosmetic.
 
-Highlights are included in backup/restore and exportable to JSON. They're also cross-referenced by [the codex](#the-codex) - open a character and see every line you've marked about them.
+Highlights are included in backup/restore. To take them elsewhere, Library → long-press a novel → **Export highlights & notes** shares a Markdown file with your highlights, their notes and your bookmark notes, in reading order under each chapter. They're also cross-referenced by [the codex](#the-codex) - open a character and see every line you've marked about them.
 
 ---
 
@@ -391,13 +430,23 @@ Use the system file picker (Library → top bar → "Import a book"). Three form
 
 **From Anna's Archive.** Library → + → "Search Anna's Archive", or the "Anna's Archive" chip on the Search tab (it carries over what you typed). Results are EPUBs, and can be narrowed by language and type (fiction, non-fiction, comics) or sorted by newest, oldest, largest or smallest. Tapping a result shows its details and any other editions of the same book in the results; "Add to library" downloads it in the background, so you can keep searching or leave the screen. Each result shows its download's progress, a notification follows it, and the finished notification (or the result) opens the book. The first search may show the site's "I'm not a robot" check, which you complete once; it isn't asked again until its cookies expire. Members can enter their secret key (⚙ on that screen) to skip the check and use fast downloads. Without a key, files come from LibGen by the same MD5. Every download is checked against that MD5 before import. The site changes domains often: if search stops working, set a working mirror there too.
 
+**From book catalogs (OPDS).** Library → + → "Browse book catalogs", or the "Catalogs" chip on the Search tab. Project Gutenberg is there from the start; "Add catalog" takes any OPDS address, with one-tap suggestions for Standard Ebooks (Patrons Circle members sign in with their email and a blank password) and self-hosted servers such as Calibre-Web, Kavita and Komga. Browse a catalog's sections, or search it when it supports search, and tap a book to see its details and the EPUB versions on offer (with images first, then smaller ones without). Adding downloads in the background exactly like Anna's Archive: progress on the result and in a notification, and the finished book opens on tap. Catalogs that sign in send the username and password only to the catalog's own address; passwords stay on the device and are left out of backups. Catalogs must use https: Android blocks plain http, and NovelForge doesn't opt out of that.
+
 **EPUB.** The app extracts:
 
 - Cover image
 - Chapters, one per spine entry
-- Chapter titles, taken from the chapter's own first heading (falling back to its `<title>`)
+- Chapter titles, taken from the book's own table of contents, then the chapter's first heading, then its `<title>`
 - Author and title metadata
 - Description (if present in the EPUB metadata)
+- Formatting: italic, bold, underline, strikethrough, superscript and subscript, including styles set through the book's stylesheets (Calibre's class-based italics, for example); headings, centred lines and block quotes
+- Pictures inside chapters. The cover isn't repeated, and pages that are only a picture are shown at the start of the next chapter. SVG images aren't shown
+- Footnotes: tapping a note marker opens the note in a popup, without turning the page or opening the menu
+- The book's table of contents, for the [contents sheet](#contents)
+
+Books that set their whole body in block quotes, as some converted EPUBs do, are shown as normal text rather than indented, and each block is its own paragraph. A book imported before 2.2.0 keeps its old paragraphs until it's removed and imported again, so its bookmarks and highlights stay put. If a book's own contents list misses most of its chapters, the contents sheet adds them.
+
+Formatting is kept beside the text rather than inside it, so search, highlights, bookmarks, the codex and TTS work on exactly the same text as before. If a chapter's formatting can't be matched to its text, that chapter shows plain text instead. EPUBs imported by earlier versions of the app show plain text until they're [archived and restored](#archiving-imported-books), which keeps your progress. Export and backups don't carry the formatting, pictures or footnotes: a restored book gets them back when its text is restored from the file.
 
 **Plain text and Markdown.** There's no conversion step to EPUB — text files are parsed straight into the same internal shape an EPUB produces, so they behave identically once imported. Chapters are detected by trying five strategies in descending confidence, and the first one that yields at least two chapters wins:
 
@@ -633,6 +682,7 @@ The widget refreshes itself when you save reading position, so it's always curre
 - Reading progress (per-novel paragraph positions)
 - Bookmarks and highlights with notes
 - Pronunciation dictionary
+- Text replacement rules
 - Reading stats history
 
 The ZIP can be saved to Drive, Dropbox, anywhere.

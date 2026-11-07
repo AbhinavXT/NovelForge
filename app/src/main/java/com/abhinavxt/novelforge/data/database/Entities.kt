@@ -139,6 +139,11 @@ data class ReaderSettingsEntity(
 
     // ── Tap zones (v15) ─────────────────────────────────────────
     val tapZoneLayout: String = "SIDES",
+
+    // ── Typography (v23) ────────────────────────────────────────
+    val customFont: String? = null,
+    val hyphenation: Boolean = false,
+    val paragraphSpacing: Int = 16,
 )
 
 @Entity(
@@ -373,4 +378,50 @@ data class CodexScanInfoEntity(
     val lastScannedNumber: Int,
     val scannedChapters: Int,
     val updatedAt: Long
+)
+/**
+ * How one chapter of an imported book looked: italics, images, footnotes.
+ * A [com.abhinavxt.novelforge.data.epub.ChapterFormatting] as JSON, kept
+ * apart from the chapter's text, which must stay plain. Goes with the text:
+ * dropped when a book is archived, written again when it is restored.
+ * NEW in v21.
+ */
+@Entity(tableName = "chapter_formatting", indices = [Index("novelId")])
+data class ChapterFormattingEntity(
+    @PrimaryKey
+    val chapterId: String,
+    val novelId: String,
+    val json: String
+)
+
+/**
+ * One line of an imported book's own table of contents, in book order.
+ * Points at a chapter number and paragraph, so it survives archiving like
+ * bookmarks do. NEW in v21.
+ */
+@Entity(tableName = "book_toc", primaryKeys = ["novelId", "position"])
+data class TocEntryEntity(
+    val novelId: String,
+    val position: Int,
+    val title: String,
+    val depth: Int,
+    val chapterNumber: Int,
+    val paragraph: Int
+)
+
+// ============ Text replacement while reading ============
+
+/**
+ * A rule the reader applies to what it shows: [find] -> [replace]. Matching
+ * follows the pronunciation dictionary (whole words, any case); an empty
+ * [replace] removes the match. [novelId] null means every book.
+ */
+@Entity(tableName = "text_replacements", indices = [Index("novelId")])
+data class TextReplacementEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val novelId: String? = null,
+    val find: String,
+    val replace: String,
+    val createdAt: Long = System.currentTimeMillis()
 )

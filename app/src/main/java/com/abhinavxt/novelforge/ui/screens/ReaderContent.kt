@@ -10,6 +10,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -58,7 +60,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalContext
@@ -67,14 +68,10 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.platform.TextToolbar
 import androidx.compose.ui.platform.TextToolbarStatus
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.abhinavxt.novelforge.data.DictionaryState
@@ -88,6 +85,25 @@ import com.abhinavxt.novelforge.data.model.TapAction
 import com.abhinavxt.novelforge.data.database.HighlightEntity
 import com.abhinavxt.novelforge.ui.components.QuickSettingsSheet
 import com.abhinavxt.novelforge.ui.components.PagedReaderContent
+import com.abhinavxt.novelforge.ui.components.BookImage
+import com.abhinavxt.novelforge.ui.components.ContentsSheet
+import com.abhinavxt.novelforge.ui.viewmodel.ReaderContents
+import com.abhinavxt.novelforge.ui.viewmodel.ReaderContentsEntry
+import com.abhinavxt.novelforge.ui.components.FootnoteDialog
+import com.abhinavxt.novelforge.ui.components.ParagraphFormat
+import com.abhinavxt.novelforge.ui.components.QUOTE_INDENT_DP
+import com.abhinavxt.novelforge.ui.components.ReaderFormatting
+import com.abhinavxt.novelforge.ui.components.IMAGE_SPACING
+import com.abhinavxt.novelforge.ui.components.addBookFormatting
+import com.abhinavxt.novelforge.ui.components.TextReplacementDialog
+import com.abhinavxt.novelforge.ui.components.TextReplacementsSheet
+import com.abhinavxt.novelforge.data.TextReplacementManager
+import com.abhinavxt.novelforge.data.TextReplacements
+import com.abhinavxt.novelforge.data.database.TextReplacementEntity
+import com.abhinavxt.novelforge.ui.components.forBlock
+import com.abhinavxt.novelforge.ui.components.sentenceRange
+import com.abhinavxt.novelforge.data.epub.BlockStyle
+import com.abhinavxt.novelforge.data.epub.Footnote
 import com.abhinavxt.novelforge.ui.viewmodel.ReaderChapterData
 import com.abhinavxt.novelforge.ui.viewmodel.StitchedChapter
 import com.abhinavxt.novelforge.ui.viewmodel.StitchTailState
@@ -161,10 +177,22 @@ internal fun ReaderContent(
     // Highlight parameters
     chapterHighlights: List<HighlightEntity> = emptyList(),
     highlightSaved: Boolean = false,
-    onAddHighlight: (paragraphIndex: Int, selectedText: String, paragraphText: String) -> Unit = { _, _, _ -> },
+    // Offsets are into the stored paragraph text, already mapped back from
+    // what's shown when text replacements changed it.
+    onAddHighlight: (paragraphIndex: Int, startOffset: Int, endOffset: Int, selectedText: String) -> Unit = { _, _, _, _ -> },
     onHighlightSavedShown: () -> Unit = {},
     // Pronunciation: save word → spoken replacement from the selection toolbar
-    onSavePronunciation: (word: String, replacement: String) -> Unit = { _, _ -> }
+    onSavePronunciation: (word: String, replacement: String) -> Unit = { _, _ -> },
+    // Contents sheet: the book's own table of contents, else its chapters.
+    // Entries in a chapter on screen are scrolled to here; others are
+    // handed to onOpenContentsEntry to load.
+    contents: ReaderContents = ReaderContents.EMPTY,
+    onOpenContentsEntry: (ReaderContentsEntry) -> Unit = {},
+    // Text replacement rules for this book (its own first, then every
+    // book's). Shown text and TTS go through them; stored text doesn't.
+    replacementRules: List<TextReplacementEntity> = emptyList(),
+    onSaveReplacement: (id: Long?, novelId: String?, find: String, replace: String) -> Unit = { _, _, _, _ -> },
+    onDeleteReplacement: (Long) -> Unit = {}
 ) {
     val colors = getThemeColors(settings)
 
@@ -193,6 +221,9 @@ internal fun ReaderContent(
 
     // Appearance bottom sheet state
     var showAppearanceSheet by remember { mutableStateOf(false) }
+    var showContents by remember { mutableStateOf(false) }
+    // Paged mode's current paragraph, for marking the contents entry.
+    var pagedParagraph by remember(chapter.chapterId) { mutableIntStateOf(chapter.savedParagraphIndex) }
 
     // ── In-book find ────────────────────────────────────────────
     // Transient UI state, deliberately NOT in the ViewModel: closing
@@ -220,28 +251,41 @@ internal fun ReaderContent(
     // paragraphs START in the global item index space; a divider item
     // sits BEFORE every stitched segment (hence the +1). Indices only
     // ever grow as chapters append, so scroll position never shifts.
-    val segments = remember(chapter, stitchedChapters) {
+    // Text replacements: segments hold the paragraphs as SHOWN, with the
+    // book's formatting moved onto them and a map back to the stored text
+    // for highlights and the TTS sentence. Paragraph counts never change.
+    val replacements = remember(replacementRules) { TextReplacementManager.compile(replacementRules) }
+    val segments = remember(chapter, stitchedChapters, replacements) {
+        fun shown(paragraphs: List<String>): List<TextReplacements.Mapped>? =
+            if (replacements.isEmpty) null
+            else paragraphs.map { TextReplacements.apply(replacements, it) }.takeIf { maps -> maps.any { it.isChanged } }
         buildList {
+            val anchorShown = shown(chapter.paragraphs)
             add(
                 ReaderSegment(
                     chapterId = chapter.chapterId,
                     title = chapter.chapterTitle,
                     number = chapter.chapterNumber,
-                    paragraphs = chapter.paragraphs,
+                    paragraphs = anchorShown?.map { it.text } ?: chapter.paragraphs,
                     content = chapter.content,
-                    startIndex = 0
+                    startIndex = 0,
+                    formatting = anchorShown?.let { chapter.formatting?.mapped(it) } ?: chapter.formatting,
+                    shown = anchorShown
                 )
             )
             var offset = chapter.paragraphs.size
             stitchedChapters.forEach { stitched ->
+                val stitchedShown = shown(stitched.paragraphs)
                 add(
                     ReaderSegment(
                         chapterId = stitched.nav.id,
                         title = stitched.nav.title,
                         number = stitched.nav.number,
-                        paragraphs = stitched.paragraphs,
+                        paragraphs = stitchedShown?.map { it.text } ?: stitched.paragraphs,
                         content = stitched.content,
-                        startIndex = offset + 1  // +1 = divider item
+                        startIndex = offset + 1,  // +1 = divider item
+                        formatting = stitchedShown?.let { stitched.formatting?.mapped(it) } ?: stitched.formatting,
+                        shown = stitchedShown
                     )
                 )
                 offset += 1 + stitched.paragraphs.size
@@ -327,6 +371,14 @@ internal fun ReaderContent(
     // "Pronounce" from the selection toolbar — holds the selected word
     // while the add-pronunciation dialog is open. Null = dialog closed.
     var pronunciationWord by remember { mutableStateOf<String?>(null) }
+
+    // "Replace" from the selection toolbar, and the rules sheet.
+    var replaceWord by remember { mutableStateOf<String?>(null) }
+    var showReplacements by remember { mutableStateOf(false) }
+
+    // A footnote opened by tapping its reference. Null = closed.
+    var openNote by remember { mutableStateOf<Footnote?>(null) }
+    val showNote: (Footnote) -> Unit = { note -> openNote = note }
 
     // Wrap onLookupWord to also clear selection
     val lookupWordAndClearSelection: (String) -> Unit = { word ->
@@ -510,13 +562,64 @@ internal fun ReaderContent(
         }
     }
 
+    // ── Contents sheet ──
+    if (showContents) {
+        val paged = settings.readingMode == ReadingMode.PAGED
+        val (here, paragraph) = if (paged) {
+            chapter.chapterId to pagedParagraph
+        } else {
+            resolvePosition(listState.firstVisibleItemIndex).let { (seg, within) -> seg.chapterId to within }
+        }
+        ContentsSheet(
+            contents = contents,
+            currentIndex = contents.currentIndex(here, paragraph),
+            onSelect = { entry ->
+                showContents = false
+                if (paged) {
+                    // Paged mode only holds the anchor chapter.
+                    if (entry.chapterId == chapter.chapterId) {
+                        pagedFindRequest = ((pagedFindRequest?.first ?: 0) + 1) to entry.paragraph
+                    } else {
+                        onOpenContentsEntry(entry)
+                    }
+                } else {
+                    val seg = segments.firstOrNull { it.chapterId == entry.chapterId }
+                    if (seg != null && seg.paragraphs.isNotEmpty()) {
+                        findScope.launch {
+                            listState.scrollToItem(
+                                seg.startIndex + entry.paragraph.coerceIn(0, seg.paragraphs.size - 1)
+                            )
+                        }
+                    } else {
+                        onOpenContentsEntry(entry)
+                    }
+                }
+            },
+            onDismiss = { showContents = false }
+        )
+    }
+
     // ── Quick settings bottom sheet: reading mode, themes, fonts, etc. ──
     if (showAppearanceSheet) {
         QuickSettingsSheet(
             settings = settings,
             onSettingsChanged = { newSettings -> onUpdateSettings(newSettings) },
             onNavigateToPronunciation = null, // Wire up if nav controller is available
+            onOpenTextReplacements = {
+                showAppearanceSheet = false
+                showReplacements = true
+            },
             onDismiss = { showAppearanceSheet = false }
+        )
+    }
+
+    if (showReplacements) {
+        TextReplacementsSheet(
+            novelId = novelId,
+            rules = replacementRules,
+            onSave = onSaveReplacement,
+            onDelete = onDeleteReplacement,
+            onDismiss = { showReplacements = false }
         )
     }
 
@@ -572,6 +675,9 @@ internal fun ReaderContent(
                             findActive = true
                             isImmersive = false
                         },
+                        onContentsClick = if (contents.entries.isNotEmpty()) {
+                            { showContents = true }
+                        } else null,
                         isAutoScrollActive = isAutoScrollActive,
                         onAutoScrollClick = {
                             when (autoScrollState) {
@@ -652,7 +758,9 @@ internal fun ReaderContent(
             if (settings.readingMode == ReadingMode.PAGED) {
                 // Paged mode — horizontal pages with swipe + tap-to-turn
                 PagedReaderContent(
-                    paragraphs = chapter.paragraphs,
+                    paragraphs = segments.first().paragraphs,
+                    formatting = segments.first().formatting,
+                    onFootnoteClick = showNote,
                     settings = settings,
                     colors = colors,
                     savedParagraphIndex = chapter.savedParagraphIndex,
@@ -660,7 +768,10 @@ internal fun ReaderContent(
                     activeSearchParagraph = activeFindMatch?.paragraphIndex ?: -1,
                     activeSearchRange = activeFindMatch?.range,
                     searchJumpRequest = pagedFindRequest,
-                    onParagraphIndexChanged = { index -> onSaveParagraphIndex(index) },
+                    onParagraphIndexChanged = { index ->
+                        pagedParagraph = index
+                        onSaveParagraphIndex(index)
+                    },
                     onToggleImmersive = { isImmersive = !isImmersive },
                     onPreviousChapter = onPreviousChapter,
                     onNextChapter = onNextChapter,
@@ -821,6 +932,9 @@ internal fun ReaderContent(
                             BookmarkableParagraph(
                                 paragraph = paragraph,
                                 index = index,
+                                format = seg.formatting?.get(index),
+                                shown = seg.shown?.getOrNull(index),
+                                onNoteClick = showNote,
                                 selectionKey = selectionKey,
                                 isInLibrary = isInLibrary,
                                 isCurrentTTSParagraph = isCurrentParagraph,
@@ -862,7 +976,21 @@ internal fun ReaderContent(
                                         activeSegmentId = seg.chapterId
                                         onActiveChapterChanged(seg.chapterId)
                                     }
-                                    onAddHighlight(index, selectedText, paragraph)
+                                    // Found in the text as shown, stored
+                                    // against the text as kept.
+                                    val shownStart = paragraph.indexOf(selectedText).coerceAtLeast(0)
+                                    val shownEnd = (shownStart + selectedText.length).coerceAtMost(paragraph.length)
+                                    val map = seg.shown?.getOrNull(index)
+                                    onAddHighlight(
+                                        index,
+                                        map?.toOriginal(shownStart, isEnd = false) ?: shownStart,
+                                        map?.toOriginal(shownEnd, isEnd = true) ?: shownEnd,
+                                        selectedText
+                                    )
+                                    selectionKey++
+                                },
+                                onReplace = { selectedText ->
+                                    replaceWord = selectedText
                                     selectionKey++
                                 }
                             )
@@ -1002,6 +1130,33 @@ internal fun ReaderContent(
             onDismiss = { pronunciationWord = null }
         )
     }
+
+    // Add-replacement dialog — shown when user taps "Replace" on selected text
+    replaceWord?.let { selected ->
+        val existing = TextReplacementManager.ruleShowing(replacementRules, selected)
+        TextReplacementDialog(
+            title = if (existing != null) "Edit replacement" else "Replace",
+            initialFind = existing?.find ?: selected,
+            initialReplace = existing?.replace.orEmpty(),
+            initialThisBookOnly = existing == null || existing.novelId != null,
+            onSave = { find, replace, thisBookOnly ->
+                onSaveReplacement(existing?.id, if (thisBookOnly) novelId else null, find, replace)
+                replaceWord = null
+            },
+            onDismiss = { replaceWord = null }
+        )
+    }
+
+    // Footnote popup — opened by tapping a note reference in either mode
+    openNote?.let { note ->
+        FootnoteDialog(
+            note = note,
+            textColor = colors.text,
+            containerColor = colors.background,
+            fontSize = settings.fontSize,
+            onDismiss = { openNote = null }
+        )
+    }
 }
 
 /**
@@ -1015,6 +1170,10 @@ internal fun ReaderContent(
 private fun BookmarkableParagraph(
     paragraph: String,
     index: Int,
+    format: ParagraphFormat? = null,
+    /** How [paragraph] (as shown) maps to the stored text; null when unchanged. */
+    shown: TextReplacements.Mapped? = null,
+    onNoteClick: ((Footnote) -> Unit)? = null,
     selectionKey: Int,
     isInLibrary: Boolean,
     isCurrentTTSParagraph: Boolean,
@@ -1028,7 +1187,8 @@ private fun BookmarkableParagraph(
     onLookupWord: (String) -> Unit,
     onAddPronunciation: (String) -> Unit = {},
     onSelectionVisibilityChanged: (Boolean) -> Unit = {},
-    onHighlight: (String) -> Unit = {}
+    onHighlight: (String) -> Unit = {},
+    onReplace: (String) -> Unit = {}
 ) {
     val view = LocalView.current
 
@@ -1043,92 +1203,90 @@ private fun BookmarkableParagraph(
             onHighlightRequested = if (isInLibrary) {
                 { selectedText -> onHighlight(selectedText) }
             } else null,
+            onReplaceRequested = { selectedText -> onReplace(selectedText) },
             onVisibilityChanged = onSelectionVisibilityChanged
         )
     }
 
-    CompositionLocalProvider(LocalTextToolbar provides textToolbar) {
-        key(selectionKey) {
-            SelectionContainer {
-                if (isCurrentTTSParagraph) {
-                    HighlightedParagraph(
-                        paragraph = paragraph,
-                        currentSentenceIndex = ttsManager.currentSentenceInParagraph.collectAsState().value,
-                        textColor = colors.text,
-                        highlightColor = colors.text.copy(alpha = 0.15f),
-                        fontSize = settings.fontSize,
-                        lineSpacing = settings.lineSpacing,
-                        fontFamily = settings.font.toFontFamily(),
-                        justify = settings.justifyText,
-                        indent = settings.paragraphIndent,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-                } else {
+    Column(Modifier.fillMaxWidth()) {
+        // Pictures sit outside the selectable text: they can't be copied,
+        // and a long-press on one shouldn't start a selection.
+        format?.imagesBefore?.forEach { image ->
+            BookImage(image, Modifier.padding(bottom = IMAGE_SPACING))
+        }
+
+        // A paragraph a replacement emptied (a site watermark, say) takes
+        // no space; its item stays so paragraph indexes still line up.
+        if (paragraph.isNotBlank()) CompositionLocalProvider(LocalTextToolbar provides textToolbar) {
+            key(selectionKey) {
+                SelectionContainer {
                     // In-book find occurrences for this paragraph.
                     // remember-ed: the scan reruns only when the text
                     // or query changes, not on every recomposition.
                     val searchRanges = remember(paragraph, searchQuery) {
                         MatchHighlight.findOccurrences(paragraph, searchQuery)
                     }
+                    val ttsSentence = if (isCurrentTTSParagraph) {
+                        ttsManager.currentSentenceInParagraph.collectAsState().value
+                    } else -1
 
-                    if (highlights.isNotEmpty() || searchRanges.isNotEmpty()) {
-                        // Highlight overlays + search matches share one
-                        // AnnotatedString. Search spans are added LAST so
-                        // they win where the two overlap — a find match
-                        // must stay visible inside a yellow highlight.
-                        val annotatedText = buildAnnotatedString {
-                            append(paragraph)
-                            highlights.forEach { hl ->
-                                val s = hl.startOffset.coerceIn(0, paragraph.length)
-                                val e = hl.endOffset.coerceIn(s, paragraph.length)
-                                if (s < e) {
-                                    addStyle(
-                                        SpanStyle(background = getHighlightColor(hl.color)),
-                                        s, e
-                                    )
-                                }
-                            }
-                            with(MatchHighlight) {
-                                addSearchSpans(
-                                    ranges = searchRanges,
-                                    activeRange = activeSearchRange,
-                                    textColor = colors.text,
-                                    backgroundColor = colors.background
+                    // One AnnotatedString, layered bottom to top: the
+                    // book's own formatting, the TTS sentence, highlights,
+                    // then search matches, so a find match stays visible
+                    // inside a highlight. The text itself is never changed.
+                    val noteColor = MaterialTheme.colorScheme.primary
+                    val annotatedText = buildAnnotatedString {
+                        append(paragraph)
+                        addBookFormatting(format, noteColor, onNoteClick)
+                        // TTS sentences and highlights point into the
+                        // stored text; move them onto what's shown.
+                        val stored = shown?.original ?: paragraph
+                        fun onScreen(start: Int, end: Int): IntRange? =
+                            if (shown == null) (start until end).takeIf { start < end }
+                            else shown.rangeToDisplay(start, end)
+                        sentenceRange(stored, ttsSentence)?.let { r ->
+                            onScreen(r.first, r.last + 1)?.let { d ->
+                                addStyle(
+                                    SpanStyle(background = colors.text.copy(alpha = 0.15f)),
+                                    d.first, d.last + 1
                                 )
                             }
                         }
-                        Text(
-                            text = annotatedText,
-                            color = colors.text,
-                            fontSize = settings.fontSize.sp,
-                            fontFamily = settings.font.toFontFamily(),
-                            lineHeight = (settings.fontSize * settings.lineSpacing).sp,
-                            textAlign = if (settings.justifyText) TextAlign.Justify else TextAlign.Start,
-                            style = TextStyle(
-                                textIndent = if (settings.paragraphIndent) {
-                                    TextIndent(firstLine = (settings.fontSize * 1.5).sp)
-                                } else TextIndent.None
-                            ),
-                            modifier = Modifier.padding(bottom = 16.dp)
-                        )
-                    } else {
-                        Text(
-                            text = paragraph,
-                            color = colors.text,
-                            fontSize = settings.fontSize.sp,
-                            fontFamily = settings.font.toFontFamily(),
-                            lineHeight = (settings.fontSize * settings.lineSpacing).sp,
-                            textAlign = if (settings.justifyText) TextAlign.Justify else TextAlign.Start,
-                            style = TextStyle(
-                                textIndent = if (settings.paragraphIndent) {
-                                    TextIndent(firstLine = (settings.fontSize * 1.5).sp)
-                                } else TextIndent.None
-                            ),
-                            modifier = Modifier.padding(bottom = 16.dp)
-                        )
+                        highlights.forEach { hl ->
+                            val s = hl.startOffset.coerceIn(0, stored.length)
+                            val e = hl.endOffset.coerceIn(s, stored.length)
+                            onScreen(s, e)?.let { d ->
+                                addStyle(
+                                    SpanStyle(background = getHighlightColor(hl.color)),
+                                    d.first, d.last + 1
+                                )
+                            }
+                        }
+                        with(MatchHighlight) {
+                            addSearchSpans(
+                                ranges = searchRanges,
+                                activeRange = activeSearchRange,
+                                textColor = colors.text,
+                                backgroundColor = colors.background
+                            )
+                        }
                     }
+                    val block = format?.block
+                    Text(
+                        text = annotatedText,
+                        color = colors.text,
+                        style = settings.textStyle().forBlock(block),
+                        modifier = Modifier.padding(
+                            start = if (block == BlockStyle.QUOTE) QUOTE_INDENT_DP.dp else 0.dp,
+                            bottom = settings.paragraphSpacing.dp
+                        )
+                    )
                 }
             }
+        }
+
+        format?.imagesAfter?.forEach { image ->
+            BookImage(image, Modifier.padding(bottom = IMAGE_SPACING))
         }
     }
 }
@@ -1143,6 +1301,7 @@ private class ReaderTextToolbar(
     private val onPronounceRequested: ((String) -> Unit)? = null,
     private val onBookmarkRequested: (() -> Unit)?,
     private val onHighlightRequested: ((String) -> Unit)? = null,
+    private val onReplaceRequested: ((String) -> Unit)? = null,
     /** Reports whether the selection toolbar is visible — lets the reader
      *  treat the next tap as “clear selection” instead of a tap-zone action. */
     private val onVisibilityChanged: (Boolean) -> Unit = {}
@@ -1174,6 +1333,9 @@ private class ReaderTextToolbar(
                 }
                 if (onBookmarkRequested != null) {
                     menu.add(0, MENU_BOOKMARK, 4, "Bookmark")
+                }
+                if (onReplaceRequested != null) {
+                    menu.add(0, MENU_REPLACE, 5, "Replace")
                 }
                 return true
             }
@@ -1219,6 +1381,16 @@ private class ReaderTextToolbar(
                     MENU_BOOKMARK -> {
                         onBookmarkRequested?.invoke()
                     }
+                    MENU_REPLACE -> {
+                        // Same clipboard round-trip as Define.
+                        onCopyRequested?.invoke()
+                        val clipboard = view.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val selectedText = clipboard.primaryClip
+                            ?.getItemAt(0)?.text?.toString()?.trim() ?: ""
+                        if (selectedText.isNotBlank()) {
+                            onReplaceRequested?.invoke(selectedText)
+                        }
+                    }
                 }
                 mode.finish()
                 return true
@@ -1256,67 +1428,8 @@ private class ReaderTextToolbar(
         private const val MENU_HIGHLIGHT = 3
         private const val MENU_BOOKMARK = 4
         private const val MENU_PRONOUNCE = 5
+        private const val MENU_REPLACE = 6
     }
-}
-
-/**
- * Paragraph with highlighted current sentence for TTS
- */
-@Composable
-private fun HighlightedParagraph(
-    paragraph: String,
-    currentSentenceIndex: Int,
-    textColor: Color,
-    highlightColor: Color,
-    fontSize: Int,
-    lineSpacing: Float = 1.6f,
-    fontFamily: FontFamily,
-    justify: Boolean = true,
-    indent: Boolean = false,
-    modifier: Modifier = Modifier
-) {
-
-    // Split paragraph into sentences
-    val sentences = remember(paragraph) {
-        paragraph.split(Regex("(?<=[.!?])\\s+"))
-            .filter { it.isNotBlank() }
-    }
-
-    val annotatedString = buildAnnotatedString {
-        sentences.forEachIndexed { index, sentence ->
-            if (index == currentSentenceIndex) {
-                // Highlight current sentence
-                withStyle(
-                    style = SpanStyle(
-                        background = highlightColor
-                    )
-                ) {
-                    append(sentence)
-                }
-            } else {
-                append(sentence)
-            }
-
-            // Add space between sentences (except after last)
-            if (index < sentences.size - 1) {
-                append(" ")
-            }
-        }
-    }
-
-    Text(
-        text = annotatedString,
-        color = textColor,
-        fontSize = fontSize.sp,
-        fontFamily = fontFamily,
-        lineHeight = (fontSize * lineSpacing).sp,
-        textAlign = if (justify) TextAlign.Justify else TextAlign.Start,
-        style = TextStyle(
-            textIndent = if (indent) TextIndent(firstLine = (fontSize * 1.5).sp)
-            else TextIndent.None
-        ),
-        modifier = modifier
-    )
 }
 
 /**
@@ -1389,6 +1502,7 @@ private fun DictionaryBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 32.dp)
         ) {
@@ -1524,7 +1638,10 @@ internal data class ReaderSegment(
     val number: Int,
     val paragraphs: List<String>,
     val content: String,
-    val startIndex: Int
+    val startIndex: Int,
+    val formatting: ReaderFormatting? = null,
+    /** Per paragraph, how the shown text maps to the stored text; null when nothing was replaced. */
+    val shown: List<TextReplacements.Mapped>? = null
 )
 
 /**

@@ -2,6 +2,7 @@ package com.abhinavxt.novelforge.data.annas
 
 import android.content.Context
 import android.webkit.CookieManager
+import com.abhinavxt.novelforge.data.UserFacingException
 import com.abhinavxt.novelforge.data.source.SourceHttp
 import com.abhinavxt.novelforge.data.source.nf.USER_AGENT
 import com.abhinavxt.novelforge.data.source.nf.WebViewResolver
@@ -50,7 +51,8 @@ data class AnnasFilters(
 }
 
 /** A failure worth showing the user as-is. */
-open class AnnasArchiveException(message: String, cause: Throwable? = null) : Exception(message, cause)
+open class AnnasArchiveException(message: String, cause: Throwable? = null) :
+    UserFacingException(message, cause)
 
 /**
  * The site wants a person to complete a check at [url]. Show it in a

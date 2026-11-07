@@ -63,6 +63,7 @@ fun SearchScreen(
     networkMonitor: NetworkMonitor,
     onBrowseClick: () -> Unit = {},
     onAnnasArchiveClick: (query: String) -> Unit = {},
+    onCatalogsClick: () -> Unit = {},
     viewModel: SearchViewModel = viewModel(
         factory = SearchViewModel.provideFactory(
             repository,
@@ -123,6 +124,11 @@ fun SearchScreen(
                     selected = false,
                     onClick = { onAnnasArchiveClick(searchQuery) },
                     label = { Text("Anna's Archive") }
+                )
+                FilterChip(
+                    selected = false,
+                    onClick = onCatalogsClick,
+                    label = { Text("Catalogs") }
                 )
                 FilterChip(
                     selected = !allSourcesMode,

@@ -184,6 +184,12 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
             else "annas_archive?q=${URLEncoder.encode(query.trim(), "UTF-8")}"
     }
 
+    object Opds : Screen(
+        route = "opds",
+        title = "Book catalogs",
+        icon = Icons.Default.MenuBook
+    )
+
     object Browse : Screen(
         route = "browse",
         title = "Browse",
@@ -329,6 +335,9 @@ fun NavigationHost(
                             },
                             onAnnasArchiveClick = { query ->
                                 navController.navigate(Screen.AnnasArchive.createRoute(query))
+                            },
+                            onCatalogsClick = {
+                                navController.navigate(Screen.Opds.route)
                             }
                         )
                     }
@@ -403,6 +412,9 @@ fun NavigationHost(
                             },
                             onAnnasArchiveClick = {
                                 navController.navigate(Screen.AnnasArchive.createRoute())
+                            },
+                            onCatalogsClick = {
+                                navController.navigate(Screen.Opds.route)
                             },
                             networkMonitor = networkMonitor
                         )
@@ -484,6 +496,18 @@ fun NavigationHost(
                         initialQuery = URLDecoder.decode(
                             backStackEntry.arguments?.getString("q").orEmpty(), "UTF-8"
                         ),
+                        networkMonitor = networkMonitor,
+                        onBackClick = { navController.popBackStack() },
+                        onOpenNovel = { novelId ->
+                            navController.navigate(
+                                Screen.Detail.createRoute(novelId, constructNovelUrl(novelId))
+                            )
+                        }
+                    )
+                }
+
+                composable(Screen.Opds.route) {
+                    OpdsScreen(
                         networkMonitor = networkMonitor,
                         onBackClick = { navController.popBackStack() },
                         onOpenNovel = { novelId ->

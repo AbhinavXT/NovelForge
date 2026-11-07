@@ -503,7 +503,7 @@ interface BookmarkDao {
     suspend fun getAllBookmarksOnce(): List<BookmarkEntity>
 
     // Phase 7: annotation export
-    @Query("SELECT * FROM bookmarks WHERE novelId = :novelId ORDER BY chapterId, paragraphIndex")
+    @Query("SELECT * FROM bookmarks WHERE novelId = :novelId ORDER BY chapterNumber, paragraphIndex")
     suspend fun getBookmarksForNovelOnce(novelId: String): List<BookmarkEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -670,7 +670,7 @@ interface HighlightDao {
     suspend fun getAllHighlightsOnce(): List<HighlightEntity>
 
     // Phase 7: annotation export
-    @Query("SELECT * FROM highlights WHERE novelId = :novelId ORDER BY chapterId, paragraphIndex, startOffset")
+    @Query("SELECT * FROM highlights WHERE novelId = :novelId ORDER BY chapterNumber, paragraphIndex, startOffset")
     suspend fun getHighlightsForNovelOnce(novelId: String): List<HighlightEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -747,3 +747,45 @@ data class HistoryRowData(
     val readingTimeMs: Long,
     val completedAt: Long
 )
+/** Formatting and contents of imported books (v21). */
+@Dao
+interface BookFormattingDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFormatting(rows: List<ChapterFormattingEntity>)
+
+    @Query("SELECT json FROM chapter_formatting WHERE chapterId = :chapterId")
+    suspend fun getFormattingJson(chapterId: String): String?
+
+    @Query("DELETE FROM chapter_formatting WHERE novelId = :novelId")
+    suspend fun deleteFormattingForNovel(novelId: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertToc(rows: List<TocEntryEntity>)
+
+    @Query("SELECT * FROM book_toc WHERE novelId = :novelId ORDER BY position")
+    suspend fun getToc(novelId: String): List<TocEntryEntity>
+
+    @Query("DELETE FROM book_toc WHERE novelId = :novelId")
+    suspend fun deleteTocForNovel(novelId: String)
+}
+
+// ============ Text replacement DAO ============
+
+@Dao
+interface TextReplacementDao {
+
+    @Query("SELECT * FROM text_replacements ORDER BY find COLLATE NOCASE ASC")
+    fun observeAll(): Flow<List<TextReplacementEntity>>
+
+    @Query("SELECT * FROM text_replacements ORDER BY find COLLATE NOCASE ASC")
+    suspend fun getAll(): List<TextReplacementEntity>
+
+    @Insert
+    suspend fun insert(rule: TextReplacementEntity): Long
+
+    @Query("UPDATE text_replacements SET novelId = :novelId, find = :find, `replace` = :replace WHERE id = :id")
+    suspend fun update(id: Long, novelId: String?, find: String, replace: String)
+
+    @Query("DELETE FROM text_replacements WHERE id = :id")
+    suspend fun delete(id: Long)
+}

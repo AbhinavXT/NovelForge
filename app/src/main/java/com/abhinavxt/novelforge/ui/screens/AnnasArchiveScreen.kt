@@ -79,7 +79,8 @@ import com.abhinavxt.novelforge.data.annas.ChallengeWebView
 import com.abhinavxt.novelforge.ui.components.NovelCover
 import com.abhinavxt.novelforge.ui.components.OfflineBanner
 import com.abhinavxt.novelforge.ui.viewmodel.AnnasArchiveViewModel
-import com.abhinavxt.novelforge.ui.viewmodel.AnnasArchiveViewModel.DownloadState
+import com.abhinavxt.novelforge.worker.BookDownloadState
+import com.abhinavxt.novelforge.ui.components.BookDownloadLine
 import com.abhinavxt.novelforge.util.NetworkMonitor
 import kotlinx.coroutines.launch
 
@@ -194,7 +195,7 @@ fun AnnasArchiveScreen(
                         downloads = downloads,
                         onBookClick = { book ->
                             val d = downloads[book.md5]
-                            if (d is DownloadState.Imported) onOpenNovel(d.novelId) else selected = book
+                            if (d is BookDownloadState.Imported) onOpenNovel(d.novelId) else selected = book
                         },
                         onLoadMore = viewModel::loadMore
                     )
@@ -297,7 +298,7 @@ private fun FilterMenu(options: List<Pair<String, String>>, value: String, onPic
 @Composable
 private fun ResultList(
     state: AnnasArchiveViewModel.SearchState,
-    downloads: Map<String, DownloadState>,
+    downloads: Map<String, BookDownloadState>,
     onBookClick: (AnnasBook) -> Unit,
     onLoadMore: () -> Unit
 ) {
@@ -341,7 +342,7 @@ private fun ResultList(
 }
 
 @Composable
-private fun BookRow(book: AnnasBook, download: DownloadState?, onClick: () -> Unit) {
+private fun BookRow(book: AnnasBook, download: BookDownloadState?, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -380,36 +381,9 @@ private fun BookRow(book: AnnasBook, download: DownloadState?, onClick: () -> Un
             }
             download?.let {
                 Spacer(Modifier.height(4.dp))
-                DownloadLine(it)
+                BookDownloadLine(it)
             }
         }
-    }
-}
-
-/** One line under a result saying where its download has got to. */
-@Composable
-private fun DownloadLine(state: DownloadState) {
-    val (icon, text, isError) = when (state) {
-        DownloadState.Queued -> Triple(Icons.Default.Schedule, "Waiting to download", false)
-        is DownloadState.Running -> Triple(
-            null,
-            state.total?.let { "Downloading ${formatBytes(state.bytes)} of ${formatBytes(it)}" }
-                ?: if (state.bytes > 0) "Downloading ${formatBytes(state.bytes)}" else "Downloading",
-            false
-        )
-        is DownloadState.Imported -> Triple(Icons.Default.CheckCircle, "In your library · tap to open", false)
-        is DownloadState.AlreadyInLibrary -> Triple(Icons.Default.CheckCircle, "Already in your library", false)
-        is DownloadState.Failed -> Triple(Icons.Default.ErrorOutline, "Couldn't download · tap to retry", true)
-    }
-    val color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        if (icon != null) {
-            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
-        } else {
-            CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp)
-        }
-        Spacer(Modifier.width(6.dp))
-        Text(text, style = MaterialTheme.typography.labelMedium, color = color)
     }
 }
 
@@ -457,9 +431,9 @@ private fun CenteredMessage(
 @Composable
 private fun BookDialog(
     book: AnnasBook,
-    download: DownloadState?,
+    download: BookDownloadState?,
     editions: List<AnnasBook>,
-    downloads: Map<String, DownloadState>,
+    downloads: Map<String, BookDownloadState>,
     onPickEdition: (AnnasBook) -> Unit,
     onAdd: () -> Unit,
     onCancelDownload: () -> Unit,
@@ -484,8 +458,8 @@ private fun BookDialog(
                 }
                 if (download != null) {
                     Spacer(Modifier.height(12.dp))
-                    DownloadLine(download)
-                    if (download is DownloadState.Failed) {
+                    BookDownloadLine(download)
+                    if (download is BookDownloadState.Failed) {
                         Spacer(Modifier.height(4.dp))
                         Text(
                             download.message,
@@ -522,7 +496,7 @@ private fun BookDialog(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            downloads[edition.md5]?.let { DownloadLine(it) }
+                            downloads[edition.md5]?.let { BookDownloadLine(it) }
                         }
                     }
                 }
@@ -531,11 +505,11 @@ private fun BookDialog(
         confirmButton = {
             when (download) {
                 null -> Button(onClick = onAdd) { Text("Add to library") }
-                is DownloadState.Failed -> Button(onClick = onAdd) { Text("Retry") }
-                DownloadState.Queued, is DownloadState.Running ->
+                is BookDownloadState.Failed -> Button(onClick = onAdd) { Text("Retry") }
+                BookDownloadState.Queued, is BookDownloadState.Running ->
                     TextButton(onClick = onCancelDownload) { Text("Cancel download") }
-                is DownloadState.Imported -> Button(onClick = { onOpen(download.novelId) }) { Text("Open") }
-                is DownloadState.AlreadyInLibrary -> Unit
+                is BookDownloadState.Imported -> Button(onClick = { onOpen(download.novelId) }) { Text("Open") }
+                is BookDownloadState.AlreadyInLibrary -> Unit
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
@@ -655,10 +629,4 @@ private fun SettingsDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
-}
-
-private fun formatBytes(bytes: Long): String = when {
-    bytes >= 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
-    bytes >= 1024 -> "${bytes / 1024} KB"
-    else -> "$bytes B"
 }

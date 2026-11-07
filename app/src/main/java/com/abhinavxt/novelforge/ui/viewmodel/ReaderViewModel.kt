@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.abhinavxt.novelforge.data.DictionaryRepository
 import com.abhinavxt.novelforge.data.DictionaryState
+import com.abhinavxt.novelforge.data.StarDictManager
 import com.abhinavxt.novelforge.data.NovelRepository
 import com.abhinavxt.novelforge.data.ChapterPrefetcher
 import com.abhinavxt.novelforge.data.ReadingStatsTracker
@@ -13,6 +14,7 @@ import com.abhinavxt.novelforge.data.ThemePreferences
 import com.abhinavxt.novelforge.data.database.HighlightEntity
 import com.abhinavxt.novelforge.data.epub.LocalBookArchive
 import com.abhinavxt.novelforge.ui.components.ArchiveProblem
+import com.abhinavxt.novelforge.ui.components.ReaderFormatting
 import com.abhinavxt.novelforge.ui.components.toProblem
 import com.abhinavxt.novelforge.data.model.Chapter
 import com.abhinavxt.novelforge.data.model.ReaderSettings
@@ -25,6 +27,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 // Navigation info for a chapter
 data class ChapterNav(
@@ -43,7 +47,9 @@ data class ChapterNav(
 data class StitchedChapter(
     val nav: ChapterNav,
     val paragraphs: List<String>,
-    val content: String
+    val content: String,
+    /** The book's own formatting, for imported EPUBs that kept it. */
+    val formatting: ReaderFormatting? = null
 )
 
 /**
@@ -84,7 +90,9 @@ data class ReaderChapterData(
     val nextChapter: ChapterNav?,
     val isFirstChapter: Boolean,
     val isLastChapter: Boolean,
-    val savedParagraphIndex: Int = 0  // Which paragraph user was reading
+    val savedParagraphIndex: Int = 0,  // Which paragraph user was reading
+    /** The book's own formatting, for imported EPUBs that kept it. */
+    val formatting: ReaderFormatting? = null
 )
 
 sealed interface ReaderUiState {
@@ -112,7 +120,8 @@ class ReaderViewModel(
     private val statsTracker: ReadingStatsTracker? = null,
     private val prefetcher: ChapterPrefetcher? = null,
     targetParagraph: Int = -1,
-    private val bookArchive: LocalBookArchive? = null
+    private val bookArchive: LocalBookArchive? = null,
+    private val offlineDictionaries: StarDictManager? = null
 ) : ViewModel() {
 
     // The file the user last picked to restore from, kept so "Restore
@@ -215,7 +224,8 @@ class ReaderViewModel(
         val languageCode = themePreferences?.dictionaryLanguage?.value?.code ?: "en"
 
         viewModelScope.launch {
-            val result = DictionaryRepository.lookup(cleanWord, languageCode)
+            val result = offlineDictionaries?.lookup(cleanWord)
+                ?: DictionaryRepository.lookup(cleanWord, languageCode)
             _dictionaryState.value = if (result != null) {
                 DictionaryState.Success(result)
             } else {
@@ -267,6 +277,7 @@ class ReaderViewModel(
 
                 _isInLibrary.value = repository.isInLibrary(novelId)
 
+                loadContents()
                 loadChapter()
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -276,6 +287,35 @@ class ReaderViewModel(
     }
 
     private var justRestored = false
+
+    // ============ CONTENTS ============
+
+    private val _contents = MutableStateFlow(ReaderContents.EMPTY)
+    /** The contents sheet: the book's own table of contents, else its chapters. */
+    val contents: StateFlow<ReaderContents> = _contents.asStateFlow()
+
+    private suspend fun loadContents() {
+        val toc = try {
+            repository.getBookToc(novelId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.e("Could not load the book's contents", e)
+            emptyList()
+        }
+        _contents.value = ReaderContents.build(toc, chapterList)
+    }
+
+    /**
+     * Opens a contents entry in another chapter at its paragraph. A jump
+     * within a chapter already on screen is the reader's to make (it just
+     * scrolls), so this is only for chapters that need loading.
+     */
+    fun openContentsEntry(entry: ReaderContentsEntry) {
+        viewModelScope.launch { statsTracker?.endSession() }
+        pendingTargetParagraph = entry.paragraph
+        goToChapter(entry.chapterId, entry.chapterUrl)
+    }
 
     /**
      * Bring an archived book's text back, showing [ReaderUiState.Restoring]
@@ -346,6 +386,24 @@ class ReaderViewModel(
     private fun splitIntoParagraphs(content: String): List<String> {
         return com.abhinavxt.novelforge.util.ParagraphSplitter.split(content)
     }
+
+    /**
+     * An imported book's formatting for this chapter, matched to the text
+     * being shown. Null for web chapters, books imported before formatting
+     * was kept, or anything unreadable: the chapter then shows plain.
+     */
+    private suspend fun loadFormatting(chapterId: String, paragraphs: List<String>): ReaderFormatting? =
+        try {
+            val stored = repository.getChapterFormatting(chapterId)
+            if (stored == null) null else withContext(Dispatchers.IO) {
+                ReaderFormatting.build(stored, paragraphs, repository.bookImagesDir(novelId))
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.e("Could not load formatting for $chapterId", e)
+            null
+        }
 
     private var autoRetryEnabled = false
     private val maxAutoRetries = 3
@@ -423,7 +481,8 @@ class ReaderViewModel(
                         nextChapter = nextChapter,
                         isFirstChapter = isFirst,
                         isLastChapter = isLast,
-                        savedParagraphIndex = savedParagraphIndex
+                        savedParagraphIndex = savedParagraphIndex,
+                        formatting = loadFormatting(currentChapterId, paragraphs)
                     )
 
                     _uiState.value = ReaderUiState.Success(
@@ -517,6 +576,7 @@ class ReaderViewModel(
                 if (dbChapters.isNotEmpty()) {
                     chapterList = dbChapters
                 }
+                loadContents()
             } catch (e: Exception) { /* Ignore */ }
             loadChapter()
         }
@@ -690,14 +750,14 @@ class ReaderViewModel(
                 ReaderFont.OPEN_DYSLEXIC -> ReaderFont.JETBRAINS_MONO
                 ReaderFont.JETBRAINS_MONO -> ReaderFont.LITERATA
             }
-            updateSettings(currentState.settings.copy(font = nextFont))
+            updateSettings(currentState.settings.copy(font = nextFont, customFont = null))
         }
     }
 
     fun setFont(font: ReaderFont) {
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
-            updateSettings(currentState.settings.copy(font = font))
+            updateSettings(currentState.settings.copy(font = font, customFont = null))
         }
     }
 
@@ -840,10 +900,17 @@ class ReaderViewModel(
                 // were loading — if so, this result belongs to a dead window.
                 val cur = _uiState.value as? ReaderUiState.Success
                 if (content != null && cur?.chapter?.chapterId == state.chapter.chapterId) {
+                    val paragraphs = splitIntoParagraphs(content)
+                    val formatting = loadFormatting(next.id, paragraphs)
+                    // Re-check: loading the formatting suspended too.
+                    if ((_uiState.value as? ReaderUiState.Success)?.chapter?.chapterId != state.chapter.chapterId) {
+                        return@launch
+                    }
                     _stitchedChapters.value = _stitchedChapters.value + StitchedChapter(
                         nav = next.toChapterNav(),
-                        paragraphs = splitIntoParagraphs(content),
-                        content = content
+                        paragraphs = paragraphs,
+                        content = content,
+                        formatting = formatting
                     )
                     // Keep the prefetch pipeline warm past the new window end
                     prefetcher?.prefetchAround(
@@ -1014,12 +1081,13 @@ class ReaderViewModel(
             statsTracker: ReadingStatsTracker? = null,
             prefetcher: ChapterPrefetcher? = null,
             targetParagraph: Int = -1,
-            bookArchive: LocalBookArchive? = null
+            bookArchive: LocalBookArchive? = null,
+            offlineDictionaries: StarDictManager? = null
         ): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences, statsTracker, prefetcher, targetParagraph, bookArchive) as T
+                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences, statsTracker, prefetcher, targetParagraph, bookArchive, offlineDictionaries) as T
                 }
             }
         }

@@ -80,7 +80,7 @@ object AnnotationExporter {
         }
     }
 
-    private fun buildMarkdown(
+    internal fun buildMarkdown(
         novelTitle: String,
         highlights: List<HighlightEntity>,
         bookmarks: List<BookmarkEntity>
@@ -96,17 +96,19 @@ object AnnotationExporter {
         if (highlights.isNotEmpty()) {
             sb.appendLine("## Highlights")
             sb.appendLine()
-            // Group by chapter, preserving DAO order (chapter, paragraph)
+            // Group by chapter, preserving DAO order (chapter, paragraph).
+            // By number, not title: many books repeat a title like "Interlude".
             highlights
-                .groupBy { it.chapterTitle }
-                .forEach { (chapterTitle, chapterHighlights) ->
-                    sb.appendLine("### $chapterTitle")
+                .groupBy { it.chapterNumber }
+                .values
+                .forEach { chapterHighlights ->
+                    sb.appendLine("### ${chapterHighlights.first().chapterTitle}")
                     sb.appendLine()
                     chapterHighlights.forEach { h ->
-                        sb.appendLine("> ${h.selectedText.trim()}")
+                        sb.appendLine(quote(h.selectedText.trim()))
                         if (!h.note.isNullOrBlank()) {
                             sb.appendLine(">")
-                            sb.appendLine("> **Note:** ${h.note!!.trim()}")
+                            sb.appendLine(quote("**Note:** ${h.note.trim()}"))
                         }
                         sb.appendLine()
                     }
@@ -117,15 +119,16 @@ object AnnotationExporter {
             sb.appendLine("## Bookmark Notes")
             sb.appendLine()
             bookmarks
-                .groupBy { it.chapterTitle }
-                .forEach { (chapterTitle, chapterBookmarks) ->
-                    sb.appendLine("### $chapterTitle")
+                .groupBy { it.chapterNumber }
+                .values
+                .forEach { chapterBookmarks ->
+                    sb.appendLine("### ${chapterBookmarks.first().chapterTitle}")
                     sb.appendLine()
                     chapterBookmarks.forEach { b ->
-                        val snippet = b.textSnippet.trim().take(160)
-                        sb.appendLine("> $snippet${if (b.textSnippet.length > 160) "…" else ""}")
+                        val snippet = b.textSnippet.trim()
+                        sb.appendLine(quote(snippet.take(160) + if (snippet.length > 160) "…" else ""))
                         sb.appendLine(">")
-                        sb.appendLine("> **Note:** ${b.note!!.trim()}")
+                        sb.appendLine(quote("**Note:** ${b.note!!.trim()}"))
                         sb.appendLine()
                     }
                 }
@@ -133,4 +136,8 @@ object AnnotationExporter {
 
         return sb.toString()
     }
+
+    /** Marks every line, or a multi-line note would fall out of the quote. */
+    private fun quote(text: String): String =
+        text.lines().joinToString("\n") { if (it.isBlank()) ">" else "> $it" }
 }
