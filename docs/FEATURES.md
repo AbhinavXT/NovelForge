@@ -150,7 +150,7 @@ Two modes. Switch between them in Quick Settings → Reading Mode.
 
 ### Scroll mode
 
-Continuous vertical scroll, the default. The whole chapter is one long page; you scroll. Best for long reading sessions where you don't want to be interrupted by page-turns.
+Continuous vertical scroll, the default. The whole chapter is one long page; you scroll. Reaching the end of a chapter carries straight on into the next, up to 50 chapters in a row; after that, or if the next chapter can't load (offline, say), the chapter ends with Next and Previous buttons. Best for long reading sessions where you don't want to be interrupted by page-turns.
 
 **Auto-scroll.** Tap the play icon in the top bar (next to the headphones icon) to start a continuous, teleprompter-style drift. The text scrolls down on its own at a configurable speed.
 
