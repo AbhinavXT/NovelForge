@@ -153,4 +153,15 @@ class TextReplacementsTest {
         override suspend fun update(id: Long, novelId: String?, find: String, replace: String) = Unit
         override suspend fun delete(id: Long) = Unit
     }
+
+    @Test
+    fun `replaced text finds the rule that produced it`() {
+        val rules = listOf(
+            TextReplacementEntity(id = 1, novelId = "book", find = "Li", replace = "Lee"),
+            TextReplacementEntity(id = 2, novelId = "book", find = "gone", replace = "")
+        )
+        assertEquals(1L, TextReplacementManager.ruleShowing(rules, " lee, ")?.id)
+        assertEquals(null, TextReplacementManager.ruleShowing(rules, "Li"))
+        assertEquals(null, TextReplacementManager.ruleShowing(rules, "..."))
+    }
 }

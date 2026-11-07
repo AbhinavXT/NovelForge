@@ -183,4 +183,20 @@ class ReaderFormattingTest {
         // Tall picture is capped by height.
         assertEquals(250f to 1000f, imageDisplaySize(ReaderImage(File("x"), null, 1000, 4000), 1000f, 1000f, density))
     }
+
+    @Test
+    fun `a body set entirely in blockquotes isn't indented, a real quote is`() {
+        val text = listOf("A long paragraph of the story itself.", "Another long paragraph of the story.", "a list item")
+        val allQuoted = ReaderFormatting.build(
+            ChapterFormatting(blocks = listOf(BlockMark(0, BlockStyle.QUOTE), BlockMark(1, BlockStyle.QUOTE), BlockMark(2, BlockStyle.CENTER))),
+            text, dir, anySize
+        )!!
+        assertNull(allQuoted[0])
+        assertEquals(BlockStyle.CENTER, allQuoted[2]!!.block)
+
+        val oneQuote = ReaderFormatting.build(
+            ChapterFormatting(blocks = listOf(BlockMark(2, BlockStyle.QUOTE))), text, dir, anySize
+        )!!
+        assertEquals(BlockStyle.QUOTE, oneQuote[2]!!.block)
+    }
 }

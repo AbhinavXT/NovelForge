@@ -58,4 +58,21 @@ class ReaderContentsTest {
         assertEquals(3, contents.currentIndex("c4", 0))   // before its entry's paragraph: still its chapter
         assertEquals(-1, contents.currentIndex("nope", 0))
     }
+
+    @Test
+    fun `contents that miss most chapters gain them, in reading order`() {
+        val book = listOf(
+            Chapter("a", 1, "Same", "u1"),
+            Chapter("b", 2, "Same", "u2"),
+            Chapter("c", 3, "Same", "u3"),
+            Chapter("d", 4, "Unique", "u4"),
+            Chapter("e", 5, "Same", "u5")
+        )
+        val contents = ReaderContents.build(listOf(TocEntry("About the Author", 0, 5, 0)), book)
+        assertEquals(
+            listOf("Chapter 1", "Chapter 2", "Chapter 3", "Unique", "About the Author"),
+            contents.entries.map { it.title }
+        )
+        assertEquals(2, contents.currentIndex("c", 0))
+    }
 }

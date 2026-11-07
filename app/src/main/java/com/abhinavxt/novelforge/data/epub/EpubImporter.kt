@@ -23,6 +23,7 @@ class EpubImporter(
     private val novelDao = database.novelDao()
     private val chapterDao = database.chapterDao()
     private val parser = EpubParser(context)
+    private val oldParser = EpubParser(context, blockquoteBreaks = false)
     private val formatting = BookFormattingStore(context, database)
 
     /**
@@ -146,10 +147,12 @@ class EpubImporter(
      */
     suspend fun parseDocument(
         uri: Uri,
-        format: DocumentFormat = DocumentFormat.detect(context, uri)
+        format: DocumentFormat = DocumentFormat.detect(context, uri),
+        /** Read the text as versions before 2.2.0 did; see [EpubParser]. */
+        oldText: Boolean = false
     ): ParseResult = withContext(Dispatchers.IO) {
         when (format) {
-            DocumentFormat.EPUB -> parseEpub(uri)
+            DocumentFormat.EPUB -> parseEpub(uri, if (oldText) oldParser else parser)
             DocumentFormat.TEXT -> parseTextLike(uri, markdown = false)
             DocumentFormat.MARKDOWN -> parseTextLike(uri, markdown = true)
             DocumentFormat.PDF,
@@ -158,7 +161,7 @@ class EpubImporter(
         }
     }
 
-    private fun parseEpub(uri: Uri): ParseResult = try {
+    private fun parseEpub(uri: Uri, parser: EpubParser): ParseResult = try {
         val epub = parser.parse(uri)
         when {
             epub == null -> ParseResult.Failed(

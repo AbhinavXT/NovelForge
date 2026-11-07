@@ -95,6 +95,13 @@ data class ReaderFormatting(private val byParagraph: Map<Int, ParagraphFormat>) 
                 .filter { inRange(it.paragraph) }
                 .groupBy { it.paragraph }
                 .mapValues { (_, marks) -> marks.map { it.style }.minByOrNull { BLOCK_PRIORITY.indexOf(it) } }
+                .let { marks ->
+                    // Converted books can set their whole body in <blockquote>.
+                    // Indenting that leaves the real notes and lists sticking out.
+                    val quoted = marks.filterValues { it == BlockStyle.QUOTE }.keys.sumOf { paragraphs[it].length }
+                    if (quoted * 2 > paragraphs.sumOf { it.length }) marks.filterValues { it != BlockStyle.QUOTE }
+                    else marks
+                }
 
             val before = mutableMapOf<Int, MutableList<ReaderImage>>()
             val after = mutableListOf<ReaderImage>()

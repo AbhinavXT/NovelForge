@@ -47,6 +47,34 @@ class EpubParserTest {
     // ── Text must not change ────────────────────────────────────────
 
     @Test
+    fun `blockquotes of bare text are separate paragraphs`() {
+        val bytes = epub(listOf(chapter("c1",
+            "<blockquote>He spoke at some length about the case.</blockquote><blockquote>“I assume this is the glass.”</blockquote>"
+        )))
+        assertEquals(
+            listOf("He spoke at some length about the case.", "“I assume this is the glass.”"),
+            parse(bytes).chapters.single().paragraphs()
+        )
+        val old = EpubParser(ApplicationProvider.getApplicationContext(), blockquoteBreaks = false)
+            .parseEpub(ByteArrayInputStream(bytes))!!
+        assertEquals(
+            "He spoke at some length about the case.“I assume this is the glass.”",
+            old.chapters.single().content
+        )
+    }
+
+    @Test
+    fun `blockquotes holding paragraphs keep their exact text`() {
+        val bytes = epub(listOf(chapter("c1",
+            "<blockquote><p>First quoted line of the letter.</p></blockquote><p>Then the story carries on.</p>"
+        )))
+        val old = EpubParser(ApplicationProvider.getApplicationContext(), blockquoteBreaks = false)
+            .parseEpub(ByteArrayInputStream(bytes))!!
+        assertEquals(old.chapters.single().content, parse(bytes).chapters.single().content)
+    }
+
+
+    @Test
     fun `chapter text is exactly what the old extractor produced`() {
         val bodies = listOf(
             "<h1>One</h1><p>Plain <i>italic</i> and <b>bold</b>, then <em>more  </em> text.</p><p>Second paragraph &amp; entity &#8220;quoted&#8221;.</p>",

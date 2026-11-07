@@ -1133,11 +1133,14 @@ internal fun ReaderContent(
 
     // Add-replacement dialog — shown when user taps "Replace" on selected text
     replaceWord?.let { selected ->
+        val existing = TextReplacementManager.ruleShowing(replacementRules, selected)
         TextReplacementDialog(
-            title = "Replace",
-            initialFind = selected,
+            title = if (existing != null) "Edit replacement" else "Replace",
+            initialFind = existing?.find ?: selected,
+            initialReplace = existing?.replace.orEmpty(),
+            initialThisBookOnly = existing == null || existing.novelId != null,
             onSave = { find, replace, thisBookOnly ->
-                onSaveReplacement(null, if (thisBookOnly) novelId else null, find, replace)
+                onSaveReplacement(existing?.id, if (thisBookOnly) novelId else null, find, replace)
                 replaceWord = null
             },
             onDismiss = { replaceWord = null }

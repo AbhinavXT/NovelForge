@@ -124,6 +124,8 @@ Matching works like the [pronunciation dictionary](#pronunciation-dictionary): w
 
 **What it affects:** the text in both reading modes, in-book find (it searches what you see), and TTS, which reads the replaced text and then applies the pronunciation dictionary. Highlights you make on replaced text save the text you saw, and still land in the right place if you later change or delete the rule.
 
+**Changing a replacement:** rules work on the book's own text, so selecting a word you already replaced and tapping Replace edits that rule instead of adding a second one.
+
 **What it doesn't:** the stored text, so [library search](#full-text-library-search), the codex, chapter titles, and [EPUB export](#export) still see the original. Rules are included in [backups](#backup-and-restore).
 
 ### Offline dictionaries
@@ -441,6 +443,8 @@ Use the system file picker (Library → top bar → "Import a book"). Three form
 - Pictures inside chapters. The cover isn't repeated, and pages that are only a picture are shown at the start of the next chapter. SVG images aren't shown
 - Footnotes: tapping a note marker opens the note in a popup, without turning the page or opening the menu
 - The book's table of contents, for the [contents sheet](#contents)
+
+Books that set their whole body in block quotes, as some converted EPUBs do, are shown as normal text rather than indented, and each block is its own paragraph. A book imported before 2.2.0 keeps its old paragraphs until it's removed and imported again, so its bookmarks and highlights stay put. If a book's own contents list misses most of its chapters, the contents sheet adds them.
 
 Formatting is kept beside the text rather than inside it, so search, highlights, bookmarks, the codex and TTS work on exactly the same text as before. If a chapter's formatting can't be matched to its text, that chapter shows plain text instead. EPUBs imported by earlier versions of the app show plain text until they're [archived and restored](#archiving-imported-books), which keeps your progress. Export and backups don't carry the formatting, pictures or footnotes: a restored book gets them back when its text is restored from the file.
 

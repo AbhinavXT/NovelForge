@@ -59,6 +59,25 @@ data class ReaderContents(
                 )
             }
             val order = chapters.map { it.id }
+            val listed = fromToc.groupBy { it.chapterId }
+            // Some books list only their front and back matter. Those lines
+            // can't be the only way around the book, so the rest join them.
+            if (listed.isNotEmpty() && listed.size * 2 < chapters.size) {
+                val titles = chapters.groupingBy { it.title }.eachCount()
+                val all = chapters.flatMap { chapter ->
+                    listed[chapter.id] ?: listOf(
+                        ReaderContentsEntry(
+                            // Repeated titles are usually the book's own name.
+                            title = if (titles[chapter.title] == 1) chapter.title else "Chapter ${chapter.number}",
+                            depth = 0,
+                            chapterId = chapter.id,
+                            chapterUrl = chapter.url,
+                            paragraph = 0
+                        )
+                    )
+                }
+                return ReaderContents(all, fromBook = true, chapterOrder = order)
+            }
             if (fromToc.isNotEmpty()) return ReaderContents(fromToc, fromBook = true, chapterOrder = order)
             return ReaderContents(
                 chapters.map { ReaderContentsEntry(it.title, 0, it.id, it.url, 0) },

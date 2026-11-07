@@ -95,5 +95,16 @@ class TextReplacementManager(private val dao: TextReplacementDao) {
     companion object {
         fun compile(rules: List<TextReplacementEntity>): PronunciationRules.Compiled =
             PronunciationRules.compile(rules.map { PronunciationRules.Rule(it.find, it.replace) })
+
+        /**
+         * The rule that produced [selected], if any. Rules match the stored
+         * text, so a new rule for already-replaced text would never apply:
+         * changing that word means editing this rule.
+         */
+        fun ruleShowing(rules: List<TextReplacementEntity>, selected: String): TextReplacementEntity? {
+            fun word(text: String) = text.trim { !it.isLetterOrDigit() }
+            val shown = word(selected)
+            return rules.firstOrNull { it.replace.isNotBlank() && word(it.replace).equals(shown, ignoreCase = true) }
+        }
     }
 }

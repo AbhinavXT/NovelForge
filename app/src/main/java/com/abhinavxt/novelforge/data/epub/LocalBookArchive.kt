@@ -103,22 +103,33 @@ class LocalBookArchive(
                     return@withLock ArchiveResult.FileUnavailable(parsed.message)
                 is EpubImporter.ParseResult.Parsed -> parsed.book
             }
-            val fileTexts = book.chapters.sortedBy { it.order }.map { it.content }
+            var fileTexts = book.chapters.sortedBy { it.order }.map { it.content }
 
-            // One chapter at a time: a single query over a whole book's text
-            // can overflow SQLite's 2 MB cursor window.
             val rows = chapterDao.getChaptersForNovelOnce(novelId)
-            if (rows.size != fileTexts.size) return@withLock ArchiveResult.FileChanged
-            var freedChars = 0L
-            rows.forEachIndexed { index, row ->
-                // Chapters without text are compared by count alone: a book
-                // restored from a backup arrives with none, and that is
-                // exactly the book this feature should be able to take in.
-                val stored = chapterDao.getChapterById(row.id)?.content ?: return@forEachIndexed
-                if (row.number != index + 1 || stored != fileTexts[index]) {
-                    return@withLock ArchiveResult.FileChanged
+            // How much text the file can replace; null when it doesn't match.
+            suspend fun matchingChars(texts: List<String>): Long? {
+                if (rows.size != texts.size) return null
+                var chars = 0L
+                // One chapter at a time: a single query over a whole book's
+                // text can overflow SQLite's 2 MB cursor window.
+                rows.forEachIndexed { index, row ->
+                    // Chapters without text are compared by count alone: a book
+                    // restored from a backup arrives with none, and that is
+                    // exactly the book this feature should be able to take in.
+                    val stored = chapterDao.getChapterById(row.id)?.content ?: return@forEachIndexed
+                    if (row.number != index + 1 || stored != texts[index]) return null
+                    chars += stored.length
                 }
-                freedChars += stored.length
+                return chars
+            }
+            var freedChars = matchingChars(fileTexts)
+            if (freedChars == null) {
+                // Imported by an older version, which read some books differently.
+                val oldTexts = (importer.parseDocument(uri, oldText = true) as? EpubImporter.ParseResult.Parsed)
+                    ?.book?.chapters?.sortedBy { it.order }?.map { it.content }
+                    ?: return@withLock ArchiveResult.FileChanged
+                freedChars = matchingChars(oldTexts) ?: return@withLock ArchiveResult.FileChanged
+                fileTexts = oldTexts
             }
 
             database.withTransaction {
@@ -158,10 +169,21 @@ class LocalBookArchive(
                 ?: return@withLock RestoreResult.NeedsFile
             unreadableReason(uri)?.let { return@withLock RestoreResult.FileUnavailable(it) }
 
-            val book = when (val parsed = importer.parseDocument(uri)) {
+            var book = when (val parsed = importer.parseDocument(uri)) {
                 is EpubImporter.ParseResult.Failed ->
                     return@withLock RestoreResult.FileUnavailable(parsed.message)
                 is EpubImporter.ParseResult.Parsed -> parsed.book
+            }
+            // Bookmarks and highlights point at the text that was archived,
+            // so a book an older version read differently comes back that way.
+            val archivedPrint = novel.textFingerprint
+            if (!acceptChanges && archivedPrint != fingerprint(book.chapters.sortedBy { it.order }.map { it.content })) {
+                (importer.parseDocument(uri, oldText = true) as? EpubImporter.ParseResult.Parsed)?.book
+                    ?.takeIf { old ->
+                        archivedPrint == null ||
+                            archivedPrint == fingerprint(old.chapters.sortedBy { it.order }.map { it.content })
+                    }
+                    ?.let { book = it }
             }
             val chapters = book.chapters.sortedBy { it.order }
             val texts = chapters.map { it.content }

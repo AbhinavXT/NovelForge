@@ -62,7 +62,15 @@ data class EpubChapter(
  * - Chapter files (XHTML)
  * - Images (optional cover)
  */
-class EpubParser(private val context: Context) {
+class EpubParser(
+    private val context: Context,
+    /**
+     * False reads a <blockquote> of bare text the way versions before 2.2.0
+     * did, gluing it to the next one. Only for checking a book against the
+     * text those versions stored.
+     */
+    private val blockquoteBreaks: Boolean = true
+) {
 
     companion object {
         private const val TAG = "EpubParser"
@@ -705,6 +713,13 @@ class EpubParser(private val context: Context) {
         setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
     private val HEADING_BLOCK = Regex("<(h[1-6])[^>]*>(.*?)</\\1\\s*>",
         setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+    // Ends a paragraph unless what it holds already did, so books with <p>
+    // inside their blockquotes keep exactly the text they always had.
+    private val BLOCKQUOTE_END = Regex(
+        "(</(?:p|div|br|h[1-6]|li|tr)\\s*>\\s*|<br\\s*/?>\\s*)?</blockquote\\s*>",
+        RegexOption.IGNORE_CASE
+    )
+
     private val TITLE_TAG = Regex("<title[^>]*>(.*?)</title>",
         setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
 
@@ -771,7 +786,9 @@ class EpubParser(private val context: Context) {
 
     /** Tags stripped, entities decoded, whitespace normalised. */
     private fun bodyToText(body: String): String {
-        return body
+        return (if (blockquoteBreaks) BLOCKQUOTE_END.replace(body) { end ->
+            if (end.groupValues[1].isEmpty()) "\n" else end.value
+        } else body)
             // Remove scripts and styles
             .replace(Regex("<script[^>]*>.*?</script>", RegexOption.DOT_MATCHES_ALL), "")
             .replace(Regex("<style[^>]*>.*?</style>", RegexOption.DOT_MATCHES_ALL), "")
