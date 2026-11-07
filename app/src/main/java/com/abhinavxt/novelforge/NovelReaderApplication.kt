@@ -8,6 +8,7 @@ import com.abhinavxt.novelforge.data.ChapterPrefetcher
 import com.abhinavxt.novelforge.data.DownloadManager
 import com.abhinavxt.novelforge.data.NovelRepository
 import com.abhinavxt.novelforge.data.PronunciationManager
+import com.abhinavxt.novelforge.data.TextReplacementManager
 import com.abhinavxt.novelforge.data.ReadingStatsTracker
 import com.abhinavxt.novelforge.data.TTSManager
 import com.abhinavxt.novelforge.data.ThemePreferences
@@ -76,9 +77,15 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
         )
     }
 
+    /** Imported books' formatting, pictures and contents. */
+    val bookFormatting by lazy {
+        com.abhinavxt.novelforge.data.epub.BookFormattingStore(this, database)
+    }
+
     val repository: NovelRepository by lazy {
         NovelRepository(
             database = database,
+            formatting = bookFormatting,
             restoreArchived = { novelId ->
                 bookArchive.restore(novelId) is
                         com.abhinavxt.novelforge.data.epub.LocalBookArchive.RestoreResult.Restored
@@ -109,6 +116,11 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
 
     // Pronunciation manager
     val pronunciationManager by lazy { PronunciationManager(database.pronunciationDao()) }
+
+    // Text replacement while reading (shown text and TTS)
+    val textReplacements by lazy { TextReplacementManager(database.textReplacementDao()) }
+    val offlineDictionaries by lazy { com.abhinavxt.novelforge.data.StarDictManager(this) }
+    val readerFonts by lazy { com.abhinavxt.novelforge.data.ReaderFontManager(this) }
 
     // Reading stats tracker
     val readingStatsTracker by lazy { ReadingStatsTracker(database.readingStatDao()) }
@@ -165,11 +177,16 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
         // Load pronunciation cache so substitutions work immediately
         appScope.launch {
             pronunciationManager.loadCache()
+            textReplacements.loadCache()
+            offlineDictionaries.loadCache()
+            readerFonts.loadCache()
         }
 
         // Wire pronunciation manager into TTS and backup
         ttsManager.pronunciationManager = pronunciationManager
+        ttsManager.textReplacements = textReplacements
         backupManager.pronunciationManager = pronunciationManager
+        backupManager.textReplacements = textReplacements
         backupManager.readingStatsTracker = readingStatsTracker
 
         appScope.launch {

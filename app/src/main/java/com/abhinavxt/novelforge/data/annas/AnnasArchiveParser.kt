@@ -45,7 +45,7 @@ object AnnasArchiveParser {
     }
 
     private val MD5_PATH = Regex("^/md5/([0-9a-fA-F]{32})/?$")
-    private val LANGUAGE = Regex("""\[([a-z]{2,3}(?:[-_]\w+)?)]""", RegexOption.IGNORE_CASE)
+    private val LANGUAGE = Regex("""\[([a-z]{2,3}(?:[-_]\w+)?)\]""", RegexOption.IGNORE_CASE)
     private val SIZE = Regex("""\b\d+(?:[.,]\d+)?\s*[KMGT]?i?B\b""", RegexOption.IGNORE_CASE)
     private val FORMAT = Regex(
         "pdf|epub|mobi|azw3?|djvu?|txt|rtf|docx?|cb[rz]|fb2|zip|html",

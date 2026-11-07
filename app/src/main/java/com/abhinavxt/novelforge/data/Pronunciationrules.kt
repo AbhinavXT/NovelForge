@@ -68,6 +68,23 @@ object PronunciationRules {
         }
 
         /**
+         * Every match in [text] with the replacement it gets, in order and
+         * never overlapping. The same matching as [apply], for callers that
+         * need to know where each replacement happened.
+         */
+        fun matches(text: String): List<Pair<IntRange, String>> {
+            val regex = pattern ?: return emptyList()
+            if (text.isEmpty()) return emptyList()
+            return regex.findAll(text).mapNotNull { match ->
+                if (match.value.isEmpty()) return@mapNotNull null
+                match.range to (lookup[match.value.lowercase()] ?: match.value)
+            }.toList()
+        }
+
+        /** True when there are no usable rules. */
+        val isEmpty: Boolean get() = pattern == null
+
+        /**
          * Removing a symbol leaves debris: "Hello * world" becomes "Hello
          * world" with a double space, and "Hello *, world" leaves a space
          * before the comma. Both make TTS pause oddly.

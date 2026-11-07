@@ -174,6 +174,20 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.2.0",
+        date = "Nov 2026",
+        changes = listOf(
+            "Newly imported EPUBs keep their italics, bold, headings, pictures and footnotes",
+            "Contents sheet in the reader, using the book's own table of contents",
+            "Browse and search OPDS book catalogs, including Project Gutenberg and your own server",
+            "Text replacement: fix names and typos while reading, without touching the stored text",
+            "Offline StarDict dictionaries, with the online lookup as a fallback",
+            "Import your own fonts, turn on hyphenation and set paragraph spacing",
+            "Paged mode now honours Justify text and Paragraph indent",
+            "Highlight export follows reading order and keeps multi-line notes intact"
+        )
+    ),
+    VersionEntry(
         version = "v2.1.2",
         date = "Nov 2026",
         changes = listOf(

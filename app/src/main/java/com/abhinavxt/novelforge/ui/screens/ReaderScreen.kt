@@ -68,7 +68,9 @@ fun ReaderScreen(
             novelId, chapterId, chapterUrl, novelUrl = novelUrl, repository,
             themePreferences, statsTracker, chapterPrefetcher, targetParagraph,
             bookArchive = (LocalContext.current.applicationContext as? NovelReaderApplication)
-                ?.bookArchive
+                ?.bookArchive,
+            offlineDictionaries = (LocalContext.current.applicationContext as? NovelReaderApplication)
+                ?.offlineDictionaries
         )
     )
 ) {
@@ -81,6 +83,15 @@ fun ReaderScreen(
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) viewModel.restoreFromFile(uri) }
     val scope = rememberCoroutineScope()
+
+    // Text replacement rules: this book's own, then those for every book.
+    val textReplacements = (LocalContext.current.applicationContext as? NovelReaderApplication)
+        ?.textReplacements
+    val allReplacementRules by (textReplacements?.rules ?: remember { kotlinx.coroutines.flow.MutableStateFlow(emptyList()) })
+        .collectAsState()
+    val replacementRules = remember(allReplacementRules, novelId) {
+        textReplacements?.rulesFor(novelId, allReplacementRules).orEmpty()
+    }
 
     // TTS state
     val ttsState by ttsManager.state.collectAsState()
@@ -110,6 +121,7 @@ fun ReaderScreen(
 
     // Infinite scroll (stitching)
     val stitchedChapters by viewModel.stitchedChapters.collectAsState()
+    val contents by viewModel.contents.collectAsState()
     val stitchTail by viewModel.stitchTail.collectAsState()
     val activeChapterInfo by viewModel.activeChapterInfo.collectAsState()
 
@@ -264,7 +276,7 @@ fun ReaderScreen(
                     viewModel.updateSettings(state.settings.copy(theme = theme))
                 },
                 onSetFont = { font ->
-                    viewModel.updateSettings(state.settings.copy(font = font))
+                    viewModel.updateSettings(state.settings.copy(font = font, customFont = null))
                 },
                 onUpdateSettings = { newSettings ->
                     viewModel.updateSettings(newSettings)
@@ -305,13 +317,10 @@ fun ReaderScreen(
                 // Highlight parameters
                 chapterHighlights = chapterHighlights,
                 highlightSaved = highlightSavedFlag,
-                onAddHighlight = { paragraphIndex, selectedText, paragraphText ->
-                    // Offsets computed against the exact paragraph the
-                    // selection happened in — passed up by the reader so
-                    // this works for stitched chapters too.
-                    val startOffset = paragraphText.indexOf(selectedText).coerceAtLeast(0)
-                    val endOffset = (startOffset + selectedText.length)
-                        .coerceAtMost(paragraphText.length)
+                onAddHighlight = { paragraphIndex, startOffset, endOffset, selectedText ->
+                    // Offsets come from the reader, computed against the
+                    // exact paragraph the selection happened in (so stitched
+                    // chapters work) and mapped back to the stored text.
                     viewModel.addHighlight(paragraphIndex, startOffset, endOffset, selectedText)
                 },
                 onHighlightSavedShown = { highlightSavedFlag = false },
@@ -322,7 +331,17 @@ fun ReaderScreen(
                     scope.launch {
                         pronunciationManager?.addEntry(word, replacement)
                     }
-                }
+                },
+                contents = contents,
+                onOpenContentsEntry = { entry -> viewModel.openContentsEntry(entry) },
+                replacementRules = replacementRules,
+                onSaveReplacement = { id, ruleNovelId, find, replace ->
+                    scope.launch {
+                        if (id == null) textReplacements?.add(ruleNovelId, find, replace)
+                        else textReplacements?.update(id, ruleNovelId, find, replace)
+                    }
+                },
+                onDeleteReplacement = { id -> scope.launch { textReplacements?.delete(id) } }
             )
         }
     }

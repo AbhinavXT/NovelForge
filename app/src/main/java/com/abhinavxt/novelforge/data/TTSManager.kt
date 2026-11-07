@@ -87,6 +87,15 @@ class TTSManager(private val context: Context) {
     /** Set by NovelReaderApplication after both are initialized */
     var pronunciationManager: PronunciationManager? = null
 
+    /** Text replacement rules, applied before pronunciation so TTS says what the reader shows. */
+    var textReplacements: TextReplacementManager? = null
+
+    /** A sentence as it goes to the engine: replacements, then pronunciation. */
+    private fun spokenText(text: String): String {
+        val shown = textReplacements?.apply(session?.novelId, text) ?: text
+        return pronunciationManager?.applyReplacements(shown) ?: shown
+    }
+
     private val prefs = context.getSharedPreferences("tts_prefs", Context.MODE_PRIVATE)
     private val handler = Handler(Looper.getMainLooper())
     private var pauseRunnable: Runnable? = null
@@ -570,8 +579,17 @@ class TTSManager(private val context: Context) {
         if (currentIndex >= segments.size) return
 
         val segment = segments[currentIndex]
-        // Apply pronunciation dictionary substitutions
-        val textToSpeak = pronunciationManager?.applyReplacements(segment.text) ?: segment.text
+        // Text replacements, then the pronunciation dictionary
+        val textToSpeak = spokenText(segment.text)
+        if (textToSpeak.isBlank()) {
+            // Everything in it was removed (a replacement that deletes a
+            // site watermark, say). Move on rather than hand an engine an
+            // empty utterance, which some never report as done.
+            handler.post {
+                if (_state.value == TTSState.PLAYING || _state.value == TTSState.LOADING) onUtteranceDone()
+            }
+            return
+        }
         Logger.d("TTSManager", "Speaking sentence $currentIndex: ${segment.text.take(50)}...")
 
         val s = _settings.value
@@ -629,7 +647,8 @@ class TTSManager(private val context: Context) {
 
         if (startIdx >= segments.size) return
 
-        val upcomingTexts = segments.subList(startIdx, endIdx).map { it.text }
+        // The same text speakCurrentSentence will send, so the cache hits.
+        val upcomingTexts = segments.subList(startIdx, endIdx).map { spokenText(it.text) }.filter { it.isNotBlank() }
         val s = _settings.value
 
         sherpaEngine.pregenerateBatchAsync(

@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.abhinavxt.novelforge.data.annas.AnnasArchiveClient
 import com.abhinavxt.novelforge.data.annas.AnnasArchiveException
@@ -14,6 +13,8 @@ import com.abhinavxt.novelforge.data.annas.AnnasFilters
 import com.abhinavxt.novelforge.data.annas.AnnasVerificationRequired
 import com.abhinavxt.novelforge.util.Logger
 import com.abhinavxt.novelforge.worker.AnnasDownloadWorker
+import com.abhinavxt.novelforge.worker.BookDownloadState
+import com.abhinavxt.novelforge.worker.BookDownloadWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,22 +56,15 @@ class AnnasArchiveViewModel(
 
     data class Verification(val url: String, val page: Int)
 
-    sealed interface DownloadState {
-        data object Queued : DownloadState
-        data class Running(val bytes: Long, val total: Long?) : DownloadState
-        data class Imported(val novelId: String, val title: String) : DownloadState
-        data class AlreadyInLibrary(val title: String) : DownloadState
-        data class Failed(val message: String) : DownloadState
-    }
 
     private val _search = MutableStateFlow(SearchState())
     val search: StateFlow<SearchState> = _search.asStateFlow()
 
     /** MD5 → the latest download of that book. Books never downloaded are absent. */
-    val downloads: StateFlow<Map<String, DownloadState>> =
+    val downloads: StateFlow<Map<String, BookDownloadState>> =
         WorkManager.getInstance(appContext)
             .getWorkInfosByTagFlow(AnnasDownloadWorker.TAG_DOWNLOAD)
-            .map(::toDownloadStates)
+            .map { BookDownloadWorker.statesByKey(it, AnnasDownloadWorker.TAG_DOWNLOAD) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     private var searchJob: Job? = null
@@ -200,44 +194,6 @@ class AnnasArchiveViewModel(
 
     companion object {
         private const val TAG = "AnnasArchiveVM"
-
-        /**
-         * One state per book. An unfinished attempt outranks finished ones,
-         * so a retry in progress hides the failure before it.
-         */
-        internal fun toDownloadStates(infos: List<WorkInfo>): Map<String, DownloadState> {
-            val result = LinkedHashMap<String, DownloadState>()
-            for (info in infos) {
-                val md5 = info.tags.firstNotNullOfOrNull { tag ->
-                    tag.removePrefix("${AnnasDownloadWorker.TAG_DOWNLOAD}:").takeIf { it != tag }
-                } ?: continue
-                val state = when (info.state) {
-                    WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> DownloadState.Queued
-                    WorkInfo.State.RUNNING -> {
-                        val total = info.progress.getLong(AnnasDownloadWorker.KEY_TOTAL, -1L)
-                        DownloadState.Running(
-                            bytes = info.progress.getLong(AnnasDownloadWorker.KEY_BYTES, 0L),
-                            total = total.takeIf { it > 0 }
-                        )
-                    }
-                    WorkInfo.State.SUCCEEDED -> {
-                        val out = info.outputData
-                        val title = out.getString(AnnasDownloadWorker.KEY_RESULT_TITLE).orEmpty()
-                        val novelId = out.getString(AnnasDownloadWorker.KEY_NOVEL_ID)
-                        if (novelId != null) DownloadState.Imported(novelId, title)
-                        else DownloadState.AlreadyInLibrary(title)
-                    }
-                    WorkInfo.State.FAILED -> DownloadState.Failed(
-                        info.outputData.getString(AnnasDownloadWorker.KEY_ERROR) ?: "Download failed."
-                    )
-                    WorkInfo.State.CANCELLED -> null
-                }
-                val existing = result[md5]
-                if (existing is DownloadState.Queued || existing is DownloadState.Running) continue
-                if (state == null) result.remove(md5) else result[md5] = state
-            }
-            return result
-        }
 
         private val NON_WORD = Regex("[^\\p{L}\\p{N}]+")
 

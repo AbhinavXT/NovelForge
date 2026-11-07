@@ -175,4 +175,9 @@ data class ReaderSettings(
 
     // ── Tap zones (v15) ─────────────────────────────────────────
     val tapZoneLayout: TapZoneLayout = TapZoneLayout.SIDES,
+
+    // ── Typography (v23) ────────────────────────────────────────
+    val customFont: String? = null,               // Imported font's path; wins over [font]
+    val hyphenation: Boolean = false,
+    val paragraphSpacing: Int = 16,               // dp — gap between paragraphs (0–32)
 )

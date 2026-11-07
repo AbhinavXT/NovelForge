@@ -365,4 +365,21 @@ They left before dawn. It was a long walk and nobody spoke.
         assertEquals(2, second.archived)
         assertTrue(ids.all { db.novelDao().getNovelById(it)!!.archivedAt != null })
     }
+
+    @Test
+    fun `a book stored by an older version keeps that text through archive and restore`() = runBlocking {
+        val uri = Uri.fromFile(File(dir, "old.epub").apply {
+            writeBytes(TestEpub.build(listOf(TestEpub.chapter("c1",
+                "<blockquote>The first paragraph of the story.</blockquote><blockquote>The second paragraph of the story.</blockquote>"
+            ))))
+        })
+        val id = importBook(uri)
+        val glued = "The first paragraph of the story.The second paragraph of the story."
+        assertNotEquals(listOf(glued), texts(id))
+        db.chapterDao().markChapterDownloaded("${id}_ch1", glued, 1L)
+
+        assertTrue(archive.archive(id) is ArchiveResult.Archived)
+        assertTrue(archive.restore(id) is RestoreResult.Restored)
+        assertEquals(listOf<String?>(glued), texts(id))
+    }
 }
