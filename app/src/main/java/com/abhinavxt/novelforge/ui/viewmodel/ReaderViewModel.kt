@@ -20,6 +20,8 @@ import com.abhinavxt.novelforge.data.model.Chapter
 import com.abhinavxt.novelforge.data.model.ReaderSettings
 import com.abhinavxt.novelforge.data.model.ReaderTheme
 import com.abhinavxt.novelforge.data.model.ReaderFont
+import com.abhinavxt.novelforge.data.model.BookLook
+import com.abhinavxt.novelforge.data.database.CodexNameEntity
 import com.abhinavxt.novelforge.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -215,11 +217,40 @@ class ReaderViewModel(
     private val _highlightSavedEvent = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.BUFFERED)
     val highlightSavedEvent = _highlightSavedEvent.receiveAsFlow()
 
+    // ============ CODEX LOOKUP ============
+
+    /** The codex entry for the word being defined, when the book has one the reader has reached. */
+    private val _codexHit = MutableStateFlow<CodexNameEntity?>(null)
+    val codexHit: StateFlow<CodexNameEntity?> = _codexHit.asStateFlow()
+
+    private var codexNames: List<CodexNameEntity>? = null
+
+    private suspend fun findCodexEntry(word: String): CodexNameEntity? {
+        val key = word.trim { !it.isLetterOrDigit() }
+        if (key.isEmpty()) return null
+        val names = codexNames ?: repository.getCodexNamesOnce(novelId).also { codexNames = it }
+        // Spoiler gate, as in the codex: nothing first seen past where the reader is.
+        val ceiling = maxOf(
+            repository.getReadingProgress(novelId)?.currentChapterNumber ?: 0,
+            activeChapterNumber,
+            (_uiState.value as? ReaderUiState.Success)?.chapter?.chapterNumber ?: 0
+        )
+        val reached = names.filter { it.firstChapterNumber <= ceiling }
+        return reached.firstOrNull { it.name.equals(key, ignoreCase = true) }
+            // "Wei" selected, codex knows "Li Wei": the most mentioned full name holding that word.
+            ?: reached.filter { n -> n.name.split(' ').any { it.equals(key, ignoreCase = true) } }
+                .maxByOrNull { it.occurrences }
+    }
+
     fun lookupWord(word: String) {
         val cleanWord = word.trim()
         if (cleanWord.isBlank()) return
 
         _dictionaryState.value = DictionaryState.Loading
+        _codexHit.value = null
+        viewModelScope.launch {
+            _codexHit.value = runCatching { findCodexEntry(cleanWord) }.getOrNull()
+        }
 
         val languageCode = themePreferences?.dictionaryLanguage?.value?.code ?: "en"
 
@@ -236,6 +267,7 @@ class ReaderViewModel(
 
     fun dismissDictionary() {
         _dictionaryState.value = DictionaryState.Idle
+        _codexHit.value = null
     }
 
     init {
@@ -427,7 +459,7 @@ class ReaderViewModel(
                     chapterId = currentChapterId,
                     chapterUrl = currentChapterUrl
                 )
-                val settings = repository.getReaderSettings()
+                val settings = withBookLook(repository.getReaderSettings())
 
                 if (content != null) {
                     retryCount = 0
@@ -613,6 +645,7 @@ class ReaderViewModel(
                     // may be several chapters past the anchor.
                     val chapterNumber = if (activeChapterNumber > 0) activeChapterNumber
                     else currentState.chapter.chapterNumber
+                    checkFinished(currentState, chapterNumber, paragraphIndex)
                     if (forwardOnly) {
                         repository.saveReadingProgressForward(
                             novelId = novelId,
@@ -632,6 +665,20 @@ class ReaderViewModel(
                     e.printStackTrace()
                 }
             }
+        }
+    }
+
+    private var finishedMarked = false
+
+    /** Reaching the end of the last chapter can move the book to Completed (see NovelRepository.markFinished). */
+    private fun checkFinished(state: ReaderUiState.Success, chapterNumber: Int, paragraphIndex: Int) {
+        if (finishedMarked || chapterNumber != chapterList.maxOfOrNull { it.number }) return
+        val count = if (state.chapter.chapterNumber == chapterNumber) state.chapter.paragraphs.size
+        else _stitchedChapters.value.firstOrNull { it.nav.number == chapterNumber }?.paragraphs?.size ?: return
+        // shortcut: the saved position is the top paragraph on screen, so "the end" is the last tenth of the chapter.
+        if (paragraphIndex >= count * 9 / 10) {
+            finishedMarked = true
+            viewModelScope.launch { runCatching { repository.markFinished(novelId) } }
         }
     }
 
@@ -692,12 +739,45 @@ class ReaderViewModel(
         return currentState is ReaderUiState.Success && currentState.chapter.nextChapter != null
     }
 
+    // ============ PER-BOOK LOOK ============
+
+    /** True while this book has its own font, size and theme. */
+    private val _bookLookOn = MutableStateFlow(false)
+    val bookLookOn: StateFlow<Boolean> = _bookLookOn.asStateFlow()
+
+    private suspend fun withBookLook(app: ReaderSettings): ReaderSettings {
+        val look = repository.getBookLook(novelId)
+        _bookLookOn.value = look != null
+        return look?.applyTo(app) ?: app
+    }
+
+    /** On: the book keeps the look on screen now. Off: it goes back to the app's. */
+    fun setBookLookOn(on: Boolean) {
+        val currentState = _uiState.value as? ReaderUiState.Success ?: return
+        _bookLookOn.value = on
+        viewModelScope.launch {
+            if (on) {
+                repository.setBookLook(novelId, BookLook.of(currentState.settings))
+            } else {
+                repository.setBookLook(novelId, null)
+                val app = repository.getReaderSettings()
+                (_uiState.value as? ReaderUiState.Success)?.let { _uiState.value = it.copy(settings = app) }
+            }
+        }
+    }
+
     fun updateSettings(newSettings: ReaderSettings) {
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
             _uiState.value = currentState.copy(settings = newSettings)
             viewModelScope.launch {
-                repository.saveReaderSettings(newSettings)
+                if (_bookLookOn.value) {
+                    repository.setBookLook(novelId, BookLook.of(newSettings))
+                    // Behaviour (mode, tap zones, ...) stays app-wide; the app's own look is left as it was.
+                    repository.saveReaderSettings(BookLook.of(repository.getReaderSettings()).applyTo(newSettings))
+                } else {
+                    repository.saveReaderSettings(newSettings)
+                }
             }
         }
     }
@@ -1064,12 +1144,13 @@ class ReaderViewModel(
 
     companion object {
         /**
-         * Max chapters appended after the anchor (window = anchor + 4).
-         * Bounds memory for long binge sessions; when the window fills,
-         * the classic end-of-chapter navigation appears and pressing
-         * Next resets the window with a fresh anchor.
+         * Max chapters appended after the anchor. Bounds memory for very
+         * long sessions: a chapter's text is tens of KB and only visible
+         * rows are composed, so 50 reads as endless. When the window fills,
+         * the classic end-of-chapter navigation appears and pressing Next
+         * resets the window with a fresh anchor.
          */
-        const val MAX_STITCHED = 4
+        const val MAX_STITCHED = 50
 
         fun provideFactory(
             novelId: String,

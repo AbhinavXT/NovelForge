@@ -42,6 +42,10 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Card
+import androidx.compose.foundation.layout.PaddingValues
+import com.abhinavxt.novelforge.data.codex.NameExtractor
+import com.abhinavxt.novelforge.data.database.CodexNameEntity
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -192,7 +196,13 @@ internal fun ReaderContent(
     // book's). Shown text and TTS go through them; stored text doesn't.
     replacementRules: List<TextReplacementEntity> = emptyList(),
     onSaveReplacement: (id: Long?, novelId: String?, find: String, replace: String) -> Unit = { _, _, _, _ -> },
-    onDeleteReplacement: (Long) -> Unit = {}
+    onDeleteReplacement: (Long) -> Unit = {},
+    // Per-book look: null hides the switch (book not in the library).
+    bookLookOn: Boolean? = null,
+    onBookLookChange: (Boolean) -> Unit = {},
+    // The codex entry for the word being defined, if the reader has reached one.
+    codexHit: CodexNameEntity? = null,
+    onOpenCodex: (() -> Unit)? = null
 ) {
     val colors = getThemeColors(settings)
 
@@ -604,6 +614,8 @@ internal fun ReaderContent(
         QuickSettingsSheet(
             settings = settings,
             onSettingsChanged = { newSettings -> onUpdateSettings(newSettings) },
+            bookLookOn = bookLookOn,
+            onBookLookChange = onBookLookChange,
             onNavigateToPronunciation = null, // Wire up if nav controller is available
             onOpenTextReplacements = {
                 showAppearanceSheet = false
@@ -1113,6 +1125,8 @@ internal fun ReaderContent(
     // Dictionary bottom sheet — shown when user taps "Define" on selected text
     DictionaryBottomSheet(
         dictionaryState = dictionaryState,
+        codexHit = codexHit,
+        onOpenCodex = onOpenCodex?.let { open -> { onDismissDictionary(); open() } },
         onDismiss = onDismissDictionary
     )
 
@@ -1482,6 +1496,29 @@ private fun AddPronunciationDialog(
     )
 }
 
+/** What the codex knows about the selected name, shown above its definition. Spoiler-safe: only where it first appeared. */
+@Composable
+private fun CodexCard(entry: CodexNameEntity, onOpenCodex: (() -> Unit)?) {
+    Card(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "In this book · " + NameExtractor.classify(entry.name, entry.speechHits).label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(entry.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(
+                text = "First appears in chapter ${entry.firstChapterNumber}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (onOpenCodex != null) {
+                TextButton(onClick = onOpenCodex, contentPadding = PaddingValues(0.dp)) { Text("Open in codex") }
+            }
+        }
+    }
+}
+
 /**
  * Bottom sheet that displays dictionary definitions for a selected word.
  */
@@ -1489,6 +1526,8 @@ private fun AddPronunciationDialog(
 @Composable
 private fun DictionaryBottomSheet(
     dictionaryState: DictionaryState,
+    codexHit: CodexNameEntity?,
+    onOpenCodex: (() -> Unit)?,
     onDismiss: () -> Unit
 ) {
     if (dictionaryState is DictionaryState.Idle) return
@@ -1506,6 +1545,7 @@ private fun DictionaryBottomSheet(
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 32.dp)
         ) {
+            codexHit?.let { CodexCard(it, onOpenCodex) }
             when (dictionaryState) {
                 is DictionaryState.Loading -> {
                     Box(

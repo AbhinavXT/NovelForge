@@ -78,8 +78,23 @@ data class NovelEntity(
      *
      * Null for online sources and for books imported before v20.
      */
-    val textFingerprint: String? = null
+    val textFingerprint: String? = null,
+
+    /** The reader's own shelf: a [ReadingStatus] name, or null when never set. NEW in v24. */
+    val readingStatus: String? = null,
+
+    /** This book's own font, size and theme as JSON (see BookLook), or null to follow the app. NEW in v24. */
+    val readerSettingsJson: String? = null
 )
+
+/** Where a book sits on the reader's own shelf. Separate from the source's Ongoing/Completed. */
+enum class ReadingStatus(val displayName: String) {
+    READING("Reading"),
+    PLAN_TO_READ("Plan to read"),
+    ON_HOLD("On hold"),
+    COMPLETED("Completed"),
+    DROPPED("Dropped")
+}
 
 @Entity(
     tableName = "chapters",

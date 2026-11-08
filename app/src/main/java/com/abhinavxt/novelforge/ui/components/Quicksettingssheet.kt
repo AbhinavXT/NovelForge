@@ -99,6 +99,9 @@ fun QuickSettingsSheet(
     onSettingsChanged: (ReaderSettings) -> Unit,
     onNavigateToPronunciation: (() -> Unit)? = null,
     onOpenTextReplacements: (() -> Unit)? = null,
+    // null hides the switch, for a book that isn't in the library.
+    bookLookOn: Boolean? = null,
+    onBookLookChange: (Boolean) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(
@@ -164,6 +167,14 @@ fun QuickSettingsSheet(
 
             // ── Section 2: Typography Controls ──────────────────
             item {
+                if (bookLookOn != null) {
+                    SettingToggleRow(
+                        label = "Font, size and theme for this book only",
+                        checked = bookLookOn,
+                        onCheckedChange = onBookLookChange
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
                 TypographySection(
                     fontSize = settings.fontSize,
                     lineSpacing = settings.lineSpacing,

@@ -80,6 +80,12 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
         }
     }
 
+    object Highlights : Screen(
+        route = "highlights",
+        title = "Highlights",
+        icon = Icons.Default.MenuBook
+    )
+
     object TextSearch : Screen(
         route = "text_search",
         title = "Search in Books",
@@ -232,6 +238,11 @@ fun NavigationHost(
     modifier: Modifier = Modifier
 ) {
     val startRoute = if (AppConfig.ONLINE_SOURCES_ENABLED) Screen.Home.route else Screen.Library.route
+    val openHighlight: OpenHighlight = { novelId, chapterId, chapterUrl, paragraph ->
+        navController.navigate(
+            Screen.Reader.createRoute(novelId, chapterId, chapterUrl, constructNovelUrl(novelId), paragraph)
+        )
+    }
 
     androidx.compose.animation.SharedTransitionLayout(modifier = modifier) {
         androidx.compose.runtime.CompositionLocalProvider(
@@ -316,6 +327,10 @@ fun NavigationHost(
                                 onSeeUpdates = {
                                     navController.navigate(Screen.Updates.route)
                                 },
+                                onSeeHighlights = {
+                                    navController.navigate(Screen.Highlights.route)
+                                },
+                                onOpenHighlight = openHighlight,
                                 networkMonitor = networkMonitor
                             )
 
@@ -407,6 +422,9 @@ fun NavigationHost(
                             onTextSearchClick = {
                                 navController.navigate(Screen.TextSearch.route)
                             },
+                            onHighlightsClick = {
+                                navController.navigate(Screen.Highlights.route)
+                            },
                             onImportUrlClick = { url ->
                                 navController.navigate(Screen.ImportFromUrl.createRoute(url))
                             },
@@ -420,6 +438,14 @@ fun NavigationHost(
                         )
 
                     }
+                }
+
+                composable(Screen.Highlights.route) {
+                    HighlightsScreen(
+                        repository = repository,
+                        onBackClick = { navController.popBackStack() },
+                        onOpen = openHighlight
+                    )
                 }
 
                 // ── Full-text search over downloaded chapters ────────
@@ -659,7 +685,8 @@ fun NavigationHost(
                         themePreferences = themePreferences,
                         statsTracker = readingStatsTracker,
                         chapterPrefetcher = chapterPrefetcher,
-                        onBackClick = { navController.popBackStack() }
+                        onBackClick = { navController.popBackStack() },
+                        onOpenCodex = { navController.navigate(Screen.Codex.createRoute(novelId)) }
                     )
                 }
 
