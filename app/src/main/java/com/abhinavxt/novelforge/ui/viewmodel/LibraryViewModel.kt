@@ -1,5 +1,6 @@
 package com.abhinavxt.novelforge.ui.viewmodel
 
+import com.abhinavxt.novelforge.data.database.ReadingStatus
 import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -73,10 +74,14 @@ sealed interface ArchiveEvent {
     data class NeedsFile(val novel: Novel, val problem: ArchiveProblem) : ArchiveEvent
 }
 
-enum class LibraryFilter {
-    ALL,
-    DOWNLOADED,
-    READING
+enum class LibraryFilter(val displayName: String, val status: ReadingStatus? = null) {
+    ALL("All"),
+    DOWNLOADED("Downloaded"),
+    READING("Reading", ReadingStatus.READING),
+    PLAN_TO_READ("Plan to read", ReadingStatus.PLAN_TO_READ),
+    ON_HOLD("On hold", ReadingStatus.ON_HOLD),
+    COMPLETED("Completed", ReadingStatus.COMPLETED),
+    DROPPED("Dropped", ReadingStatus.DROPPED)
 }
 
 enum class LibrarySort(val displayName: String) {
@@ -132,6 +137,10 @@ class LibraryViewModel(
     private val _novelsBeingRead = MutableStateFlow<Set<String>>(emptySet())
     private val _readingProgressMap = MutableStateFlow<Map<String, ReadingProgressEntity>>(emptyMap())
 
+    // novelId → the status the reader set (or the app set on starting / finishing a book)
+    private val _readingStatuses = MutableStateFlow<Map<String, ReadingStatus>>(emptyMap())
+    val readingStatuses: StateFlow<Map<String, ReadingStatus>> = _readingStatuses.asStateFlow()
+
     // Track novels with new chapters (set by UpdateCheckerWorker via lastUpdatedAt)
     private val _novelsWithUpdates = MutableStateFlow<Set<String>>(emptySet())
     val novelsWithUpdates: StateFlow<Set<String>> = _novelsWithUpdates.asStateFlow()
@@ -169,6 +178,16 @@ class LibraryViewModel(
         viewModelScope.launch {
             repository.getArchivedNovelIds().collect { _archivedIds.value = it }
         }
+        viewModelScope.launch {
+            repository.getReadingStatuses().collect {
+                _readingStatuses.value = it
+                applyFilterAndSort()
+            }
+        }
+    }
+
+    fun setReadingStatus(novelId: String, status: ReadingStatus?) {
+        viewModelScope.launch { repository.setReadingStatus(novelId, status) }
     }
 
     // ── Archive actions ──────────────────────────────────────────
@@ -358,7 +377,12 @@ class LibraryViewModel(
         val filtered = when (filter) {
             LibraryFilter.ALL -> categorized
             LibraryFilter.DOWNLOADED -> categorized.filter { it.id in withDownloads }
-            LibraryFilter.READING -> categorized.filter { it.id in beingRead }
+            // Books read before statuses existed have progress but no status yet: they count as Reading.
+            LibraryFilter.READING -> categorized.filter {
+                val st = _readingStatuses.value[it.id]
+                st == ReadingStatus.READING || (st == null && it.id in beingRead)
+            }
+            else -> categorized.filter { _readingStatuses.value[it.id] == filter.status }
         }
 
         // Sort

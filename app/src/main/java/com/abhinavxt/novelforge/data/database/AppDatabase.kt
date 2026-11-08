@@ -37,7 +37,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TocEntryEntity::class,           // NEW in v21 — EPUB table of contents
         TextReplacementEntity::class     // NEW in v22 — text replacement while reading
     ],
-    version = 23,
+    version = 24,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -416,6 +416,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v24: reading status and per-book reader settings, both on the novel row so backups and migration carry them. */
+        internal val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE novels ADD COLUMN readingStatus TEXT")
+                db.execSQL("ALTER TABLE novels ADD COLUMN readerSettingsJson TEXT")
+            }
+        }
+
         /** The file name under the app's databases directory. */
         const val DATABASE_NAME = "novel_reader_database"
 
@@ -426,7 +434,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23)
+                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
                     // No fallbackToDestructiveMigration() — if a migration is missing,
                     // the app crashes instead of silently wiping the user's library,
                     // bookmarks, reading progress, and stats. Always write migrations.

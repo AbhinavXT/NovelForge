@@ -138,6 +138,9 @@ When several dictionaries have the word, the sheet shows up to five entries from
 
 Dictionaries stay on this device. They aren't in [backups](#backup-and-restore), so keep the original file if you'll want it again.
 
+**Names from the codex.** When the word you Define is a character, place or faction [the codex](#the-codex) knows, the sheet shows that first: what kind of name it is and the chapter it first appears in, with **Open in codex** to see the rest. The same [spoiler guard](#the-spoiler-guard) applies, so a name you haven't reached yet never shows. Selecting part of a name works too: "Wei" finds "Li Wei". The codex has to have been scanned for this to work.
+
+
 ### Keep screen on
 
 Quick Settings → More → Keep Screen On. The screen won't dim or sleep while the reader is open. Auto-disabled when you leave the reader.
@@ -239,6 +242,9 @@ All of these are saved per-app and apply in both scroll and paged mode. New nove
 
 Hyphenation is off by default. It follows your device language, not the book's, so a book in another language may break words in odd places, and some languages have no hyphenation rules on Android. Headings are never hyphenated.
 
+**This book only.** Quick Settings → **Font, size and theme for this book only** gives the book its own look: font, size, theme and colours, line and paragraph spacing, margins, justify, hyphenation and indent. Changes you make while it's on stay with this book; turn it off and the book goes back to the app's look. Reading mode, tap zones, volume keys and auto-scroll speed stay app-wide. The switch only appears for books in your library, and the book's look is included in [backups](#backup-and-restore).
+
+
 ---
 
 ## Bookmarks and highlights
@@ -263,6 +269,9 @@ Select text the normal way (long-press → drag handles), then tap "Highlight" i
 Highlights are tied to the paragraph + offset within it. If a source updates a chapter and the text changes, highlights on changed paragraphs are preserved but may shift visually - the underlying offsets don't auto-correct because we can't tell whether the change is meaningful or cosmetic.
 
 Highlights are included in backup/restore. To take them elsewhere, Library → long-press a novel → **Export highlights & notes** shares a Markdown file with your highlights, their notes and your bookmark notes, in reading order under each chapter. They're also cross-referenced by [the codex](#the-codex) - open a character and see every line you've marked about them.
+
+**All highlights.** The quote icon at the top of the Library opens every highlight in your library, newest first, with chips to narrow it to one book. Tap one to open the reader at it. On the home screen, **From Your Highlights** shows one past highlight a day, a different one each day.
+
 
 ---
 
@@ -370,6 +379,11 @@ The library is your collection of novels you've added. Find it in the bottom nav
 **Update badges:** when a source has new chapters since you last opened a novel, the library card shows an "N new" badge. Tap into the novel and the new chapters are at the bottom of the chapter list.
 
 **Continue reading card:** the home screen shows the most-recently-read novel at the top with a single tap to resume. Below it, a 3-cover strip of your library.
+
+**Status:** every book can have a status: Reading, Plan to read, On hold, Completed or Dropped. The filter chips under the search field show one status at a time. Long-press a novel → **Set status** to change it. The app also sets a few for you: opening a book that has no status, or is Plan to read, makes it Reading; reaching the end of the last chapter makes it Completed, but only for an imported book or one its source calls complete, never an ongoing web novel. A status you chose yourself (On hold, Dropped) is never changed. Books you read before statuses existed show under Reading.
+
+**Moving to another source:** when a source dies or falls behind, long-press the novel → **Move to another source**. NovelForge searches your other sources for the title (you can edit the search), you pick the match, and it shows what will happen before anything changes: how many of your chapters exist there, matched by chapter number, and where you'll continue. Your place, bookmarks, highlights, categories, stats, status, the book's own look and its text replacements move with it. Downloaded chapters don't: the new source's text is different, so download them again. The codex is cleared and rebuilds on the next scan. A bookmark or highlight in a chapter the new source doesn't have keeps its old chapter: it still shows in lists, but can't open the reader. Only shown for books from an installed source.
+
 
 ---
 
@@ -642,6 +656,9 @@ The stats screen shows:
 - **Today** - words, time, chapters
 - **12-week heatmap** - one cell per day, intensity scales with that day's word count
 - **Personal records** - longest session, best day, longest streak
+
+**Daily goal.** Under Today, **Set a daily goal** picks a target from 10 to 90 minutes a day. The stats screen and the home screen then show how far you are into it. Time counts when a chapter session ends, so the chapter you're reading now is added when you leave it.
+
 
 ### Share card
 

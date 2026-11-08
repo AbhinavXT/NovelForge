@@ -63,6 +63,7 @@ fun ReaderScreen(
     // Full-text search deep-jump; -1 = normal progress restore.
     targetParagraph: Int = -1,
     onBackClick: () -> Unit,
+    onOpenCodex: (() -> Unit)? = null,
     viewModel: ReaderViewModel = viewModel(
         factory = ReaderViewModel.provideFactory(
             novelId, chapterId, chapterUrl, novelUrl = novelUrl, repository,
@@ -114,6 +115,8 @@ fun ReaderScreen(
 
     // Dictionary state
     val dictionaryState by viewModel.dictionaryState.collectAsState()
+    val codexHit by viewModel.codexHit.collectAsState()
+    val bookLookOn by viewModel.bookLookOn.collectAsState()
 
     // Reading time estimate
     val estimatedMinutesLeft by viewModel.estimatedMinutesLeft.collectAsState()
@@ -305,6 +308,10 @@ fun ReaderScreen(
                 dictionaryState = dictionaryState,
                 onLookupWord = { word -> viewModel.lookupWord(word) },
                 onDismissDictionary = { viewModel.dismissDictionary() },
+                codexHit = codexHit,
+                onOpenCodex = onOpenCodex,
+                bookLookOn = if (isInLibrary) bookLookOn else null,
+                onBookLookChange = { viewModel.setBookLookOn(it) },
                 estimatedMinutesLeft = estimatedMinutesLeft,
                 userWPM = userWPM,
                 // Infinite scroll (stitching)

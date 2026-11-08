@@ -158,7 +158,42 @@ interface NovelDao {
                 "ORDER BY title COLLATE NOCASE"
     )
     suspend fun getUnarchivedLocalNovelIds(): List<String>
+
+    @Query("UPDATE novels SET readingStatus = :status WHERE id = :novelId")
+    suspend fun setReadingStatus(novelId: String, status: String?)
+
+    /** Starting a book moves it from nothing or Plan to read onto Reading; any other choice the reader made stays. */
+    @Query("UPDATE novels SET readingStatus = 'READING' WHERE id = :novelId AND (readingStatus IS NULL OR readingStatus = 'PLAN_TO_READ')")
+    suspend fun markReading(novelId: String)
+
+    @Query("SELECT id, readingStatus FROM novels WHERE readingStatus IS NOT NULL")
+    fun getReadingStatuses(): Flow<List<NovelStatusRow>>
+
+    @Query("SELECT readerSettingsJson FROM novels WHERE id = :novelId")
+    suspend fun getReaderSettingsJson(novelId: String): String?
+
+    @Query("UPDATE novels SET readerSettingsJson = :json WHERE id = :novelId")
+    suspend fun setReaderSettingsJson(novelId: String, json: String?)
+
+    // Source migration: rows that only need their novelId re-pointed.
+    @Query("UPDATE reading_stats SET novelId = :to WHERE novelId = :from")
+    suspend fun moveReadingStats(from: String, to: String)
+
+    @Query("UPDATE text_replacements SET novelId = :to WHERE novelId = :from")
+    suspend fun moveTextReplacements(from: String, to: String)
+
+    @Query("UPDATE novel_categories SET novelId = :to WHERE novelId = :from")
+    suspend fun moveCategories(from: String, to: String)
 }
+
+data class NovelStatusRow(val id: String, val readingStatus: String)
+
+/** A highlight with what it takes to show it outside its book and open the reader at it. */
+data class HighlightWithBook(
+    @androidx.room.Embedded val highlight: HighlightEntity,
+    val novelTitle: String,
+    val chapterUrl: String?
+)
 
 /**
  * Lightweight projection of ChapterEntity WITHOUT the content column.
@@ -675,6 +710,15 @@ interface HighlightDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHighlightReplace(highlight: HighlightEntity)
+
+    // Every highlight across the library, newest first, for the highlights screen and the daily card.
+    @Query("""
+        SELECT h.*, n.title AS novelTitle, c.url AS chapterUrl FROM highlights h
+        JOIN novels n ON n.id = h.novelId
+        LEFT JOIN chapters c ON c.id = h.chapterId
+        ORDER BY h.createdAt DESC
+    """)
+    fun getAllHighlightsWithBook(): Flow<List<HighlightWithBook>>
 }
 // ─────────────────────────────────────────────────────────────────
 // Phase 6: collections + updates feed
