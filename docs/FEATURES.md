@@ -153,7 +153,7 @@ Two modes. Switch between them in Quick Settings → Reading Mode.
 
 ### Scroll mode
 
-Continuous vertical scroll, the default. The whole chapter is one long page; you scroll. Best for long reading sessions where you don't want to be interrupted by page-turns.
+Continuous vertical scroll, the default. The whole chapter is one long page; you scroll. Reaching the end of a chapter carries straight on into the next, up to 50 chapters in a row; after that, or if the next chapter can't load (offline, say), the chapter ends with Next and Previous buttons. Best for long reading sessions where you don't want to be interrupted by page-turns.
 
 **Auto-scroll.** Tap the play icon in the top bar (next to the headphones icon) to start a continuous, teleprompter-style drift. The text scrolls down on its own at a configurable speed.
 
@@ -458,7 +458,7 @@ Use the system file picker (Library → top bar → "Import a book"). Three form
 - Footnotes: tapping a note marker opens the note in a popup, without turning the page or opening the menu
 - The book's table of contents, for the [contents sheet](#contents)
 
-Books that set their whole body in block quotes, as some converted EPUBs do, are shown as normal text rather than indented, and each block is its own paragraph. A book imported before 2.2.0 keeps its old paragraphs until it's removed and imported again, so its bookmarks and highlights stay put. If a book's own contents list misses most of its chapters, the contents sheet adds them.
+Books that set their whole body in block quotes, as some converted EPUBs do, are shown as normal text rather than indented, and each block is its own paragraph. A book imported before 2.2.0 keeps its old paragraphs until it's removed and imported again, so its bookmarks and highlights stay put. Books that keep each chapter heading in a file of its own, so the contents list points at a page with nothing but "CHAPTER 3", get those chapters' titles and contents lines from the following text. If a book's own contents list still misses most of its chapters, the contents sheet adds them.
 
 Formatting is kept beside the text rather than inside it, so search, highlights, bookmarks, the codex and TTS work on exactly the same text as before. If a chapter's formatting can't be matched to its text, that chapter shows plain text instead. EPUBs imported by earlier versions of the app show plain text until they're [archived and restored](#archiving-imported-books), which keeps your progress. Export and backups don't carry the formatting, pictures or footnotes: a restored book gets them back when its text is restored from the file.
 

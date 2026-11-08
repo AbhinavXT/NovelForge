@@ -1144,12 +1144,13 @@ class ReaderViewModel(
 
     companion object {
         /**
-         * Max chapters appended after the anchor (window = anchor + 4).
-         * Bounds memory for long binge sessions; when the window fills,
-         * the classic end-of-chapter navigation appears and pressing
-         * Next resets the window with a fresh anchor.
+         * Max chapters appended after the anchor. Bounds memory for very
+         * long sessions: a chapter's text is tens of KB and only visible
+         * rows are composed, so 50 reads as endless. When the window fills,
+         * the classic end-of-chapter navigation appears and pressing Next
+         * resets the window with a fresh anchor.
          */
-        const val MAX_STITCHED = 4
+        const val MAX_STITCHED = 50
 
         fun provideFactory(
             novelId: String,
