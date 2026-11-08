@@ -39,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -90,6 +91,16 @@ fun ReadingStatsScreen(
     )
 ) {
     val state by viewModel.uiState.collectAsState()
+    val themePrefs = (LocalContext.current.applicationContext as? com.abhinavxt.novelforge.NovelReaderApplication)?.themePreferences
+    val goalMinutes by (themePrefs?.dailyGoalMinutes ?: kotlinx.coroutines.flow.MutableStateFlow(0)).collectAsState()
+    var showGoalDialog by remember { mutableStateOf(false) }
+    if (showGoalDialog && themePrefs != null) {
+        com.abhinavxt.novelforge.ui.components.DailyGoalDialog(
+            current = goalMinutes,
+            onPick = { themePrefs.setDailyGoalMinutes(it); showGoalDialog = false },
+            onDismiss = { showGoalDialog = false }
+        )
+    }
     var shareRequested by remember { mutableStateOf(false) }
     var isSharing by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -197,6 +208,17 @@ fun ReadingStatsScreen(
                 // 2. Today's progress
                 SectionLabel("Today")
                 TodayRow(state)
+                if (goalMinutes > 0) {
+                    com.abhinavxt.novelforge.ui.components.DailyGoalBar(
+                        todayMinutes = (state.todayTimeMs / 60_000).toInt(),
+                        goalMinutes = goalMinutes
+                    )
+                }
+                if (themePrefs != null) {
+                    TextButton(onClick = { showGoalDialog = true }) {
+                        Text(if (goalMinutes > 0) "Change daily goal" else "Set a daily goal")
+                    }
+                }
 
                 // 3. Reading heatmap (last 12 weeks)
                 if (state.heatmapData.isNotEmpty()) {

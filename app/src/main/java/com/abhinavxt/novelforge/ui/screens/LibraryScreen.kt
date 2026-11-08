@@ -1,5 +1,9 @@
 package com.abhinavxt.novelforge.ui.screens
 
+import com.abhinavxt.novelforge.data.source.SourceManager
+import androidx.compose.material.icons.filled.FormatQuote
+import androidx.compose.material3.RadioButton
+import com.abhinavxt.novelforge.data.database.ReadingStatus
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -116,6 +120,7 @@ fun LibraryScreen(
     themePreferences: ThemePreferences,
     onNovelClick: (String) -> Unit,
     onTextSearchClick: () -> Unit = {},
+    onHighlightsClick: () -> Unit = {},
     /** Hands a pasted URL to the add-from-URL screen. */
     onImportUrlClick: (String) -> Unit = {},
     onAnnasArchiveClick: () -> Unit = {},
@@ -143,6 +148,9 @@ fun LibraryScreen(
     // from there the user can edit categories or remove the novel.
     var optionsNovel by remember { mutableStateOf<Novel?>(null) }
     var categoriesNovel by remember { mutableStateOf<Novel?>(null) }
+    var statusNovel by remember { mutableStateOf<Novel?>(null) }
+    var migrateNovel by remember { mutableStateOf<Novel?>(null) }
+    val readingStatuses by viewModel.readingStatuses.collectAsState()
     var removeNovel by remember { mutableStateOf<Novel?>(null) }
     var showManageCategories by remember { mutableStateOf(false) }
 
@@ -217,6 +225,16 @@ fun LibraryScreen(
                 optionsNovel = null
                 categoriesNovel = novel
             },
+            onSetStatus = {
+                optionsNovel = null
+                statusNovel = novel
+            },
+            onMigrate = if (SourceManager.getSourceFromNovelId(novel.id) != null) {
+                {
+                    optionsNovel = null
+                    migrateNovel = novel
+                }
+            } else null,
             onExportAnnotations = {
                 optionsNovel = null
                 exportScope.launch {
@@ -268,6 +286,21 @@ fun LibraryScreen(
                 removeNovel = novel
             },
             onDismiss = { optionsNovel = null }
+        )
+    }
+
+    migrateNovel?.let { novel ->
+        MigrateSourceDialog(novel = novel, repository = repository, onDismiss = { migrateNovel = null })
+    }
+
+    statusNovel?.let { novel ->
+        ReadingStatusDialog(
+            current = readingStatuses[novel.id],
+            onPick = {
+                viewModel.setReadingStatus(novel.id, it)
+                statusNovel = null
+            },
+            onDismiss = { statusNovel = null }
         )
     }
 
@@ -574,6 +607,12 @@ fun LibraryScreen(
                                     contentDescription = "Search in books"
                                 )
                             }
+                            IconButton(onClick = onHighlightsClick) {
+                                Icon(
+                                    imageVector = Icons.Default.FormatQuote,
+                                    contentDescription = "All highlights"
+                                )
+                            }
                             IconButton(
                                 onClick = {
                                     themePreferences.setLibraryViewMode(
@@ -678,50 +717,27 @@ fun LibraryScreen(
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        FilterChip(
-                            selected = currentFilter == LibraryFilter.ALL,
-                            onClick = { viewModel.setFilter(LibraryFilter.ALL) },
-                            label = { Text("All") },
-                            leadingIcon = if (currentFilter == LibraryFilter.ALL) {
-                                {
-                                    Icon(
-                                        imageVector = Icons.Default.Book,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(FilterChipDefaults.IconSize)
-                                    )
-                                }
-                            } else null
-                        )
-
-                        FilterChip(
-                            selected = currentFilter == LibraryFilter.DOWNLOADED,
-                            onClick = { viewModel.setFilter(LibraryFilter.DOWNLOADED) },
-                            label = { Text("Downloaded") },
-                            leadingIcon = if (currentFilter == LibraryFilter.DOWNLOADED) {
-                                {
-                                    Icon(
-                                        imageVector = Icons.Default.Download,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(FilterChipDefaults.IconSize)
-                                    )
-                                }
-                            } else null
-                        )
-
-                        FilterChip(
-                            selected = currentFilter == LibraryFilter.READING,
-                            onClick = { viewModel.setFilter(LibraryFilter.READING) },
-                            label = { Text("Reading") },
-                            leadingIcon = if (currentFilter == LibraryFilter.READING) {
-                                {
-                                    Icon(
-                                        imageVector = Icons.Default.MenuBook,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(FilterChipDefaults.IconSize)
-                                    )
-                                }
-                            } else null
-                        )
+                        LibraryFilter.entries.forEach { filter ->
+                            val icon = when (filter) {
+                                LibraryFilter.ALL -> Icons.Default.Book
+                                LibraryFilter.DOWNLOADED -> Icons.Default.Download
+                                else -> Icons.Default.MenuBook
+                            }
+                            FilterChip(
+                                selected = currentFilter == filter,
+                                onClick = { viewModel.setFilter(filter) },
+                                label = { Text(filter.displayName) },
+                                leadingIcon = if (currentFilter == filter) {
+                                    {
+                                        Icon(
+                                            imageVector = icon,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(FilterChipDefaults.IconSize)
+                                        )
+                                    }
+                                } else null
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -792,6 +808,13 @@ fun LibraryScreen(
                                         icon = Icons.Default.MenuBook,
                                         title = "No novels in progress",
                                         subtitle = "Start reading a novel to see it here"
+                                    )
+                                }
+                                else -> {
+                                    EmptyFilterState(
+                                        icon = Icons.Default.MenuBook,
+                                        title = "Nothing marked ${currentFilter.displayName.lowercase()}",
+                                        subtitle = "Long-press a novel and choose Set status"
                                     )
                                 }
                             }
@@ -1204,6 +1227,9 @@ private fun NovelOptionsDialog(
     onArchive: () -> Unit,
     onRestore: () -> Unit,
     onEditCategories: () -> Unit,
+    onSetStatus: () -> Unit,
+    // null for books no installed source can serve (imports, saved pages).
+    onMigrate: (() -> Unit)?,
     onExportAnnotations: () -> Unit,
     onExportEpub: () -> Unit,
     onRemove: () -> Unit,
@@ -1224,6 +1250,16 @@ private fun NovelOptionsDialog(
                     onClick = onEditCategories,
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Edit categories") }
+                TextButton(
+                    onClick = onSetStatus,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Set status") }
+                if (onMigrate != null) {
+                    TextButton(
+                        onClick = onMigrate,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Move to another source") }
+                }
                 TextButton(
                     onClick = onExportAnnotations,
                     modifier = Modifier.fillMaxWidth()
@@ -1262,6 +1298,37 @@ private fun NovelOptionsDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
+    )
+}
+
+/** Picks the novel's reading status; "None" clears it. */
+@Composable
+private fun ReadingStatusDialog(
+    current: ReadingStatus?,
+    onPick: (ReadingStatus?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Status") },
+        text = {
+            Column {
+                (listOf<ReadingStatus?>(null) + ReadingStatus.entries).forEach { status ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onPick(status) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = status == current, onClick = { onPick(status) })
+                        Text(status?.displayName ?: "None")
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 

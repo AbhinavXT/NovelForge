@@ -80,7 +80,10 @@ data class NovelBackup(
      * its file lines up with its bookmarks — would be gone.
      */
     val archivedAt: Long? = null,
-    val textFingerprint: String? = null
+    val textFingerprint: String? = null,
+    // v24 shelf status and per-book look; null in older backups.
+    val readingStatus: String? = null,
+    val readerSettingsJson: String? = null
 )
 
 data class ChapterBackup(
@@ -219,7 +222,9 @@ class BackupManager(
                     sourceUri = novel.sourceUri,
                     contentHash = novel.contentHash,
                     archivedAt = novel.archivedAt,
-                    textFingerprint = novel.textFingerprint
+                    textFingerprint = novel.textFingerprint,
+                    readingStatus = novel.readingStatus,
+                    readerSettingsJson = novel.readerSettingsJson
                 )
             }
 
@@ -392,7 +397,9 @@ class BackupManager(
                         ?: if (!includeDownloads && novelBackup.source == "local") {
                             System.currentTimeMillis()
                         } else null,
-                    textFingerprint = novelBackup.textFingerprint
+                    textFingerprint = novelBackup.textFingerprint,
+                    readingStatus = novelBackup.readingStatus,
+                    readerSettingsJson = novelBackup.readerSettingsJson
                 )
                 repository.insertNovelForRestore(novelEntity)
                 novelsRestored++

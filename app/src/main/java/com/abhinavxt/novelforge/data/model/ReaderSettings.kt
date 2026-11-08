@@ -181,3 +181,38 @@ data class ReaderSettings(
     val hyphenation: Boolean = false,
     val paragraphSpacing: Int = 16,               // dp — gap between paragraphs (0–32)
 )
+/**
+ * The part of [ReaderSettings] a single book can override: how the text
+ * looks. Behaviour (reading mode, tap zones, volume keys, auto-scroll) stays
+ * app-wide so it never changes under the reader's thumbs between books.
+ */
+data class BookLook(
+    val fontSize: Int,
+    val theme: ReaderTheme,
+    val font: ReaderFont,
+    val lineSpacing: Float,
+    val horizontalMargin: Int,
+    val justifyText: Boolean,
+    val paragraphIndent: Boolean,
+    val customBackgroundColor: Long,
+    val customTextColor: Long,
+    val customFont: String?,
+    val hyphenation: Boolean,
+    val paragraphSpacing: Int,
+) {
+    fun applyTo(s: ReaderSettings) = s.copy(
+        fontSize = fontSize, theme = theme, font = font, lineSpacing = lineSpacing,
+        horizontalMargin = horizontalMargin, justifyText = justifyText,
+        paragraphIndent = paragraphIndent, customBackgroundColor = customBackgroundColor,
+        customTextColor = customTextColor, customFont = customFont,
+        hyphenation = hyphenation, paragraphSpacing = paragraphSpacing,
+    )
+
+    companion object {
+        fun of(s: ReaderSettings) = BookLook(
+            s.fontSize, s.theme, s.font, s.lineSpacing, s.horizontalMargin, s.justifyText,
+            s.paragraphIndent, s.customBackgroundColor, s.customTextColor, s.customFont,
+            s.hyphenation, s.paragraphSpacing,
+        )
+    }
+}

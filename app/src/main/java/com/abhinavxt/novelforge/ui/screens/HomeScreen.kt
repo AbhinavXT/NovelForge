@@ -1,5 +1,7 @@
 package com.abhinavxt.novelforge.ui.screens
 
+import com.abhinavxt.novelforge.ui.components.DailyGoalBar
+import androidx.compose.runtime.remember
 import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -76,6 +78,8 @@ fun HomeScreen(
     onContinueReading: (novelId: String, chapterId: String, chapterUrl: String, novelUrl: String) -> Unit = { novelId, _, _, _ -> onNovelClick(novelId) },
     onSeeLibrary: () -> Unit = {},
     onSeeUpdates: () -> Unit = {},
+    onSeeHighlights: () -> Unit = {},
+    onOpenHighlight: OpenHighlight = { _, _, _, _ -> },
     networkMonitor: NetworkMonitor,
     viewModel: HomeViewModel = viewModel(
         factory = HomeViewModel.provideFactory(
@@ -89,6 +93,7 @@ fun HomeScreen(
     val continueReadingList by viewModel.continueReadingList.collectAsState()
     val readingActivity by viewModel.readingActivity.collectAsState()
     val recentlyUpdated by viewModel.recentlyUpdated.collectAsState()
+    val themePreferences = (LocalContext.current.applicationContext as? com.abhinavxt.novelforge.NovelReaderApplication)?.themePreferences
 
     Column(
         modifier = Modifier
@@ -136,6 +141,15 @@ fun HomeScreen(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+            )
+        }
+
+        val goalMinutes by (themePreferences?.dailyGoalMinutes ?: kotlinx.coroutines.flow.MutableStateFlow(0)).collectAsState()
+        if (goalMinutes > 0) {
+            DailyGoalBar(
+                todayMinutes = readingActivity.todayMinutes,
+                goalMinutes = goalMinutes,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
             )
         }
 
@@ -212,6 +226,15 @@ fun HomeScreen(
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+
+                // ── A highlight from the past, a different one each day ──
+                val allHighlights by remember { repository.getAllHighlightsWithBook() }.collectAsState(initial = emptyList())
+                highlightOfTheDay(allHighlights, java.time.LocalDate.now().toEpochDay())?.let { today ->
+                    SectionHeader(title = "From Your Highlights", action = "See all", onAction = onSeeHighlights)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HighlightCard(today, onOpenHighlight, Modifier.padding(horizontal = 16.dp))
                     Spacer(modifier = Modifier.height(24.dp))
                 }
 

@@ -13,6 +13,9 @@ import com.abhinavxt.novelforge.data.database.ChapterListItem
 import com.abhinavxt.novelforge.data.database.HistoryRowData
 import com.abhinavxt.novelforge.data.database.NovelCategoryCrossRef
 import com.abhinavxt.novelforge.data.database.UpdateEntity
+import com.abhinavxt.novelforge.data.database.HighlightWithBook
+import com.abhinavxt.novelforge.data.database.ReadingStatus
+import com.abhinavxt.novelforge.data.model.BookLook
 import com.abhinavxt.novelforge.data.model.Chapter
 import com.abhinavxt.novelforge.data.model.Novel
 import com.abhinavxt.novelforge.data.model.NovelPreview
@@ -235,6 +238,7 @@ class NovelRepository(
                 lastReadAt = System.currentTimeMillis()
             )
         )
+        novelDao.markReading(novelId)
 
         // Widget hook — refresh the continue-reading widget cache.
         // Wrapped in try/catch so widget failures never break chapter
@@ -494,6 +498,125 @@ class NovelRepository(
             paragraphSpacing = settings.paragraphSpacing,
         )
         settingsDao.saveSettings(entity)
+    }
+
+    // ============ PER-BOOK LOOK ============
+
+    private val gson = com.google.gson.Gson()
+
+    /** This book's own font, size and theme, or null when it follows the app's. */
+    suspend fun getBookLook(novelId: String): BookLook? {
+        val json = novelDao.getReaderSettingsJson(novelId) ?: return null
+        // A copy with a missing or renamed enum would throw on first use; treat it as no override.
+        return runCatching { gson.fromJson(json, BookLook::class.java).also { it.applyTo(ReaderSettings()) } }.getOrNull()
+    }
+
+    suspend fun setBookLook(novelId: String, look: BookLook?) =
+        novelDao.setReaderSettingsJson(novelId, look?.let { gson.toJson(it) })
+
+    // ============ READING STATUS ============
+
+    fun getReadingStatuses(): Flow<Map<String, ReadingStatus>> =
+        novelDao.getReadingStatuses().map { rows ->
+            rows.mapNotNull { row ->
+                runCatching { ReadingStatus.valueOf(row.readingStatus) }.getOrNull()?.let { row.id to it }
+            }.toMap()
+        }
+
+    suspend fun setReadingStatus(novelId: String, status: ReadingStatus?) =
+        novelDao.setReadingStatus(novelId, status?.name)
+
+    /**
+     * The reader reached the end of the last chapter. Only a book that is
+     * actually over (an imported file, or one its source calls complete)
+     * becomes Completed; the end of an ongoing web novel is just a wait.
+     */
+    suspend fun markFinished(novelId: String) {
+        val novel = novelDao.getNovelById(novelId) ?: return
+        val over = novel.source == "local" || novel.status.contains("complet", ignoreCase = true)
+        val current = novel.readingStatus
+        if (over && (current == null || current == ReadingStatus.READING.name || current == ReadingStatus.PLAN_TO_READ.name)) {
+            novelDao.setReadingStatus(novelId, ReadingStatus.COMPLETED.name)
+        }
+    }
+
+    // ============ HIGHLIGHT REVIEW ============
+
+    fun getAllHighlightsWithBook(): Flow<List<HighlightWithBook>> =
+        highlightDao.getAllHighlightsWithBook()
+
+    // ============ SOURCE MIGRATION ============
+
+    data class MigrationResult(val newNovelId: String, val matchedChapters: Int, val movedBookmarks: Int, val movedHighlights: Int)
+
+    /**
+     * Moves a library book onto another source's copy of it ([target], with
+     * its chapter list). Chapters are matched by number. Progress, bookmarks,
+     * highlights, categories, stats, status, per-book look and text
+     * replacements follow; downloaded text does not, because the new source's
+     * text is different. The codex is cleared so the next scan rebuilds it
+     * from the new text. Bookmarks and highlights in chapters the new source
+     * lacks keep pointing at the old chapter and still show in lists.
+     */
+    suspend fun migrateNovel(oldId: String, target: Novel): MigrationResult {
+        if (target.id == oldId) throw UserFacingException("That's the same source the book already uses.")
+        if (target.chapters.isEmpty()) throw UserFacingException("That source lists no chapters for this book.")
+        if (novelDao.isNovelInLibrary(target.id)) {
+            throw UserFacingException("\"${target.title}\" from that source is already in your library.")
+        }
+        val old = novelDao.getNovelById(oldId) ?: throw UserFacingException("The book is no longer in your library.")
+        val byNumber = target.chapters.associateBy { it.number }
+        val matched = chapterDao.getChaptersForNovelOnce(oldId).count { it.number in byNumber }
+        var bookmarksMoved = 0
+        var highlightsMoved = 0
+
+        database.withTransaction {
+            novelDao.insertNovel(
+                target.toEntity().copy(
+                    addedToLibraryAt = old.addedToLibraryAt,
+                    previousTotalChapters = target.chapters.size,
+                    readingStatus = old.readingStatus,
+                    readerSettingsJson = old.readerSettingsJson
+                )
+            )
+            chapterDao.insertChapters(target.chapters.map {
+                ChapterEntity(id = it.id, novelId = target.id, number = it.number, title = it.title, url = it.url)
+            })
+
+            progressDao.getProgress(oldId)?.let { p ->
+                val chapter = closestChapter(target.chapters, p.currentChapterNumber)!!
+                progressDao.saveProgress(
+                    p.copy(novelId = target.id, currentChapterId = chapter.id, currentChapterNumber = chapter.number)
+                )
+                progressDao.deleteProgress(oldId)
+            }
+            for (b in bookmarkDao.getBookmarksForNovelOnce(oldId)) {
+                val c = byNumber[b.chapterNumber]
+                if (c != null) bookmarksMoved++
+                bookmarkDao.insertBookmarkReplace(
+                    b.copy(novelId = target.id, chapterId = c?.id ?: b.chapterId, chapterUrl = c?.url ?: b.chapterUrl)
+                )
+            }
+            for (h in highlightDao.getHighlightsForNovelOnce(oldId)) {
+                val c = byNumber[h.chapterNumber]
+                if (c != null) highlightsMoved++
+                highlightDao.insertHighlightReplace(h.copy(novelId = target.id, chapterId = c?.id ?: h.chapterId))
+            }
+            novelDao.moveReadingStats(oldId, target.id)
+            novelDao.moveTextReplacements(oldId, target.id)
+            novelDao.moveCategories(oldId, target.id)
+            codexDao.clearNames(oldId)
+            codexDao.clearScanInfo(oldId)
+            updateDao.deleteForNovel(oldId)
+            chapterDao.deleteChaptersForNovel(oldId)
+            novelDao.deleteNovelById(oldId)
+        }
+        try {
+            onProgressSaved?.invoke(target.id)
+        } catch (e: Exception) {
+            Logger.e("NovelRepository", "widget hook (migrate) failed", e)
+        }
+        return MigrationResult(target.id, matched, bookmarksMoved, highlightsMoved)
     }
 
     // ============ EXTENSION FUNCTIONS FOR MAPPING ============
@@ -855,3 +978,9 @@ class NovelRepository(
     }
 
 }
+
+/** The chapter numbered [number], else the last one before it, else the first. Null only for an empty list. */
+internal fun closestChapter(chapters: List<Chapter>, number: Int): Chapter? =
+    chapters.firstOrNull { it.number == number }
+        ?: chapters.filter { it.number < number }.maxByOrNull { it.number }
+        ?: chapters.minByOrNull { it.number }

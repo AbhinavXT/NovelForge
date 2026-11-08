@@ -174,6 +174,20 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.3.0",
+        date = "Nov 2026",
+        changes = listOf(
+            "Daily reading goal on Home and Reading Stats",
+            "Reading status per book (Reading, Plan to read, On hold, Completed, Dropped) with library filters",
+            "Define on a character's name shows their codex card, without spoilers",
+            "All your highlights in one place, and a highlight from your past reading on Home each day",
+            "Font, size and theme for one book only",
+            "Move a book to another source and keep your place, bookmarks and highlights",
+            "EPUB contents keep chapters whose heading is a separate file",
+            "Scroll mode carries on through up to 50 chapters instead of stopping after 4"
+        )
+    ),
+    VersionEntry(
         version = "v2.2.0",
         date = "Nov 2026",
         changes = listOf(

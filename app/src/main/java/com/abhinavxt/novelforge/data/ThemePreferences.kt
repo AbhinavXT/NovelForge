@@ -181,6 +181,15 @@ class ThemePreferences(context: Context) {
         _dictionaryLanguage.value = language
     }
 
+    /** Daily reading goal in minutes; 0 means no goal. */
+    private val _dailyGoalMinutes = MutableStateFlow(prefs.getInt(KEY_DAILY_GOAL_MINUTES, 0))
+    val dailyGoalMinutes: StateFlow<Int> = _dailyGoalMinutes.asStateFlow()
+
+    fun setDailyGoalMinutes(minutes: Int) {
+        prefs.edit().putInt(KEY_DAILY_GOAL_MINUTES, minutes).apply()
+        _dailyGoalMinutes.value = minutes
+    }
+
     fun setLibraryViewMode(mode: LibraryViewMode) {
         prefs.edit().putString(KEY_LIBRARY_VIEW_MODE, mode.name).apply()
         _libraryViewMode.value = mode
@@ -260,6 +269,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_COLOR_SCHEME = "color_scheme"
         private const val KEY_DICTIONARY_LANGUAGE = "dictionary_language"
         private const val KEY_LIBRARY_VIEW_MODE = "library_view_mode"
+        private const val KEY_DAILY_GOAL_MINUTES = "daily_goal_minutes"
         private const val KEY_APP_FONT = "app_font"
         private const val KEY_APP_THEME = "app_theme"
         private const val KEY_CUSTOM_PRIMARY = "custom_primary_color"

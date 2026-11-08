@@ -227,11 +227,19 @@ class EpubParser(
         /** Images from skipped items, shown at the top of the next chapter. */
         private val carriedImages = mutableListOf<ChapterImage>()
 
-        fun tocTitle(chapterKey: String): String? = rawToc
-            .firstOrNull { it.path == chapterKey && it.fragment == null }
+        /** The contents title of a skipped heading-only file just before the current chapter. */
+        private var carriedTitle: String? = null
+
+        fun tocTitle(chapterKey: String): String? = ownTitle(chapterKey) ?: carriedTitle
+
+        private fun ownTitle(key: String): String? = rawToc
+            .firstOrNull { it.path == key && it.fragment == null }
             ?.title?.takeIf { it.length <= 120 }
 
         fun formatChapter(spineIndex: Int, key: String, body: String, text: String, order: Int): ChapterFormatting? {
+            // Some books put each chapter's heading in a file of its own,
+            // too short to keep, with the contents pointing at that file.
+            carriedTitle = skipped.asReversed().firstNotNullOfOrNull { spineKeys[it]?.let(::ownTitle) }
             skipped.forEach { placed[it] = Placement(order, emptyMap(), kept = false) }
             skipped.clear()
 
@@ -349,12 +357,16 @@ class EpubParser(
                 carriedImages.clear()
             }
 
+            val places = rawToc.map { entry -> spineIndexOf[entry.path]?.let { placed[it] } }
+            val chaptersWithEntries = places.filter { it?.kept == true }.map { it!!.chapter }.toSet()
             val toc = rawToc.mapIndexedNotNull { i, entry ->
-                val spineIndex = spineIndexOf[entry.path] ?: return@mapIndexedNotNull null
-                val place = placed[spineIndex] ?: return@mapIndexedNotNull null
-                // A skipped item (a part title page) only earns a line when
-                // it heads a group of entries.
-                if (!place.kept && (rawToc.getOrNull(i + 1)?.depth ?: -1) <= entry.depth) return@mapIndexedNotNull null
+                val place = places[i] ?: return@mapIndexedNotNull null
+                // A skipped item (a title page, a heading-only file) points
+                // at the chapter after it. It earns a line when it heads a
+                // group of entries, or when that chapter has none of its own.
+                if (!place.kept && (rawToc.getOrNull(i + 1)?.depth ?: -1) <= entry.depth &&
+                    place.chapter in chaptersWithEntries
+                ) return@mapIndexedNotNull null
                 val paragraph = entry.fragment?.let { place.anchors[percentDecode(it)] } ?: 0
                 TocEntry(entry.title, entry.depth, place.chapter, paragraph)
             }

@@ -281,6 +281,29 @@ class EpubParserTest {
     }
 
     @Test
+    fun `contents pointing at heading-only files lead to the chapter after them`() {
+        val ncx = TestEpub.Item(
+            "ncx", "toc.ncx", "application/x-dtbncx+xml",
+            """<?xml version="1.0"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/"><navMap>
+              <navPoint id="t"><navLabel><text>Title Page</text></navLabel><content src="Text/title.xhtml"/></navPoint>
+              <navPoint id="i"><navLabel><text>Contents</text></navLabel><content src="Text/intro.xhtml"/></navPoint>
+              <navPoint id="a"><navLabel><text>1: The First</text></navLabel><content src="Text/h1.xhtml"/></navPoint>
+              <navPoint id="b"><navLabel><text>2: The Second</text></navLabel><content src="Text/h2.xhtml"/></navPoint>
+              </navMap></ncx>""".toByteArray()
+        )
+        val book = parse(epub(listOf(
+            chapter("title", "<blockquote>Book</blockquote>"),
+            chapter("intro", "<p>The contents page, long enough to be kept as a chapter.</p>"),
+            chapter("h1", "<blockquote><span>CHAPTER 1</span></blockquote>"),
+            chapter("c1", "<p>Text of the first chapter goes right here, at length.</p>"),
+            chapter("h2", "<blockquote><span>CHAPTER 2</span></blockquote>"),
+            chapter("c2", "<p>Text of the second chapter goes right here, at length.</p>")
+        ), listOf(ncx), ncxId = "ncx"))
+        assertEquals(listOf("Contents", "1: The First", "2: The Second"), book.chapters.map { it.displayTitle })
+        assertEquals(listOf("Contents" to 1, "1: The First" to 2, "2: The Second" to 3), book.toc.map { it.title to it.chapter })
+    }
+
+    @Test
     fun `a book without a contents list keeps heading titles`() {
         val book = parse(epub(listOf(chapter("c1", "<h1>From The Heading</h1><p>Body text that is comfortably long enough to keep.</p>"))))
         assertEquals("From The Heading", book.chapters.single().displayTitle)
