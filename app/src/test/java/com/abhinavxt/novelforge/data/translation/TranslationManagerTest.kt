@@ -62,6 +62,18 @@ class TranslationManagerTest {
     }
 
     @Test
+    fun theTitleIsTranslatedWithTheChapterAndRestoredWithIt() = runBlocking {
+        seed("first line")
+        assertEquals("FIRST LINE", manager.forReading("n", "c", "first line"))
+        assertEquals("ONE", db.chapterDao().getChapterById("c")!!.title)
+
+        assertEquals(1, manager.restoreBook("n"))
+        val chapter = db.chapterDao().getChapterById("c")!!
+        assertEquals("One", chapter.title)
+        assertEquals("first line", chapter.content)
+    }
+
+    @Test
     fun aChapterReadOnlineIsStoredOnceTranslated() = runBlocking {
         seed(null)
         manager.forReading("n", "c", "fetched text")
@@ -124,7 +136,10 @@ class TranslationManagerTest {
         val manual = FrameworkSQLiteOpenHelperFactory().create(
             SupportSQLiteOpenHelper.Configuration.builder(context).name(null).callback(
                 object : SupportSQLiteOpenHelper.Callback(1) {
-                    override fun onCreate(db: SupportSQLiteDatabase) = AppDatabase.createTranslationTables(db)
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        AppDatabase.createTranslationTables(db)
+                        AppDatabase.addOriginalTitleColumn(db)
+                    }
                     override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
                 }
             ).build()

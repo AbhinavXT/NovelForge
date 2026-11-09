@@ -548,6 +548,22 @@ class NovelRepository(
     /** The book's language tag for hyphenation, or null for the device's. */
     suspend fun getBookLanguage(novelId: String): String? = novelDao.getLanguage(novelId)
 
+    /** Chapter id → stored title for chapters of the book: what translation and restoring change. */
+    suspend fun getStoredChapterTitles(novelId: String): Map<String, String> =
+        chapterDao.getChaptersForNovel(novelId).first().associate { it.id to it.title }
+
+    /** Chapter id → translated title, for chapters whose title was translated. */
+    suspend fun getTranslatedTitles(novelId: String): Map<String, String> {
+        val dao = database.translationDao()
+        return dao.getOriginals(novelId).filter { it.originalTitle != null }
+            .mapNotNull { original -> dao.getTitle(original.chapterId)?.let { original.chapterId to it } }
+            .toMap()
+    }
+
+    /** Downloaded chapters (all, or only after [afterNumber]) and their text length. */
+    suspend fun getDownloadedLengths(novelId: String, afterNumber: Int = Int.MIN_VALUE) =
+        chapterDao.getDownloadedLengths(novelId, afterNumber)
+
     suspend fun setBookLanguage(novelId: String, language: String?) = novelDao.setLanguage(novelId, language)
 
     // ============ READING STATUS ============

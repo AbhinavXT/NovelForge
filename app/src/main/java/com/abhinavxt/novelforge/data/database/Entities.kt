@@ -486,7 +486,9 @@ data class ChapterOriginalEntity(
     val translatedHash: Int,
     /** "ai" or "on-device". */
     val engine: String,
-    val translatedAt: Long = System.currentTimeMillis()
+    val translatedAt: Long = System.currentTimeMillis(),
+    /** The chapter's title before translation; null when the title wasn't translated. NEW in v27. */
+    val originalTitle: String? = null
 )
 
 /** One book's fixed translation for a name or term; [note] carries gender and pronouns. NEW in v26. */

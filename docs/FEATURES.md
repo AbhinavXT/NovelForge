@@ -571,20 +571,20 @@ Only downloaded chapters are exported (the export works fully offline). Chapters
 
 ## Translation
 
-Read raw Chinese, Japanese or Korean novels in English (or any of ~60 languages), or clean up machine-translated English, with names that stay the same from chapter to chapter.
+Read raw Chinese, Japanese, Korean, French, Spanish or other novels in English (or any of ~60 languages), or clean up machine-translated English, with names that stay the same from chapter to chapter.
 
 ### Turning it on
 
 On a library book, tap the translate icon on its page, or Quick Settings → Translation in the reader, and switch on **Translate this book**. From then on each chapter is translated the first time you open it and kept, so it's only translated (and paid for) once. A chapter you were reading online is saved as downloaded once translated. **Translate N downloaded chapters** does the rest of what's downloaded in one go, while the app stays open.
 
-Translated text replaces the chapter's text, so search, TTS, audiobooks, highlights, EPUB export and the codex all work on the translation. Paragraphs stay paragraph for paragraph, so bookmarks and your place stay put. An EPUB's italics and footnotes aren't shown on translated chapters. **Restore original text** puts every translated chapter back and switches translation off.
+Translated text replaces the chapter's text, and the chapter's title is translated with it, so search, TTS, audiobooks, highlights, EPUB export and the codex all work on the translation. Paragraphs stay paragraph for paragraph, so bookmarks and your place stay put. An EPUB's italics and footnotes aren't shown on translated chapters. **Restore original text** puts every translated chapter and title back and switches translation off.
 
 ### Engines
 
 Settings → Translation:
 
 - **AI, with your key.** Claude, OpenAI, Gemini, DeepSeek, OpenRouter, or any other OpenAI-compatible address (https only). Best quality, and it handles both raw text and bad MTL. Chapter text goes to the provider you picked, who bills you. Claude defaults to `claude-opus-5-5`; for the others, type the model name your provider gives you. The key stays on the phone and is left out of backups.
-- **On-device.** Google's offline translator, about 30 MB per language pair, downloaded the first time. Free and private but rougher, and it can't improve English that's already English: on an English book it only applies the glossary. The source language comes from the book's language setting, else from its script. Some phones need Google Play services for the model download.
+- **On-device.** Google's offline translator, about 30 MB per language pair, downloaded the first time. Free and private but rougher, and it can't improve English that's already English: on an English book it only applies the glossary. The source language comes from the book's language setting, else it's detected from the text, offline. Some phones need Google Play services for the model download.
 
 ### Glossary
 

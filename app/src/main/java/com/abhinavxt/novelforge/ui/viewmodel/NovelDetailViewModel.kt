@@ -185,8 +185,13 @@ class NovelDetailViewModel(
             // chapter — the old loop was N single-row DB hits for an
             // N-chapter novel (2,000+ for long webnovels).
             val downloadedIds = repository.getDownloadedChapterIds(novelId)
+            // The site sends its own titles; translated chapters show theirs.
+            val translatedTitles = repository.getTranslatedTitles(novelId)
             val chaptersWithStatus = novel.chapters.map { chapter ->
-                chapter.copy(isDownloaded = chapter.id in downloadedIds)
+                chapter.copy(
+                    isDownloaded = chapter.id in downloadedIds,
+                    title = translatedTitles[chapter.id] ?: chapter.title
+                )
             }
 
             val novelWithDownloadStatus = novel.copy(chapters = chaptersWithStatus)
@@ -258,6 +263,17 @@ class NovelDetailViewModel(
     /**
      * Refresh download status for all chapters
      */
+    /** Picks up chapter titles that translating or restoring just changed. */
+    fun refreshChapterTitles() {
+        viewModelScope.launch {
+            val state = _uiState.value as? NovelDetailUiState.Success ?: return@launch
+            val stored = repository.getStoredChapterTitles(novelId)
+            if (stored.isEmpty()) return@launch
+            val chapters = state.novel.chapters.map { c -> stored[c.id]?.let { c.copy(title = it) } ?: c }
+            _uiState.value = state.copy(novel = state.novel.copy(chapters = chapters))
+        }
+    }
+
     fun refreshDownloadStatus() {
         viewModelScope.launch {
             val currentState = _uiState.value
@@ -680,9 +696,15 @@ class NovelDetailViewModel(
                     return@launch
                 }
 
-                // Average web novel chapter ≈ 2200 words (Royal Road/Wuxia average)
-                val avgWordsPerChapter = 2200
-                val estimatedWords = remainingChapters * avgWordsPerChapter
+                // Downloaded chapters count their real text (about 6 characters
+                // a word); the rest take the book's own average, or a typical
+                // web novel chapter (~2200 words) when nothing is downloaded.
+                val ahead = repository.getDownloadedLengths(novelId, afterNumber = currentChapter)
+                val all = repository.getDownloadedLengths(novelId)
+                val avgWordsPerChapter =
+                    if (all.chapters > 0) all.chars / CHARS_PER_WORD / all.chapters else 2200L
+                val notDownloaded = (remainingChapters - ahead.chapters).coerceAtLeast(0)
+                val estimatedWords = ahead.chars / CHARS_PER_WORD + notDownloaded * avgWordsPerChapter
                 val estimatedMinutes = (estimatedWords.toDouble() / wpm).toInt()
 
                 _estimatedTimeToFinish.value = when {
@@ -770,3 +792,6 @@ class NovelDetailViewModel(
         }
     }
 }
+
+/** Average characters per word, spaces included, for estimating words from text length. */
+private const val CHARS_PER_WORD = 6L

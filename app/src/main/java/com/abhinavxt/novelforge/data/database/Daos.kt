@@ -236,8 +236,22 @@ data class NovelDownloadAggregate(
     val sizeChars: Long
 )
 
+/** Downloaded chapters and their total text length, for reading-time estimates. */
+data class ChapterLengths(
+    val chapters: Int,
+    val chars: Long
+)
+
 @Dao
 interface ChapterDao {
+    /** Downloaded chapters numbered above [afterNumber] and their text length. */
+    @Query("""
+        SELECT COUNT(*) AS chapters, COALESCE(SUM(LENGTH(content)), 0) AS chars
+        FROM chapters
+        WHERE novelId = :novelId AND isDownloaded = 1 AND number > :afterNumber
+    """)
+    suspend fun getDownloadedLengths(novelId: String, afterNumber: Int = Int.MIN_VALUE): ChapterLengths
+
 
     /** The stored text of chapters [from]..[to], for the recap; chapters without text are left out. */
     @Query("SELECT number, content FROM chapters WHERE novelId = :novelId AND number BETWEEN :from AND :to AND content IS NOT NULL ORDER BY number")
@@ -919,6 +933,12 @@ interface TranslationDao {
 
     @Query("SELECT content FROM chapters WHERE id = :chapterId")
     suspend fun getContent(chapterId: String): String?
+
+    @Query("SELECT title FROM chapters WHERE id = :chapterId")
+    suspend fun getTitle(chapterId: String): String?
+
+    @Query("UPDATE chapters SET title = :title WHERE id = :chapterId")
+    suspend fun setTitle(chapterId: String, title: String)
 
     /** Stores a chapter's text; one read online becomes downloaded, so its translation is kept. */
     @Query("UPDATE chapters SET content = :content, isDownloaded = 1, downloadedAt = COALESCE(downloadedAt, :now) WHERE id = :chapterId")

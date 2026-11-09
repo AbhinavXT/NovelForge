@@ -71,12 +71,23 @@ class TranslationManager(
         if (paragraphs.isEmpty()) return@withLock content
         val glossary = dao.getGlossary(novelId).map { Term(it.source, it.target, it.note) }
         val (translator, engine) = (translatorFor ?: ::defaultTranslator)(novelId, content)
-        val reply = translator.translate(paragraphs, glossary)
-        val translated = reply.paragraphs.joinToString("\n\n")
+        // The title goes along as the first paragraph, so the contents and the
+        // reader's top bar aren't left in the original language.
+        val title = dao.getTitle(chapterId)?.takeIf { it.isNotBlank() }
+        val reply = translator.translate(listOfNotNull(title) + paragraphs, glossary)
+        val translatedTitle = if (title != null) reply.paragraphs.firstOrNull()?.trim() else null
+        val translated = reply.paragraphs.drop(if (title != null) 1 else 0).joinToString("\n\n")
 
         dao.addTerms(reply.newTerms.map { GlossaryTermEntity(novelId = novelId, source = it.source, target = it.target, note = it.note) })
         dao.setContent(chapterId, translated)
-        dao.saveOriginal(ChapterOriginalEntity(chapterId, novelId, content, translated.hashCode(), engine))
+        val titleChanged = title != null && !translatedTitle.isNullOrBlank() && translatedTitle != title
+        if (titleChanged) dao.setTitle(chapterId, translatedTitle!!)
+        dao.saveOriginal(
+            ChapterOriginalEntity(
+                chapterId, novelId, content, translated.hashCode(), engine,
+                originalTitle = if (titleChanged) title else null
+            )
+        )
         translated
     }
 
@@ -97,6 +108,7 @@ class TranslationManager(
         for (original in dao.getOriginals(novelId)) {
             if (dao.getContent(original.chapterId)?.hashCode() == original.translatedHash) {
                 dao.setContent(original.chapterId, original.original)
+                original.originalTitle?.let { dao.setTitle(original.chapterId, it) }
                 restored++
             }
             dao.deleteOriginal(original.chapterId)

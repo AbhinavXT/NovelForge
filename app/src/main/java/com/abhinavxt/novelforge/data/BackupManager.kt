@@ -163,7 +163,9 @@ data class ChapterOriginalBackup(
     val original: String,
     val translatedHash: Int,
     val engine: String,
-    val translatedAt: Long
+    val translatedAt: Long,
+    /** Older backups have none. */
+    val originalTitle: String? = null
 )
 
 /** A saved word with its review schedule. */
@@ -362,7 +364,7 @@ class BackupManager(
                     GlossaryBackup(it.novelId, it.source, it.target, it.note)
                 },
                 chapterOriginals = repository.getAllChapterOriginalsForBackup().map {
-                    ChapterOriginalBackup(it.chapterId, it.novelId, it.original, it.translatedHash, it.engine, it.translatedAt)
+                    ChapterOriginalBackup(it.chapterId, it.novelId, it.original, it.translatedHash, it.engine, it.translatedAt, it.originalTitle)
                 }
             )
 
@@ -564,7 +566,8 @@ class BackupManager(
                     },
                     if (!includeDownloads) emptyList() else backup.chapterOriginals.orEmpty().map {
                         com.abhinavxt.novelforge.data.database.ChapterOriginalEntity(
-                            it.chapterId, it.novelId, it.original, it.translatedHash, it.engine, it.translatedAt
+                            it.chapterId, it.novelId, it.original, it.translatedHash, it.engine, it.translatedAt,
+                            it.originalTitle
                         )
                     }
                 )
