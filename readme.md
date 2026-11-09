@@ -15,6 +15,7 @@ https://github.com/user-attachments/assets/ed53e37d-f37b-43c6-87b3-962cdc796f36
 - 12 themes (including one for e-ink screens, with an e-ink mode that turns off animations), 8 reading fonts, configurable margins and line spacing
 - Scroll mode, paged mode, a teleprompter-style auto-scroll, and four tap-zone layouts
 - Translate raw or machine-translated novels with your own AI key or offline, with a per-book glossary that keeps names consistent
+- Character voices: each character read in their own Kokoro voice, cast automatically from the codex
 - Neural text-to-speech with Piper, Kokoro, and your device's TTS
 - A pronunciation dictionary that can also *silence* symbols and words the engine reads aloud
 - Generates M4B audiobooks with chapter markers

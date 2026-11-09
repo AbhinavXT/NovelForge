@@ -95,6 +95,7 @@ internal fun TTSControlsPanel(
     var showSettings by remember { mutableStateOf(false) }
     var showVoiceSelector by remember { mutableStateOf(false) }
     var showSleepMenu by remember { mutableStateOf(false) }
+    var showCharacterVoices by remember { mutableStateOf(false) }
 
     val availableVoices by ttsManager.availableVoices.collectAsState()
     val currentVoice by ttsManager.currentVoice.collectAsState()
@@ -393,6 +394,27 @@ internal fun TTSControlsPanel(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+                }
+            }
+
+            // Character voices: only for a voice with several speakers (Kokoro and the like)
+            val speakerCount = remember(currentVoice) {
+                if (ttsManager.activeEngineId.value == com.abhinavxt.novelforge.data.tts.SherpaOnnxEngine.ENGINE_ID)
+                    ttsManager.sherpaEngine.speakerCount() else 0
+            }
+            val modelId = currentVoice?.id
+            val casting = ttsManager.voiceCasting
+            if (speakerCount > 1 && modelId != null && casting != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(onClick = { showCharacterVoices = true }) { Text("Character voices") }
+                if (showCharacterVoices) {
+                    com.abhinavxt.novelforge.ui.components.CharacterVoicesSheet(
+                        novelId = novelId,
+                        modelId = modelId,
+                        speakerCount = speakerCount,
+                        casting = casting,
+                        onDismiss = { showCharacterVoices = false }
+                    )
                 }
             }
 

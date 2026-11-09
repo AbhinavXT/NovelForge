@@ -242,7 +242,9 @@ class AudioExporter(
         voiceName: String,
         text: String,
         speakerId: Int = 0,
-        speed: Float = 1.0f
+        speed: Float = 1.0f,
+        /** Character voices (neural voices only); when set it decides each line's speaker instead of [speakerId]. */
+        cast: VoiceCast? = null
     ): Boolean = withContext(Dispatchers.Default) {
 
         val sherpaEngine = ttsManager.sherpaEngine
@@ -267,7 +269,7 @@ class AudioExporter(
 
         try {
             // 1. Split text into sentences
-            val sentences = splitIntoSentences(text)
+            val sentences = splitIntoSentences(text, cast.takeIf { useSherpa })
             if (sentences.isEmpty()) {
                 _exportState.value = ExportState.Error(chapterId, "No text to export")
                 return@withContext false
@@ -306,7 +308,7 @@ class AudioExporter(
                             // ── Sherpa path: generate raw samples ──
                             val audio = sherpaEngine.getTtsWrapper()!!.generate(
                                 text = entry.text,
-                                speakerId = speakerId,
+                                speakerId = entry.voice ?: speakerId,
                                 speed = speed
                             )
 
@@ -427,10 +429,11 @@ class AudioExporter(
         text: String,
         speakerId: Int = 0,
         speed: Float = 1.0f,
+        cast: VoiceCast? = null,
         onComplete: ((Boolean) -> Unit)? = null
     ) {
         currentExportJob = exportScope.launch {
-            val success = exportChapter(chapterId, novelTitle, chapterTitle, voiceName, text, speakerId, speed)
+            val success = exportChapter(chapterId, novelTitle, chapterTitle, voiceName, text, speakerId, speed, cast)
             onComplete?.invoke(success)
         }
     }
@@ -445,6 +448,7 @@ class AudioExporter(
         voiceName: String,
         speakerId: Int = 0,
         speed: Float = 1.0f,
+        cast: VoiceCast? = null,
         alreadyExported: Set<String> = emptySet(),
         onEachComplete: ((String) -> Unit)? = null,
         onAllDone: (() -> Unit)? = null
@@ -462,7 +466,8 @@ class AudioExporter(
                         voiceName = voiceName,
                         text = info.content,
                         speakerId = speakerId,
-                        speed = speed
+                        speed = speed,
+                        cast = cast
                     )
                     if (success) {
                         onEachComplete?.invoke(info.chapterId)
@@ -506,28 +511,14 @@ class AudioExporter(
 
     private data class SentenceEntry(
         val text: String,
-        val isParagraphEnd: Boolean
+        val isParagraphEnd: Boolean,
+        /** The cast's speaker for this line, or null for the export's own. */
+        val voice: Int? = null
     )
 
-    private fun splitIntoSentences(text: String): List<SentenceEntry> {
-        val result = mutableListOf<SentenceEntry>()
-        val paragraphs = text.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
-
-        for (paragraph in paragraphs) {
-            // Split on sentence-ending punctuation followed by a space or end-of-string
-            val sentences = paragraph.split(Regex("(?<=[.!?])\\s+"))
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-
-            for ((i, sentence) in sentences.withIndex()) {
-                result.add(SentenceEntry(
-                    text = sentence,
-                    isParagraphEnd = (i == sentences.lastIndex)
-                ))
-            }
-        }
-        return result
-    }
+    private fun splitIntoSentences(text: String, cast: VoiceCast?): List<SentenceEntry> =
+        Dialogue.pieces(text, cast?.characters?.keys?.toList().orEmpty(), voiced = cast?.enabled == true)
+            .map { SentenceEntry(it.text, it.paragraphEnd, cast?.voiceFor(it)) }
 
     // ── Streaming PCM writing ──────────────────────────────────────
 
