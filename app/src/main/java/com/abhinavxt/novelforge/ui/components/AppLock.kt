@@ -101,6 +101,20 @@ class AppLock(
         }
         prompting = true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // The prompt failing to start (a missing permission once did, at every launch)
+            // must not crash an app that can't be opened without it: ask for the screen lock instead.
+            try {
+                showBiometricPrompt()
+            } catch (e: Exception) {
+                askForScreenLock()
+            }
+        } else {
+            askForScreenLock()
+        }
+    }
+
+    private fun showBiometricPrompt() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             BiometricPrompt.Builder(activity)
                 .setTitle("Unlock NovelForge")
                 .setAllowedAuthenticators(
@@ -119,16 +133,19 @@ class AppLock(
                             prompting = false
                         }
                     })
+        }
+    }
+
+    /** The system's own "confirm your PIN, pattern or password" screen. */
+    private fun askForScreenLock() {
+        @Suppress("DEPRECATION") // The only screen-lock check without a library below Android 11.
+        val intent = activity.getSystemService(KeyguardManager::class.java)
+            .createConfirmDeviceCredentialIntent("Unlock NovelForge", null)
+        if (intent == null) {
+            prompting = false
+            _locked.value = false
         } else {
-            @Suppress("DEPRECATION") // The only screen-lock check below Android 11 without a library.
-            val intent = activity.getSystemService(KeyguardManager::class.java)
-                .createConfirmDeviceCredentialIntent("Unlock NovelForge", null)
-            if (intent == null) {
-                prompting = false
-                _locked.value = false
-            } else {
-                credentialLauncher.launch(intent)
-            }
+            credentialLauncher.launch(intent)
         }
     }
 
