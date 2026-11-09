@@ -123,7 +123,12 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
     val readerFonts by lazy { com.abhinavxt.novelforge.data.ReaderFontManager(this) }
 
     // Reading stats tracker
-    val readingStatsTracker by lazy { ReadingStatsTracker(database.readingStatDao()) }
+    val readingStatsTracker by lazy {
+        ReadingStatsTracker(database.readingStatDao()).also {
+            // The widget shows today's minutes against the daily goal.
+            it.onSessionRecorded = { com.abhinavxt.novelforge.widget.WidgetUpdater.requestUpdate(this) }
+        }
+    }
 
     // Chapter pre-fetcher — caches upcoming chapters for instant navigation
     val chapterPrefetcher by lazy { ChapterPrefetcher(repository) }

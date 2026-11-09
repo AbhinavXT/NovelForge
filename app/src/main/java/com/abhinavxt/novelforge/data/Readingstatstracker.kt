@@ -26,6 +26,9 @@ import java.util.TimeZone
  */
 class ReadingStatsTracker(private val dao: ReadingStatDao) {
 
+    /** Called after a session is saved, so today's minutes can be shown elsewhere (the widget). */
+    var onSessionRecorded: (() -> Unit)? = null
+
     private data class Session(
         val novelId: String,
         val chapterId: String,
@@ -109,6 +112,7 @@ class ReadingStatsTracker(private val dao: ReadingStatDao) {
                     )
                 )
                 Logger.d("StatsTracker", "Recorded: ${session.wordCount}w, ${elapsed / 1000}s for ${session.chapterId}")
+                onSessionRecorded?.invoke()
             } catch (e: Exception) {
                 Logger.e("StatsTracker", "Failed to record stat", e)
             }

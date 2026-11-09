@@ -104,6 +104,8 @@ enum class DictionaryLanguage(val code: String, val label: String) {
 
 class ThemePreferences(context: Context) {
 
+    private val appContext = context.applicationContext
+
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -188,6 +190,7 @@ class ThemePreferences(context: Context) {
     fun setDailyGoalMinutes(minutes: Int) {
         prefs.edit().putInt(KEY_DAILY_GOAL_MINUTES, minutes).apply()
         _dailyGoalMinutes.value = minutes
+        com.abhinavxt.novelforge.widget.WidgetUpdater.requestUpdate(appContext)
     }
 
     fun setLibraryViewMode(mode: LibraryViewMode) {

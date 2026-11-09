@@ -682,10 +682,11 @@ The widget shows:
 - The novel title
 - Current chapter title
 - Reading progress
+- Your [daily goal](#reading-stats), if you set one: "12 / 30 min today" (not at the smallest size)
 
 Tap the widget to jump straight back into the reader at the saved paragraph.
 
-The widget refreshes itself when you save reading position, so it's always current. It does _not_ poll periodically - battery cost is essentially zero.
+The widget refreshes itself when you save reading position, finish a reading session, or change the goal, so it's always current. It does _not_ poll periodically - battery cost is essentially zero.
 
 ---
 
