@@ -63,7 +63,7 @@ fun ReaderScreen(
     // Full-text search deep-jump; -1 = normal progress restore.
     targetParagraph: Int = -1,
     onBackClick: () -> Unit,
-    onOpenCodex: (() -> Unit)? = null,
+    onOpenCodex: ((name: String) -> Unit)? = null,
     viewModel: ReaderViewModel = viewModel(
         factory = ReaderViewModel.provideFactory(
             novelId, chapterId, chapterUrl, novelUrl = novelUrl, repository,

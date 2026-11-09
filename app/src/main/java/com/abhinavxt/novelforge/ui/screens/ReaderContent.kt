@@ -202,7 +202,7 @@ internal fun ReaderContent(
     onBookLookChange: (Boolean) -> Unit = {},
     // The codex entry for the word being defined, if the reader has reached one.
     codexHit: CodexNameEntity? = null,
-    onOpenCodex: (() -> Unit)? = null
+    onOpenCodex: ((name: String) -> Unit)? = null
 ) {
     val colors = getThemeColors(settings)
 
@@ -1126,7 +1126,7 @@ internal fun ReaderContent(
     DictionaryBottomSheet(
         dictionaryState = dictionaryState,
         codexHit = codexHit,
-        onOpenCodex = onOpenCodex?.let { open -> { onDismissDictionary(); open() } },
+        onOpenCodex = onOpenCodex?.let { open -> { name: String -> onDismissDictionary(); open(name) } },
         onDismiss = onDismissDictionary
     )
 
@@ -1498,7 +1498,7 @@ private fun AddPronunciationDialog(
 
 /** What the codex knows about the selected name, shown above its definition. Spoiler-safe: only where it first appeared. */
 @Composable
-private fun CodexCard(entry: CodexNameEntity, onOpenCodex: (() -> Unit)?) {
+private fun CodexCard(entry: CodexNameEntity, onOpenCodex: ((String) -> Unit)?) {
     Card(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -1513,7 +1513,7 @@ private fun CodexCard(entry: CodexNameEntity, onOpenCodex: (() -> Unit)?) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             if (onOpenCodex != null) {
-                TextButton(onClick = onOpenCodex, contentPadding = PaddingValues(0.dp)) { Text("Open in codex") }
+                TextButton(onClick = { onOpenCodex(entry.name) }, contentPadding = PaddingValues(0.dp)) { Text("Open in codex") }
             }
         }
     }
@@ -1527,7 +1527,7 @@ private fun CodexCard(entry: CodexNameEntity, onOpenCodex: (() -> Unit)?) {
 private fun DictionaryBottomSheet(
     dictionaryState: DictionaryState,
     codexHit: CodexNameEntity?,
-    onOpenCodex: (() -> Unit)?,
+    onOpenCodex: ((String) -> Unit)?,
     onDismiss: () -> Unit
 ) {
     if (dictionaryState is DictionaryState.Idle) return

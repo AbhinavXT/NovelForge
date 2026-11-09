@@ -93,11 +93,13 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     )
 
     object Codex : Screen(
-        route = "codex/{novelId}",
+        route = "codex/{novelId}?name={name}",
         title = "Codex",
         icon = Icons.Default.Search
     ) {
-        fun createRoute(novelId: String) = "codex/$novelId"
+        // name: an entry to open straight away (from the reader's Define sheet).
+        fun createRoute(novelId: String, name: String? = null) =
+            "codex/$novelId" + (name?.let { "?name=${URLEncoder.encode(it, "UTF-8")}" } ?: "")
     }
 
     object CodexGraph : Screen(
@@ -597,13 +599,15 @@ fun NavigationHost(
                 composable(
                     route = Screen.Codex.route,
                     arguments = listOf(
-                        navArgument("novelId") { type = NavType.StringType }
+                        navArgument("novelId") { type = NavType.StringType },
+                        navArgument("name") { type = NavType.StringType; nullable = true; defaultValue = null }
                     )
                 ) { backStackEntry ->
                     val novelId = backStackEntry.arguments?.getString("novelId")!!
                     CodexScreen(
                         repository = repository,
                         novelId = novelId,
+                        openName = backStackEntry.arguments?.getString("name"),
                         onBackClick = { navController.popBackStack() },
                         onMentionClick = { chapterId, chapterUrl, paragraphIndex ->
                             navController.navigate(
@@ -686,7 +690,7 @@ fun NavigationHost(
                         statsTracker = readingStatsTracker,
                         chapterPrefetcher = chapterPrefetcher,
                         onBackClick = { navController.popBackStack() },
-                        onOpenCodex = { navController.navigate(Screen.Codex.createRoute(novelId)) }
+                        onOpenCodex = { name -> navController.navigate(Screen.Codex.createRoute(novelId, name)) }
                     )
                 }
 

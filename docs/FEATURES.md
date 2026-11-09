@@ -138,7 +138,7 @@ When several dictionaries have the word, the sheet shows up to five entries from
 
 Dictionaries stay on this device. They aren't in [backups](#backup-and-restore), so keep the original file if you'll want it again.
 
-**Names from the codex.** When the word you Define is a character, place or faction [the codex](#the-codex) knows, the sheet shows that first: what kind of name it is and the chapter it first appears in, with **Open in codex** to see the rest. The same [spoiler guard](#the-spoiler-guard) applies, so a name you haven't reached yet never shows. Selecting part of a name works too: "Wei" finds "Li Wei". The codex has to have been scanned for this to work.
+**Names from the codex.** When the word you Define is a character, place or faction [the codex](#the-codex) knows, the sheet shows that first: what kind of name it is and the chapter it first appears in, with **Open in codex** to go straight to its entry (mentions and your highlights of it). The same [spoiler guard](#the-spoiler-guard) applies, so a name you haven't reached yet never shows. Selecting part of a name works too: "Wei" finds "Li Wei". The codex has to have been scanned for this to work.
 
 
 ### Keep screen on
