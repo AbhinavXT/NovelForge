@@ -12,11 +12,13 @@ If you just want a quick summary, see the [README](../README.md).
   - [Table of contents](#table-of-contents)
   - [The reader](#the-reader)
     - [Saving your position](#saving-your-position)
+    - [Previously in…](#previously-in)
     - [Tap zones](#tap-zones)
     - [Volume key navigation](#volume-key-navigation)
     - [Contents](#contents)
     - [Text replacement](#text-replacement)
     - [Offline dictionaries](#offline-dictionaries)
+    - [Vocabulary](#vocabulary)
     - [Keep screen on](#keep-screen-on)
   - [Reading modes](#reading-modes)
     - [Scroll mode](#scroll-mode)
@@ -62,6 +64,9 @@ If you just want a quick summary, see the [README](../README.md).
     - [Privacy](#privacy)
   - [Continue-reading widget](#continue-reading-widget)
   - [Backup and restore](#backup-and-restore)
+  - [Privacy](#privacy-1)
+    - [App lock](#app-lock)
+    - [Incognito mode](#incognito-mode)
   - [Settings reference](#settings-reference)
     - [Reader](#reader)
     - [Downloads](#downloads)
@@ -89,6 +94,16 @@ The reader is where you'll spend most of your time. The screen has three layers:
 Reading position saves continuously as you scroll. Close the app mid-chapter, come back a week later, you'll be on the same paragraph. Position is per-novel, not per-chapter, so if you re-open a novel from the Library it goes to where you stopped.
 
 The reader also tracks WPM (words per minute) over time and uses it to estimate "minutes left in this chapter" in the top bar. Estimates get more accurate the more you read.
+
+### Previously in…
+
+Open a book you haven't read for a week or more and a sheet catches you up before you carry on:
+
+- **Where you stopped**: the paragraph you were on.
+- **Who's been around**: the [codex](#the-codex) names mentioned most in your last three chapters.
+- **Your highlights** from those chapters.
+
+It only looks back, never ahead: a name that first appears after where you are is never shown. It's built from text already on your phone (downloaded chapters, imported books), and a section with nothing to show is left out. With none of the three to show, there's no sheet. It doesn't appear when you open the book at a particular spot from search, the codex or a highlight. **Continue reading** closes it.
 
 ### Tap zones
 
@@ -138,8 +153,18 @@ When several dictionaries have the word, the sheet shows up to five entries from
 
 Dictionaries stay on this device. They aren't in [backups](#backup-and-restore), so keep the original file if you'll want it again.
 
-**Names from the codex.** When the word you Define is a character, place or faction [the codex](#the-codex) knows, the sheet shows that first: what kind of name it is and the chapter it first appears in, with **Open in codex** to see the rest. The same [spoiler guard](#the-spoiler-guard) applies, so a name you haven't reached yet never shows. Selecting part of a name works too: "Wei" finds "Li Wei". The codex has to have been scanned for this to work.
+**Names from the codex.** When the word you Define is a character, place or faction [the codex](#the-codex) knows, the sheet shows that first: what kind of name it is and the chapter it first appears in, with **Open in codex** to go straight to its entry (mentions and your highlights of it). The same [spoiler guard](#the-spoiler-guard) applies, so a name you haven't reached yet never shows. Selecting part of a name works too: "Wei" finds "Li Wei". The codex has to have been scanned for this to work.
 
+
+### Vocabulary
+
+Keep the words you look up. In the Define sheet, tap **Save word**: the word is saved with its definition, the book and chapter, and a sentence from that chapter that uses it. Tap again (**Saved to vocabulary**) to remove it. Saving a word you already have keeps the original card.
+
+Library → the translate icon opens **Vocabulary**: every saved word, newest first. Remove one with the bin icon (there's an Undo).
+
+**Review** (top right, with how many are due) runs through the due words as flashcards: the word and its sentence, **Show meaning**, then **Again** or **Got it**. Got it moves the word further out each time: 1 day, 3, 7, 14, then every 30 days. Again sends it back to the start and shows it once more before the session ends. New words are due straight away.
+
+The sentence is the first one in the chapter that uses the word as a whole word, which may not be the exact spot you selected. Vocabulary is in [backups](#backup-and-restore).
 
 ### Keep screen on
 
@@ -240,7 +265,7 @@ Quick Settings → Typography section:
 
 All of these are saved per-app and apply in both scroll and paged mode. New novels open with your last-used settings.
 
-Hyphenation is off by default. It follows your device language, not the book's, so a book in another language may break words in odd places, and some languages have no hyphenation rules on Android. Headings are never hyphenated.
+Hyphenation is off by default. Words break by the rules of the book's language: an imported EPUB that names its language uses it, and anything else follows your device language. To change it, turn on hyphenation and tap **Book language** under the switch (library books only). The language is stored with the book, carried by backups and by moving to another source. Some languages have no hyphenation rules on Android. Headings are never hyphenated.
 
 **This book only.** Quick Settings → **Font, size and theme for this book only** gives the book its own look: font, size, theme and colours, line and paragraph spacing, margins, justify, hyphenation and indent. Changes you make while it's on stay with this book; turn it off and the book goes back to the app's look. Reading mode, tap zones, volume keys and auto-scroll speed stay app-wide. The switch only appears for books in your library, and the book's look is included in [backups](#backup-and-restore).
 
@@ -382,7 +407,7 @@ The library is your collection of novels you've added. Find it in the bottom nav
 
 **Status:** every book can have a status: Reading, Plan to read, On hold, Completed or Dropped. The filter chips under the search field show one status at a time. Long-press a novel → **Set status** to change it. The app also sets a few for you: opening a book that has no status, or is Plan to read, makes it Reading; reaching the end of the last chapter makes it Completed, but only for an imported book or one its source calls complete, never an ongoing web novel. A status you chose yourself (On hold, Dropped) is never changed. Books you read before statuses existed show under Reading.
 
-**Moving to another source:** when a source dies or falls behind, long-press the novel → **Move to another source**. NovelForge searches your other sources for the title (you can edit the search), you pick the match, and it shows what will happen before anything changes: how many of your chapters exist there, matched by chapter number, and where you'll continue. Your place, bookmarks, highlights, categories, stats, status, the book's own look and its text replacements move with it. Downloaded chapters don't: the new source's text is different, so download them again. The codex is cleared and rebuilds on the next scan. A bookmark or highlight in a chapter the new source doesn't have keeps its old chapter: it still shows in lists, but can't open the reader. Only shown for books from an installed source.
+**Moving to another source:** when a source dies or falls behind, long-press the novel → **Move to another source**. NovelForge searches your other sources for the title (you can edit the search), you pick the match, and it shows what will happen before anything changes: how many of your chapters exist there, matched by chapter number, and where you'll continue. Your place, bookmarks, highlights, categories, stats, status, the book's own look and its text replacements move with it. Downloaded chapters don't: the new source's text is different, so download them again. The codex is cleared and rebuilds on the next scan. A bookmark in a chapter the new source doesn't have moves to the nearest chapter, the same way your place does, and opens at its top. Bookmarks left behind by a move in 2.3.0 are fixed the same way when you update. A highlight in such a chapter keeps its old chapter, since it marks words in that chapter's text: it still shows in lists, but can't open the reader. Only shown for books from an installed source.
 
 
 ---
@@ -682,10 +707,11 @@ The widget shows:
 - The novel title
 - Current chapter title
 - Reading progress
+- Your [daily goal](#reading-stats), if you set one: "12 / 30 min today" (not at the smallest size)
 
 Tap the widget to jump straight back into the reader at the saved paragraph.
 
-The widget refreshes itself when you save reading position, so it's always current. It does _not_ poll periodically - battery cost is essentially zero.
+The widget refreshes itself when you save reading position, finish a reading session, or change the goal, so it's always current. It does _not_ poll periodically - battery cost is essentially zero.
 
 ---
 
@@ -700,6 +726,7 @@ The widget refreshes itself when you save reading position, so it's always curre
 - Bookmarks and highlights with notes
 - Pronunciation dictionary
 - Text replacement rules
+- Vocabulary, with each word's review progress
 - Reading stats history
 
 The ZIP can be saved to Drive, Dropbox, anywhere.
@@ -717,6 +744,22 @@ The ZIP can be saved to Drive, Dropbox, anywhere.
 These are excluded because they're large and re-derivable. Including voice models would push backup ZIPs to 500 MB+.
 
 **Cross-device:** backup ZIPs are platform-portable across Android versions. The internal schema is versioned, so restoring a v1.6 backup on v1.8 works (forward-compatible). Backwards compatibility (v1.8 backup on v1.6) is not guaranteed; downgrades are not a supported flow.
+
+---
+
+## Privacy
+
+Settings → Privacy.
+
+### App lock
+
+Asks for your fingerprint, face, PIN, pattern or password, whichever your phone's screen lock uses, before showing the app. It asks when the app starts and when you come back after more than a minute away. A quick trip to a file picker or the share sheet doesn't count. Unlocking puts you back exactly where you were. While the lock is on, Android 13 and later show a blank card for the app in Recents instead of your page.
+
+It needs a screen lock set in Android's settings. If you remove the screen lock later, the app opens without asking, so you can never be locked out. NovelForge stores no PIN of its own; the check is entirely Android's.
+
+### Incognito mode
+
+While it's on, nothing you read is recorded: no [history](#reading-stats), no stats, no streak, no minutes toward your daily goal. Your place in each book still saves, so you don't lose it. The home screen shows a reminder while it's on. Turn it off and recording picks up from the next chapter you open.
 
 ---
 

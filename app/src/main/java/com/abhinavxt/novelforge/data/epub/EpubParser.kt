@@ -20,7 +20,9 @@ data class EpubBook(
     /** The book's own table of contents, mapped onto [chapters]. Empty when it has none. */
     val toc: List<TocEntry> = emptyList(),
     /** Bytes of every image a chapter's [ChapterFormatting] refers to, by path in the EPUB. */
-    val images: Map<String, ByteArray> = emptyMap()
+    val images: Map<String, ByteArray> = emptyMap(),
+    /** dc:language, a BCP 47 tag such as "en" or "de-DE"; null when the book doesn't say. */
+    val language: String? = null
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -182,7 +184,8 @@ class EpubParser(
             coverImage = coverImage,
             chapters = finished?.chapters ?: chapters,
             toc = finished?.toc.orEmpty(),
-            images = finished?.images.orEmpty()
+            images = finished?.images.orEmpty(),
+            language = com.abhinavxt.novelforge.data.model.BookLanguages.normalize(opfData.language)
         )
     }
 
@@ -528,7 +531,8 @@ class EpubParser(
         val spineItems: List<SpineItem>,
         val manifest: List<ManifestItem> = emptyList(),
         /** The spine's `toc` attribute: the manifest id of the NCX. */
-        val spineToc: String? = null
+        val spineToc: String? = null,
+        val language: String? = null
     )
 
     private data class ManifestItem(
@@ -551,6 +555,7 @@ class EpubParser(
         var title: String? = null
         var author: String? = null
         var description: String? = null
+        var language: String? = null
         // Three sources, in descending authority. <metadata> is parsed before
         // <manifest>, so the old single coverId variable let the filename guess
         // OVERWRITE an explicit declaration -- an EPUB with a real cover plus
@@ -596,6 +601,7 @@ class EpubParser(
                 tag == "title" || tag.endsWith(":title") -> "title"
                 tag == "creator" || tag.endsWith(":creator") -> "creator"
                 tag == "description" || tag.endsWith(":description") -> "description"
+                tag == "language" || tag.endsWith(":language") -> "language"
                 else -> null
             }
 
@@ -605,6 +611,7 @@ class EpubParser(
                 "title" -> title == null
                 "creator" -> author == null
                 "description" -> description == null
+                "language" -> language == null
                 else -> false
             }
 
@@ -683,6 +690,7 @@ class EpubParser(
                                         "title" -> title = value
                                         "creator" -> author = value
                                         "description" -> description = value
+                                        "language" -> language = value
                                     }
                                 }
                                 capturing = null
@@ -714,7 +722,8 @@ class EpubParser(
             coverPath = coverPath,
             spineItems = spineItems,
             manifest = manifestItems,
-            spineToc = spineToc
+            spineToc = spineToc,
+            language = language
         )
     }
 

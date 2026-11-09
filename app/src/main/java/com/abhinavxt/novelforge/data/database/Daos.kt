@@ -175,6 +175,12 @@ interface NovelDao {
     @Query("UPDATE novels SET readerSettingsJson = :json WHERE id = :novelId")
     suspend fun setReaderSettingsJson(novelId: String, json: String?)
 
+    @Query("SELECT language FROM novels WHERE id = :novelId")
+    suspend fun getLanguage(novelId: String): String?
+
+    @Query("UPDATE novels SET language = :language WHERE id = :novelId")
+    suspend fun setLanguage(novelId: String, language: String?)
+
     // Source migration: rows that only need their novelId re-pointed.
     @Query("UPDATE reading_stats SET novelId = :to WHERE novelId = :from")
     suspend fun moveReadingStats(from: String, to: String)
@@ -232,6 +238,10 @@ data class NovelDownloadAggregate(
 
 @Dao
 interface ChapterDao {
+
+    /** The stored text of chapters [from]..[to], for the recap; chapters without text are left out. */
+    @Query("SELECT number, content FROM chapters WHERE novelId = :novelId AND number BETWEEN :from AND :to AND content IS NOT NULL ORDER BY number")
+    suspend fun getStoredTexts(novelId: String, from: Int, to: Int): List<ChapterText>
 
     @Query("""
         SELECT id, novelId, number, title, url, isDownloaded, downloadedAt
@@ -833,3 +843,37 @@ interface TextReplacementDao {
     @Query("DELETE FROM text_replacements WHERE id = :id")
     suspend fun delete(id: Long)
 }
+
+// ============ Vocabulary DAO ============
+
+@Dao
+interface VocabularyDao {
+
+    @Query("SELECT * FROM vocabulary ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<VocabularyEntity>>
+
+    @Query("SELECT * FROM vocabulary ORDER BY createdAt DESC")
+    suspend fun getAll(): List<VocabularyEntity>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM vocabulary WHERE `key` = :key)")
+    suspend fun has(key: String): Boolean
+
+    /** Saving a word twice keeps the first card and its progress. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(word: VocabularyEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(words: List<VocabularyEntity>)
+
+    @Query("UPDATE vocabulary SET box = :box, dueAt = :dueAt WHERE id = :id")
+    suspend fun schedule(id: Long, box: Int, dueAt: Long)
+
+    @Query("DELETE FROM vocabulary WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("DELETE FROM vocabulary WHERE `key` = :key")
+    suspend fun deleteByKey(key: String)
+}
+
+/** A chapter's number and stored text. */
+data class ChapterText(val number: Int, val content: String)

@@ -37,6 +37,8 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.ViewDay
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.RadioButton
+import com.abhinavxt.novelforge.data.model.BookLanguages
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -211,6 +213,10 @@ fun QuickSettingsSheet(
                         onSettingsChanged(settings.copy(hyphenation = checked))
                     }
                 )
+                // The language lives on the book, so only a library book can have one.
+                if (settings.hyphenation && bookLookOn != null) {
+                    BookLanguageRow(settings.bookLanguage) { onSettingsChanged(settings.copy(bookLanguage = it)) }
+                }
                 SettingToggleRow(
                     label = "Paragraph indent",
                     checked = settings.paragraphIndent,
@@ -980,6 +986,50 @@ private fun CustomColorRow(
                     .clickable { onPick(colorLong) }
             )
         }
+    }
+}
+
+/** "Book language" with a picker; hyphenation uses the book's language rather than the device's. */
+@Composable
+private fun BookLanguageRow(language: String?, onPick: (String?) -> Unit) {
+    var picking by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable { picking = true }.padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("Book language", style = MaterialTheme.typography.bodySmall)
+        Text(
+            language?.let(BookLanguages::displayName) ?: "Device language",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+    if (picking) {
+        // A language the book declared that isn't in the list still shows, so it can be picked back.
+        val options = listOf<String?>(null) + (listOfNotNull(language) + BookLanguages.choices).distinct()
+        AlertDialog(
+            onDismissRequest = { picking = false },
+            title = { Text("Book language") },
+            text = {
+                LazyColumn {
+                    items(options.size) { i ->
+                        val tag = options[i]
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .clickable { picking = false; onPick(tag) }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = tag == language, onClick = { picking = false; onPick(tag) })
+                            Text(tag?.let(BookLanguages::displayName) ?: "Device language")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { picking = false }) { Text("Cancel") } }
+        )
     }
 }
 

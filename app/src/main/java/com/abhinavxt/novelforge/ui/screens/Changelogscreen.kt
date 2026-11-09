@@ -174,6 +174,21 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.4.0",
+        date = "Nov 2026",
+        changes = listOf(
+            "Save words from Define and review them as flashcards",
+            "\"Previously in...\" catches you up on a book you haven't opened for a week",
+            "App lock with your fingerprint, face or screen lock",
+            "Incognito mode keeps reading out of history and stats",
+            "Hyphenation follows each book's language",
+            "The continue-reading widget shows your daily goal",
+            "\"Open in codex\" from Define opens that character",
+            "No more light strips behind the system bars in dark reader themes",
+            "Moved books send bookmarks the new source lacks to the nearest chapter"
+        )
+    ),
+    VersionEntry(
         version = "v2.3.0",
         date = "Nov 2026",
         changes = listOf(

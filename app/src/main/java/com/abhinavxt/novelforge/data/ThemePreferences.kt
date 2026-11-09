@@ -104,6 +104,8 @@ enum class DictionaryLanguage(val code: String, val label: String) {
 
 class ThemePreferences(context: Context) {
 
+    private val appContext = context.applicationContext
+
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -188,6 +190,25 @@ class ThemePreferences(context: Context) {
     fun setDailyGoalMinutes(minutes: Int) {
         prefs.edit().putInt(KEY_DAILY_GOAL_MINUTES, minutes).apply()
         _dailyGoalMinutes.value = minutes
+        com.abhinavxt.novelforge.widget.WidgetUpdater.requestUpdate(appContext)
+    }
+
+    /** Ask for the screen lock on launch and after a minute away. */
+    private val _appLock = MutableStateFlow(prefs.getBoolean(KEY_APP_LOCK, false))
+    val appLock: StateFlow<Boolean> = _appLock.asStateFlow()
+
+    fun setAppLock(on: Boolean) {
+        prefs.edit().putBoolean(KEY_APP_LOCK, on).apply()
+        _appLock.value = on
+    }
+
+    /** While on, reading isn't recorded: no stats, history, streak or goal minutes. Your place still saves. */
+    private val _incognito = MutableStateFlow(prefs.getBoolean(KEY_INCOGNITO, false))
+    val incognito: StateFlow<Boolean> = _incognito.asStateFlow()
+
+    fun setIncognito(on: Boolean) {
+        prefs.edit().putBoolean(KEY_INCOGNITO, on).apply()
+        _incognito.value = on
     }
 
     fun setLibraryViewMode(mode: LibraryViewMode) {
@@ -270,6 +291,8 @@ class ThemePreferences(context: Context) {
         private const val KEY_DICTIONARY_LANGUAGE = "dictionary_language"
         private const val KEY_LIBRARY_VIEW_MODE = "library_view_mode"
         private const val KEY_DAILY_GOAL_MINUTES = "daily_goal_minutes"
+        private const val KEY_APP_LOCK = "app_lock"
+        private const val KEY_INCOGNITO = "incognito"
         private const val KEY_APP_FONT = "app_font"
         private const val KEY_APP_THEME = "app_theme"
         private const val KEY_CUSTOM_PRIMARY = "custom_primary_color"

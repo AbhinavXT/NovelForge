@@ -35,9 +35,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CodexScanInfoEntity::class,      // NEW in v16 — codex scan watermark
         ChapterFormattingEntity::class,  // NEW in v21 — EPUB formatting beside the text
         TocEntryEntity::class,           // NEW in v21 — EPUB table of contents
-        TextReplacementEntity::class     // NEW in v22 — text replacement while reading
+        TextReplacementEntity::class,    // NEW in v22 — text replacement while reading
+        VocabularyEntity::class          // NEW in v25 — words saved from Define
     ],
-    version = 24,
+    version = 25,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -55,6 +56,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun updateDao(): UpdateDao                  // NEW in v12
     abstract fun bookFormattingDao(): BookFormattingDao  // NEW in v21
     abstract fun textReplacementDao(): TextReplacementDao // NEW in v22
+    abstract fun vocabularyDao(): VocabularyDao          // NEW in v25
 
     companion object {
         @Volatile
@@ -424,6 +426,51 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v25: the book's language, so hyphenation follows the book rather than the device.
+         * Also repairs bookmarks that 2.3.0's source migration left on chapters the new source lacks,
+         * and adds the vocabulary table.
+         */
+        internal val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE novels ADD COLUMN language TEXT")
+                reattachStrandedBookmarks(db)
+                createVocabularyTable(db)
+            }
+        }
+
+        /** Must match what Room generates for [VocabularyEntity]; a test compares the two. */
+        internal fun createVocabularyTable(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `vocabulary` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`word` TEXT NOT NULL, `key` TEXT NOT NULL, `definition` TEXT NOT NULL, `sentence` TEXT, " +
+                    "`novelId` TEXT, `novelTitle` TEXT, `chapterNumber` INTEGER, `box` INTEGER NOT NULL, " +
+                    "`dueAt` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL)"
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_vocabulary_key` ON `vocabulary` (`key`)")
+        }
+
+        /**
+         * Points each bookmark whose chapter is gone at the book's nearest chapter (same rule as
+         * closestChapter: the last one at or before its number, else the first), at its top, since
+         * the paragraph belonged to other text. Books with no chapter rows are left alone.
+         * SQLite evaluates every SET against the row as it was, so the subqueries see the old number.
+         */
+        internal fun reattachStrandedBookmarks(db: SupportSQLiteDatabase) {
+            val nearest = { column: String ->
+                "COALESCE(" +
+                    "(SELECT c.$column FROM chapters c WHERE c.novelId = bookmarks.novelId " +
+                    "AND c.number <= bookmarks.chapterNumber ORDER BY c.number DESC LIMIT 1), " +
+                    "(SELECT c.$column FROM chapters c WHERE c.novelId = bookmarks.novelId ORDER BY c.number LIMIT 1))"
+            }
+            db.execSQL(
+                "UPDATE bookmarks SET chapterId = ${nearest("id")}, chapterUrl = ${nearest("url")}, " +
+                    "chapterNumber = ${nearest("number")}, chapterTitle = ${nearest("title")}, paragraphIndex = 0 " +
+                    "WHERE NOT EXISTS (SELECT 1 FROM chapters c WHERE c.id = bookmarks.chapterId AND c.novelId = bookmarks.novelId) " +
+                    "AND EXISTS (SELECT 1 FROM chapters c WHERE c.novelId = bookmarks.novelId)"
+            )
+        }
+
         /** The file name under the app's databases directory. */
         const val DATABASE_NAME = "novel_reader_database"
 
@@ -434,7 +481,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
+                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
                     // No fallbackToDestructiveMigration() — if a migration is missing,
                     // the app crashes instead of silently wiping the user's library,
                     // bookmarks, reading progress, and stats. Always write migrations.

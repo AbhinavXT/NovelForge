@@ -180,7 +180,26 @@ data class ReaderSettings(
     val customFont: String? = null,               // Imported font's path; wins over [font]
     val hyphenation: Boolean = false,
     val paragraphSpacing: Int = 16,               // dp — gap between paragraphs (0–32)
+
+    // The open book's language (BCP 47) for hyphenation. Not an app setting:
+    // it lives on the novel row and is filled in by the reader; never saved here.
+    val bookLanguage: String? = null,
 )
+
+/** Book languages for hyphenation. */
+object BookLanguages {
+    /** Offered in the picker; Android ships hyphenation patterns for each. */
+    val choices = listOf("en", "de", "fr", "es", "it", "pt", "nl", "pl", "ru", "uk", "sv", "da", "nb", "fi", "cs", "hu")
+
+    private val TAG = Regex("[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*")
+
+    /** A dc:language value as a tag, or null when it isn't one ("English", "und", blank). */
+    fun normalize(raw: String?): String? =
+        raw?.trim()?.takeIf { TAG.matches(it) && !it.equals("und", ignoreCase = true) }
+
+    fun displayName(tag: String): String =
+        java.util.Locale.forLanguageTag(tag).let { it.getDisplayName(it) }.replaceFirstChar { it.uppercase() }
+}
 /**
  * The part of [ReaderSettings] a single book can override: how the text
  * looks. Behaviour (reading mode, tap zones, volume keys, auto-scroll) stays

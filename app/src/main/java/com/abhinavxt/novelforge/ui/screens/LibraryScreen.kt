@@ -2,6 +2,7 @@ package com.abhinavxt.novelforge.ui.screens
 
 import com.abhinavxt.novelforge.data.source.SourceManager
 import androidx.compose.material.icons.filled.FormatQuote
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.RadioButton
 import com.abhinavxt.novelforge.data.database.ReadingStatus
 import android.content.Intent
@@ -121,6 +122,7 @@ fun LibraryScreen(
     onNovelClick: (String) -> Unit,
     onTextSearchClick: () -> Unit = {},
     onHighlightsClick: () -> Unit = {},
+    onVocabularyClick: () -> Unit = {},
     /** Hands a pasted URL to the add-from-URL screen. */
     onImportUrlClick: (String) -> Unit = {},
     onAnnasArchiveClick: () -> Unit = {},
@@ -611,6 +613,12 @@ fun LibraryScreen(
                                 Icon(
                                     imageVector = Icons.Default.FormatQuote,
                                     contentDescription = "All highlights"
+                                )
+                            }
+                            IconButton(onClick = onVocabularyClick) {
+                                Icon(
+                                    imageVector = Icons.Default.Translate,
+                                    contentDescription = "Vocabulary"
                                 )
                             }
                             IconButton(

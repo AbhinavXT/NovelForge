@@ -102,6 +102,10 @@ fun MigrateSourceDialog(
                             buildString {
                                 append("Moved. Your place, ${s.result.movedBookmarks} bookmarks and ")
                                 append("${s.result.movedHighlights} highlights came along.")
+                                if (s.result.bookmarksToNearest > 0) {
+                                    append(" ${s.result.bookmarksToNearest} bookmarks were in chapters the new source ")
+                                    append("doesn't have, so they now open at the nearest chapter.")
+                                }
                             },
                             style = MaterialTheme.typography.bodyLarge
                         )

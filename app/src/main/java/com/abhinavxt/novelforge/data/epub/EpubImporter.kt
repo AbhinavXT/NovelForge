@@ -293,6 +293,7 @@ class EpubImporter(
             lastUpdatedAt = System.currentTimeMillis(),
             sourceUri = sourceUri,
             contentHash = contentHash,
+            language = epub.language,
             // Computed from the text either way. For an archived import it
             // is the only trace of that text the database keeps, and what
             // the first restore checks the file against.

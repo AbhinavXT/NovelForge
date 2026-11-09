@@ -31,7 +31,8 @@ data class BackupData(
     val bookmarks: List<BookmarkBackup>? = null,
     val pronunciationEntries: List<PronunciationBackup>? = null,
     val readingStats: List<ReadingStatBackup>? = null,
-    val textReplacements: List<TextReplacementBackup>? = null
+    val textReplacements: List<TextReplacementBackup>? = null,
+    val vocabulary: List<VocabularyBackup>? = null
 ) {
     companion object {
         const val BACKUP_VERSION = 2
@@ -83,7 +84,9 @@ data class NovelBackup(
     val textFingerprint: String? = null,
     // v24 shelf status and per-book look; null in older backups.
     val readingStatus: String? = null,
-    val readerSettingsJson: String? = null
+    val readerSettingsJson: String? = null,
+    // v25 book language; null in older backups.
+    val language: String? = null
 )
 
 data class ChapterBackup(
@@ -145,6 +148,19 @@ data class TextReplacementBackup(
     val novelId: String?,
     val find: String,
     val replace: String
+)
+
+/** A saved word with its review schedule. */
+data class VocabularyBackup(
+    val word: String,
+    val definition: String,
+    val sentence: String?,
+    val novelId: String?,
+    val novelTitle: String?,
+    val chapterNumber: Int?,
+    val box: Int,
+    val dueAt: Long,
+    val createdAt: Long
 )
 
 data class ReadingStatBackup(
@@ -224,7 +240,8 @@ class BackupManager(
                     archivedAt = novel.archivedAt,
                     textFingerprint = novel.textFingerprint,
                     readingStatus = novel.readingStatus,
-                    readerSettingsJson = novel.readerSettingsJson
+                    readerSettingsJson = novel.readerSettingsJson,
+                    language = novel.language
                 )
             }
 
@@ -296,6 +313,11 @@ class BackupManager(
                 TextReplacementBackup(novelId = rule.novelId, find = rule.find, replace = rule.replace)
             }
 
+            val vocabularyBackups = repository.getAllVocabularyForBackup().map {
+                VocabularyBackup(it.word, it.definition, it.sentence, it.novelId, it.novelTitle,
+                    it.chapterNumber, it.box, it.dueAt, it.createdAt)
+            }
+
             // Reading stats
             val readingStatBackups = readingStatsTracker?.getAllForBackup()?.map { event ->
                 ReadingStatBackup(
@@ -317,7 +339,8 @@ class BackupManager(
                 bookmarks = bookmarkBackups,
                 pronunciationEntries = pronunciationBackups,
                 readingStats = readingStatBackups,
-                textReplacements = textReplacementBackups
+                textReplacements = textReplacementBackups,
+                vocabulary = vocabularyBackups
             )
 
             // Write to file
@@ -399,7 +422,8 @@ class BackupManager(
                         } else null,
                     textFingerprint = novelBackup.textFingerprint,
                     readingStatus = novelBackup.readingStatus,
-                    readerSettingsJson = novelBackup.readerSettingsJson
+                    readerSettingsJson = novelBackup.readerSettingsJson,
+                    language = novelBackup.language
                 )
                 repository.insertNovelForRestore(novelEntity)
                 novelsRestored++
@@ -504,6 +528,21 @@ class BackupManager(
                 }
             } catch (e: Exception) {
                 Logger.w("BackupManager", "Failed to restore text replacements: ${e.message}")
+            }
+
+            // Restore vocabulary; a word already saved keeps its card.
+            try {
+                backup.vocabulary?.let { words ->
+                    repository.insertVocabularyForRestore(words.map {
+                        com.abhinavxt.novelforge.data.database.VocabularyEntity(
+                            word = it.word, key = it.word.trim().lowercase(), definition = it.definition,
+                            sentence = it.sentence, novelId = it.novelId, novelTitle = it.novelTitle,
+                            chapterNumber = it.chapterNumber, box = it.box, dueAt = it.dueAt, createdAt = it.createdAt
+                        )
+                    })
+                }
+            } catch (e: Exception) {
+                Logger.w("BackupManager", "Failed to restore vocabulary: ${e.message}")
             }
 
             // Restore reading stats
