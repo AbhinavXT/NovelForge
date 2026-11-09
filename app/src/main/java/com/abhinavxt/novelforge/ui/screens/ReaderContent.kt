@@ -123,6 +123,7 @@ import kotlin.math.ceil
 import com.abhinavxt.novelforge.NovelReaderApplication
 import com.abhinavxt.novelforge.VolumeKeyEvent
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
@@ -258,6 +259,10 @@ internal fun ReaderContent(
     val findScope = rememberCoroutineScope()
 
     val listState = rememberLazyListState()
+    // E-ink mode jumps instead of animating: an animated scroll smears on e-ink.
+    val eink by rememberUpdatedState(com.abhinavxt.novelforge.ui.theme.LocalEinkMode.current)
+    suspend fun jumpBy(px: Float) { if (eink) listState.scrollBy(px) else listState.animateScrollBy(px) }
+    suspend fun jumpTo(index: Int) { if (eink) listState.scrollToItem(index) else listState.animateScrollToItem(index) }
 
     // Activity handle for the left-edge brightness gesture (null-safe:
     // no-ops in previews or non-activity hosts)
@@ -335,7 +340,7 @@ internal fun ReaderContent(
             if (settings.readingMode == ReadingMode.PAGED) {
                 pagedFindRequest = ((pagedFindRequest?.first ?: 0) + 1) to m.paragraphIndex
             } else {
-                findScope.launch { listState.animateScrollToItem(m.globalIndex) }
+                findScope.launch { jumpTo(m.globalIndex) }
             }
         }
     }
@@ -444,7 +449,7 @@ internal fun ReaderContent(
             val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: firstVisible
 
             if (target < firstVisible || target > lastVisible) {
-                listState.animateScrollToItem(target)
+                jumpTo(target)
             }
         }
     }
@@ -758,8 +763,8 @@ internal fun ReaderContent(
                                 listState.layoutInfo.viewportStartOffset
                         val scrollAmount = (visibleHeight * 0.8f)
                         when (event) {
-                            VolumeKeyEvent.DOWN -> listState.animateScrollBy(scrollAmount)
-                            VolumeKeyEvent.UP -> listState.animateScrollBy(-scrollAmount)
+                            VolumeKeyEvent.DOWN -> jumpBy(scrollAmount)
+                            VolumeKeyEvent.UP -> jumpBy(-scrollAmount)
                         }
                     }
                 }
@@ -884,11 +889,11 @@ internal fun ReaderContent(
                                         when (action) {
                                             TapAction.BACK ->
                                                 autoScrollScope.launch {
-                                                    listState.animateScrollBy(-jump)
+                                                    jumpBy(-jump)
                                                 }
                                             TapAction.FORWARD ->
                                                 autoScrollScope.launch {
-                                                    listState.animateScrollBy(jump)
+                                                    jumpBy(jump)
                                                 }
                                             TapAction.MENU -> isImmersive = !isImmersive
                                         }

@@ -12,7 +12,7 @@ https://github.com/user-attachments/assets/ed53e37d-f37b-43c6-87b3-962cdc796f36
 - **Character codex** - every recurring character, place, and faction indexed on-device, spoiler-safe: it only ever shows you what you've read
 - **Relationship graph** - who appears with whom, drawn as a live map that grows with your reading position
 - Full-text search across every downloaded chapter, plus in-chapter find with match highlighting
-- 11 themes, 8 reading fonts, configurable margins and line spacing
+- 12 themes (including one for e-ink screens, with an e-ink mode that turns off animations), 8 reading fonts, configurable margins and line spacing
 - Scroll mode, paged mode, a teleprompter-style auto-scroll, and four tap-zone layouts
 - Neural text-to-speech with Piper, Kokoro, and your device's TTS
 - A pronunciation dictionary that can also *silence* symbols and words the engine reads aloud

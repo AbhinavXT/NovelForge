@@ -241,6 +241,23 @@ fun SettingsScreen(
                 }
             )
 
+            val einkOn by themePreferences.einkMode.collectAsState()
+            PrivacySwitchRow(
+                title = "E-ink mode",
+                summary = "No animations, ripples or smooth scrolling. Turning it on also sets " +
+                        "the app and reader to black on white and the reader to paged mode.",
+                checked = einkOn,
+                onCheckedChange = { on ->
+                    themePreferences.setEinkMode(on)
+                    if (on) {
+                        viewModel.setAppTheme(AppTheme.EINK)
+                        scope.launch {
+                            (context.applicationContext as NovelReaderApplication).repository.applyEinkReaderPreset()
+                        }
+                    }
+                }
+            )
+
             if (showThemeSheet) {
                 ThemePickerSheet(
                     currentTheme = currentAppTheme,

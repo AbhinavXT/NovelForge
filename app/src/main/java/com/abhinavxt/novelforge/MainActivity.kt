@@ -230,7 +230,8 @@ class MainActivity : ComponentActivity() {
                 appFont = appFont,
                 customPrimaryColor = customPrimaryColor,
                 customAppBackground = customAppBackground,
-                customAppTextColor = customAppTextColor
+                customAppTextColor = customAppTextColor,
+                eink = themePreferences.einkMode.collectAsState().value
             ) {
                 val locked by appLock.locked.collectAsState()
                 val appLockOn by themePreferences.appLock.collectAsState()

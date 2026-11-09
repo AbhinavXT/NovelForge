@@ -31,6 +31,7 @@ enum class AppTheme(val label: String, val isDark: Boolean?) {
     PAPER("Paper", false),
     SEPIA("Sepia", false),
     SOLARIZED_LIGHT("Solarized", false),
+    EINK("E-ink", false),
 
     // ── Dark palettes ────────────────────────────────────────────
     DARK("Dark", true),
@@ -211,6 +212,15 @@ class ThemePreferences(context: Context) {
         _incognito.value = on
     }
 
+    /** E-ink mode: no screen transitions, ripples or animated scrolling, which smear on an e-ink panel. */
+    private val _einkMode = MutableStateFlow(prefs.getBoolean(KEY_EINK_MODE, false))
+    val einkMode: StateFlow<Boolean> = _einkMode.asStateFlow()
+
+    fun setEinkMode(on: Boolean) {
+        prefs.edit().putBoolean(KEY_EINK_MODE, on).apply()
+        _einkMode.value = on
+    }
+
     fun setLibraryViewMode(mode: LibraryViewMode) {
         prefs.edit().putString(KEY_LIBRARY_VIEW_MODE, mode.name).apply()
         _libraryViewMode.value = mode
@@ -292,6 +302,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_LIBRARY_VIEW_MODE = "library_view_mode"
         private const val KEY_DAILY_GOAL_MINUTES = "daily_goal_minutes"
         private const val KEY_APP_LOCK = "app_lock"
+        private const val KEY_EINK_MODE = "eink_mode"
         private const val KEY_INCOGNITO = "incognito"
         private const val KEY_APP_FONT = "app_font"
         private const val KEY_APP_THEME = "app_theme"

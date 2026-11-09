@@ -240,6 +240,12 @@ private fun paletteFor(theme: AppTheme): AppPalette = when (theme) {
         primary = Color(0xFF268BD2), secondary = Color(0xFF2AA198), // blue / cyan
         isDark = false
     )
+    AppTheme.EINK -> AppPalette(
+        bg = Color.White, surface = Color.White,
+        text = Color.Black, secondaryText = Color(0xFF333333),
+        primary = Color.Black, secondary = Color(0xFF333333),
+        isDark = false
+    )
     AppTheme.DARK -> AppPalette(
         bg = Color(0xFF1A1A1A), surface = Color(0xFF242424),
         text = Color(0xFFD4D0C8), secondaryText = Color(0xFF808080),
@@ -434,6 +440,7 @@ fun resolveDarkTheme(
     else -> appTheme.isDark == true
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun NovelReaderTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -443,6 +450,7 @@ fun NovelReaderTheme(
     customPrimaryColor: Long = com.abhinavxt.novelforge.data.ThemePreferences.DEFAULT_CUSTOM_PRIMARY,
     customAppBackground: Long = com.abhinavxt.novelforge.data.ThemePreferences.DEFAULT_CUSTOM_APP_BACKGROUND,
     customAppTextColor: Long = com.abhinavxt.novelforge.data.ThemePreferences.CUSTOM_APP_TEXT_AUTO,
+    eink: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val darkTheme = resolveDarkTheme(
@@ -497,6 +505,16 @@ fun NovelReaderTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = typography,
-        content = content
-    )
+    ) {
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalEinkMode provides eink,
+            // A ripple is a dozen frames of grey an e-ink panel can't draw cleanly.
+            androidx.compose.material3.LocalRippleConfiguration provides
+                if (eink) null else androidx.compose.material3.RippleConfiguration(),
+            content = content
+        )
+    }
 }
+
+/** True while E-ink mode is on: jump instead of animating. */
+val LocalEinkMode = androidx.compose.runtime.staticCompositionLocalOf { false }
