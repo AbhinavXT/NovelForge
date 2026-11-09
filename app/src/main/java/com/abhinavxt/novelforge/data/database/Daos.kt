@@ -239,6 +239,10 @@ data class NovelDownloadAggregate(
 @Dao
 interface ChapterDao {
 
+    /** The stored text of chapters [from]..[to], for the recap; chapters without text are left out. */
+    @Query("SELECT number, content FROM chapters WHERE novelId = :novelId AND number BETWEEN :from AND :to AND content IS NOT NULL ORDER BY number")
+    suspend fun getStoredTexts(novelId: String, from: Int, to: Int): List<ChapterText>
+
     @Query("""
         SELECT id, novelId, number, title, url, isDownloaded, downloadedAt
         FROM chapters WHERE novelId = :novelId ORDER BY number ASC
@@ -870,3 +874,6 @@ interface VocabularyDao {
     @Query("DELETE FROM vocabulary WHERE `key` = :key")
     suspend fun deleteByKey(key: String)
 }
+
+/** A chapter's number and stored text. */
+data class ChapterText(val number: Int, val content: String)

@@ -6,6 +6,7 @@ import com.abhinavxt.novelforge.data.database.BookmarkEntity
 import com.abhinavxt.novelforge.data.database.VocabularyEntity
 import com.abhinavxt.novelforge.data.database.ChapterEntity
 import com.abhinavxt.novelforge.data.database.HighlightEntity
+import com.abhinavxt.novelforge.util.ParagraphSplitter
 import com.abhinavxt.novelforge.data.database.NovelEntity
 import com.abhinavxt.novelforge.data.database.ReadingProgressEntity
 import com.abhinavxt.novelforge.data.database.ReaderSettingsEntity
@@ -551,6 +552,37 @@ class NovelRepository(
 
     fun getAllHighlightsWithBook(): Flow<List<HighlightWithBook>> =
         highlightDao.getAllHighlightsWithBook()
+
+    // ============ RECAP ============
+
+    /**
+     * "Previously in…" for a book last read [Recap.AWAY_DAYS] or more days ago, from [progress]
+     * as it was before this visit. Null when it's been less, or there's nothing to show.
+     * Uses only text on the device: nothing is fetched for it.
+     */
+    suspend fun buildRecap(progress: ReadingProgressEntity, now: Long = System.currentTimeMillis()): RecapData? {
+        val days = Recap.daysAway(progress.lastReadAt, now)
+        if (days < Recap.AWAY_DAYS) return null
+        val to = progress.currentChapterNumber
+        val texts = chapterDao.getStoredTexts(progress.novelId, to - Recap.CHAPTERS_BACK + 1, to)
+        val current = texts.firstOrNull { it.number == to }?.content
+        val recap = RecapData(
+            daysAway = days,
+            chapterNumber = to,
+            stoppedAt = current?.let { Recap.stoppedAt(ParagraphSplitter.split(it), progress.paragraphIndex) },
+            characters = Recap.characters(
+                codexDao.getNamesOnce(progress.novelId).map { it.name to it.firstChapterNumber },
+                ceiling = to,
+                texts = texts.map { it.content }
+            ),
+            highlights = highlightDao.getHighlightsForNovelOnce(progress.novelId)
+                .filter { it.chapterNumber in (to - Recap.CHAPTERS_BACK + 1)..to }
+                .sortedWith(compareByDescending<HighlightEntity> { it.chapterNumber }.thenByDescending { it.paragraphIndex })
+                .take(3)
+                .map { it.selectedText }
+        )
+        return recap.takeUnless { it.isEmpty }
+    }
 
     // ============ VOCABULARY ============
 

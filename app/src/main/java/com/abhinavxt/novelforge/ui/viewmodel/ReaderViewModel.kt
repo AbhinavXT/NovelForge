@@ -305,7 +305,25 @@ class ReaderViewModel(
         _codexHit.value = null
     }
 
+    // ============ RECAP ============
+
+    /** "Previously in…" after a week or more away; null once dismissed or when there's nothing to say. */
+    private val _recap = MutableStateFlow<com.abhinavxt.novelforge.data.RecapData?>(null)
+    val recap: StateFlow<com.abhinavxt.novelforge.data.RecapData?> = _recap.asStateFlow()
+
+    fun dismissRecap() {
+        _recap.value = null
+    }
+
     init {
+        // Launched first so it reads the progress as it was, before this visit saves over it.
+        // Not for a jump to a particular spot (search, codex, highlight): the reader came for that.
+        if (targetParagraph < 0) {
+            viewModelScope.launch {
+                val progress = repository.getReadingProgress(novelId) ?: return@launch
+                _recap.value = runCatching { repository.buildRecap(progress) }.getOrNull()
+            }
+        }
         loadChapterList()
     }
 

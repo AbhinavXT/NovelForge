@@ -12,6 +12,7 @@ If you just want a quick summary, see the [README](../README.md).
   - [Table of contents](#table-of-contents)
   - [The reader](#the-reader)
     - [Saving your position](#saving-your-position)
+    - [Previously in…](#previously-in)
     - [Tap zones](#tap-zones)
     - [Volume key navigation](#volume-key-navigation)
     - [Contents](#contents)
@@ -93,6 +94,16 @@ The reader is where you'll spend most of your time. The screen has three layers:
 Reading position saves continuously as you scroll. Close the app mid-chapter, come back a week later, you'll be on the same paragraph. Position is per-novel, not per-chapter, so if you re-open a novel from the Library it goes to where you stopped.
 
 The reader also tracks WPM (words per minute) over time and uses it to estimate "minutes left in this chapter" in the top bar. Estimates get more accurate the more you read.
+
+### Previously in…
+
+Open a book you haven't read for a week or more and a sheet catches you up before you carry on:
+
+- **Where you stopped**: the paragraph you were on.
+- **Who's been around**: the [codex](#the-codex) names mentioned most in your last three chapters.
+- **Your highlights** from those chapters.
+
+It only looks back, never ahead: a name that first appears after where you are is never shown. It's built from text already on your phone (downloaded chapters, imported books), and a section with nothing to show is left out. With none of the three to show, there's no sheet. It doesn't appear when you open the book at a particular spot from search, the codex or a highlight. **Continue reading** closes it.
 
 ### Tap zones
 

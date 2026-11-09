@@ -356,6 +356,19 @@ fun ReaderScreen(
         }
     }
 
+    // "Previously in…" once the chapter is up, after a week or more away.
+    val recap by viewModel.recap.collectAsState()
+    val loaded = uiState as? ReaderUiState.Success
+    recap?.let { r ->
+        if (loaded != null) {
+            com.abhinavxt.novelforge.ui.components.RecapSheet(
+                recap = r,
+                title = loaded.chapter.novelTitle,
+                onDismiss = viewModel::dismissRecap
+            )
+        }
+    }
+
     // Model download dialog — shown at top level so it overlays everything
     if (showModelDownloadDialog) {
         ModelDownloadDialog(
