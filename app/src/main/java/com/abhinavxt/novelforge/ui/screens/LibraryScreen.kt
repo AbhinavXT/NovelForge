@@ -609,23 +609,29 @@ fun LibraryScreen(
                             // Full-text search over downloaded chapter
                             // content — distinct from the title filter
                             // field below.
-                            IconButton(onClick = onTextSearchClick) {
-                                Icon(
-                                    imageVector = Icons.Default.ManageSearch,
-                                    contentDescription = "Search in books"
-                                )
+                            com.abhinavxt.novelforge.ui.components.TipAnchor(com.abhinavxt.novelforge.data.Tip.TEXT_SEARCH) {
+                                IconButton(onClick = onTextSearchClick) {
+                                    Icon(
+                                        imageVector = Icons.Default.ManageSearch,
+                                        contentDescription = "Search in books"
+                                    )
+                                }
                             }
-                            IconButton(onClick = onHighlightsClick) {
-                                Icon(
-                                    imageVector = Icons.Default.FormatQuote,
-                                    contentDescription = "All highlights"
-                                )
+                            com.abhinavxt.novelforge.ui.components.TipAnchor(com.abhinavxt.novelforge.data.Tip.HIGHLIGHTS) {
+                                IconButton(onClick = onHighlightsClick) {
+                                    Icon(
+                                        imageVector = Icons.Default.FormatQuote,
+                                        contentDescription = "All highlights"
+                                    )
+                                }
                             }
-                            IconButton(onClick = onVocabularyClick) {
-                                Icon(
-                                    imageVector = Icons.Default.Translate,
-                                    contentDescription = "Vocabulary"
-                                )
+                            com.abhinavxt.novelforge.ui.components.TipAnchor(com.abhinavxt.novelforge.data.Tip.VOCABULARY) {
+                                IconButton(onClick = onVocabularyClick) {
+                                    Icon(
+                                        imageVector = Icons.Default.Translate,
+                                        contentDescription = "Vocabulary"
+                                    )
+                                }
                             }
                             IconButton(
                                 onClick = {

@@ -584,13 +584,15 @@ fun NovelReaderApp(
 
     val welcomeDone by Onboarding.welcomeDone.collectAsState()
     if (!welcomeDone) {
-        WelcomeScreen { action ->
-            Onboarding.finishWelcome(action)
-            when (action) {
-                Onboarding.Action.IMPORT_EPUB -> navigateToTab(Screen.Library.route)
-                Onboarding.Action.RESTORE_BACKUP -> navigateToTab(Screen.Settings.route)
-                null -> {}
-            }
-        }
+        WelcomeScreen(
+            onFinish = { action ->
+                Onboarding.finishWelcome(action)
+                when (action) {
+                    Onboarding.Action.IMPORT_EPUB -> navigateToTab(Screen.Library.route)
+                    Onboarding.Action.RESTORE_BACKUP -> navigateToTab(Screen.Settings.route)
+                    null -> {}
+                }
+            },
+        )
     }
 }

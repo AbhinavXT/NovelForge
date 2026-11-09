@@ -113,6 +113,7 @@ fun SettingsScreen(
     onNavigateToPronunciation: () -> Unit = {},
     onNavigateToReadingStats: () -> Unit = {},
     onNavigateToChangelog: () -> Unit = {},
+    onNavigateToGuide: () -> Unit = {},
     onNavigateToPlugins: () -> Unit = {},
     updateChecker: UpdateChecker,
     viewModel: SettingsViewModel = viewModel(
@@ -1095,8 +1096,12 @@ fun SettingsScreen(
                 }
             }
 
-            TextButton(onClick = com.abhinavxt.novelforge.data.Onboarding::resetTips) {
-                Text("Show tips again")
+            Row {
+                TextButton(onClick = onNavigateToGuide) { Text("Guide") }
+                TextButton(onClick = {
+                    com.abhinavxt.novelforge.data.Onboarding.resetTips()
+                    android.widget.Toast.makeText(context, "Tips will show again", android.widget.Toast.LENGTH_SHORT).show()
+                }) { Text("Show tips again") }
             }
 
             Spacer(modifier = Modifier.height(24.dp))

@@ -14,6 +14,10 @@ enum class Tip(val title: String, val text: String) {
     READING_STATS("Reading stats", "Your reading time, streaks and daily goal."),
     CHARACTER_VOICES("Character voices", "Give each character their own voice when dialogue is read aloud."),
     PLUGINS("Plugins", "Add more sources from the official repository, or install your own."),
+    SEARCH("Find novels", "Search all your sources at once, or pick one. Add more sources in Settings."),
+    TEXT_SEARCH("Search in books", "Find any word inside the chapters you've downloaded."),
+    HIGHLIGHTS("Highlights", "Every highlight from every book, in one place."),
+    VOCABULARY("Vocabulary", "Words you saved from Define, with flashcards to review them."),
 }
 
 /** First-launch welcome and tip state. Not part of NovelForge backups. */

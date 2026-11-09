@@ -119,7 +119,15 @@ fun WelcomeScreen(onFinish: (Onboarding.Action?) -> Unit) {
     var checked by rememberSaveable { mutableStateOf(PluginManager.OFFICIAL_ONLY.keys.toSet()) }
     var installing by rememberSaveable { mutableStateOf(emptySet<String>()) }
 
+    var showGuide by rememberSaveable { mutableStateOf(false) }
     BackHandler { onFinish(null) }
+    if (showGuide) {
+        BackHandler { showGuide = false }
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            com.abhinavxt.novelforge.ui.screens.GuideScreen(onBackClick = { showGuide = false })
+        }
+        return
+    }
     LaunchedEffect(installing, busy) {
         if (installing.isNotEmpty() && installing.none { it in busy }) onFinish(null)
     }
@@ -200,11 +208,10 @@ fun WelcomeScreen(onFinish: (Onboarding.Action?) -> Unit) {
                     modifier = Modifier.weight(1f),
                 ) { Text("Restore backup") }
             }
-            TextButton(
-                onClick = { onFinish(null) },
-                enabled = installing.isEmpty(),
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-            ) { Text("Skip") }
+            Row(Modifier.align(Alignment.CenterHorizontally)) {
+                TextButton(onClick = { showGuide = true }, enabled = installing.isEmpty()) { Text("How it works") }
+                TextButton(onClick = { onFinish(null) }, enabled = installing.isEmpty()) { Text("Skip") }
+            }
         }
     }
 }
