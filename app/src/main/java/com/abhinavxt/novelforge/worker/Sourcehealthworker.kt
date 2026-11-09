@@ -14,7 +14,7 @@ import com.abhinavxt.novelforge.data.source.SourceManager
 import com.abhinavxt.novelforge.data.source.health.HealthStatus
 import com.abhinavxt.novelforge.data.source.health.SourceHealth
 import com.abhinavxt.novelforge.data.source.health.SourceHealthStore
-import com.abhinavxt.novelforge.data.source.nf.USER_AGENT
+import com.abhinavxt.novelforge.data.source.net.USER_AGENT
 import com.abhinavxt.novelforge.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async

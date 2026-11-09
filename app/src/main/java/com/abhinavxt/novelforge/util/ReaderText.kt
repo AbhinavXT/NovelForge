@@ -4,8 +4,7 @@ import org.jsoup.Jsoup
 
 /**
  * NovelForge's reader consumes plain text with paragraphs separated by blank
- * lines (see the native sources), while QuickNovel providers and JS plugins
- * return chapter HTML. This converts one to the other.
+ * lines (see the native sources), while JS plugins return chapter HTML. This converts one to the other.
  */
 object ReaderText {
 

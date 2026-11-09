@@ -66,6 +66,12 @@ class BundledPluginsTest {
     }
 
     @Test
+    fun `a plugin is either bundled or official-only, never both`() {
+        val both = BundledIndex.entries.map { it.id }.filter { it in PluginManager.OFFICIAL_ONLY }
+        assertEquals(emptyList<String>(), both)
+    }
+
+    @Test
     fun `bundled filters are well formed`() {
         for (e in BundledIndex.entries) {
             val plugin = JsPlugin.load(e.script.readText(), e.script.name, noNetwork)

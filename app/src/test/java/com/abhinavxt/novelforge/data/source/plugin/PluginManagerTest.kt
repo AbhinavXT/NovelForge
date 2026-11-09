@@ -12,7 +12,6 @@ import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 import java.io.File
 
@@ -41,20 +40,16 @@ class PluginManagerTest {
     fun reset() = PluginManager.resetForTests()
 
     @Test
-    fun `upgrading from the built-in sources keeps the retired ones`() {
+    fun `first-party plugins that moved to the repository keep their ids and can't be taken over`() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Application>()
-        // Installed earlier, updated now, no installed.json yet: an upgrade from 1.8.x.
-        Shadows.shadowOf(context.packageManager).getInternalMutablePackageInfo(context.packageName).apply {
-            firstInstallTime = 1_000L
-            lastUpdateTime = 2_000L
-        }
         PluginManager.init(context)
-        for (id in listOf("qanv", "qgray", "qlnw")) {
-            assertTrue("$id should still have a source", SourceManager.getSource(id) is JsPluginSource)
+        // No longer in the APK.
+        assertNull(SourceManager.getSource("qfmtl"))
+        for ((id, sourceId) in PluginManager.OFFICIAL_ONLY) {
+            assertTrue("$id: $sourceId must be a legacy source", sourceId in PluginManager.LEGACY_SOURCES)
         }
-        assertNotNull(SourceManager.getSource("royalroad"))
-        // Still not offered to anyone else.
-        assertTrue(PluginManager.available.value.none { it.retired })
+        val takeover = PluginManager.installFromScript(script("fanmtl"))
+        assertTrue(takeover.exceptionOrNull()!!.message!!, takeover.exceptionOrNull()!!.message!!.contains("built-in"))
     }
 
     @Test
@@ -68,10 +63,6 @@ class PluginManagerTest {
         assertTrue("royalroad should be a plugin source", SourceManager.getSource("royalroad") is JsPluginSource)
         assertTrue(royalRoadFile.isFile)
         assertNotNull(SourceManager.getSource("qwclick"))
-        // Retired plugins are for upgrades from the Kotlin sources only.
-        assertNull(SourceManager.getSource("qanv"))
-        assertNull(SourceManager.getSource("qlnw"))
-        assertTrue(PluginManager.available.value.none { it.retired })
         val original = royalRoadFile.readText()
 
         // A script from a file can't use a built-in id.
