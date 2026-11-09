@@ -174,6 +174,16 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.8.0",
+        date = "Nov 2026",
+        changes = listOf(
+            "Royal Road, Primordial Translation, WTR-Lab and WuxiaClick come built in",
+            "Other sources install from the official plugin repository",
+            "Sources you already have stay installed and keep updating",
+            "NovelForge is now MIT licensed"
+        )
+    ),
+    VersionEntry(
         version = "v2.7.0",
         date = "Nov 2026",
         changes = listOf(
