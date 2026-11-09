@@ -87,7 +87,10 @@ data class NovelEntity(
     val readerSettingsJson: String? = null,
 
     /** The book's language (BCP 47), for hyphenation; null = the device's. From dc:language or set by hand. NEW in v25. */
-    val language: String? = null
+    val language: String? = null,
+
+    /** Translate this book's chapters as they're opened. NEW in v26. */
+    val translate: Boolean = false
 )
 
 /** Where a book sits on the reader's own shelf. Separate from the source's Ongoing/Completed. */
@@ -467,4 +470,32 @@ data class VocabularyEntity(
     val box: Int = 0,
     val dueAt: Long = System.currentTimeMillis(),
     val createdAt: Long = System.currentTimeMillis()
+)
+
+/**
+ * A translated chapter's text as it was before translation, so it can be put back.
+ * The chapter counts as translated only while its content still hashes to [translatedHash]:
+ * a re-download or archive restore overwrites the text and quietly ends the translation. NEW in v26.
+ */
+@Entity(tableName = "chapter_originals", indices = [Index("novelId")])
+data class ChapterOriginalEntity(
+    @PrimaryKey
+    val chapterId: String,
+    val novelId: String,
+    val original: String,
+    val translatedHash: Int,
+    /** "ai" or "on-device". */
+    val engine: String,
+    val translatedAt: Long = System.currentTimeMillis()
+)
+
+/** One book's fixed translation for a name or term; [note] carries gender and pronouns. NEW in v26. */
+@Entity(tableName = "glossary_terms", indices = [Index(value = ["novelId", "source"], unique = true)])
+data class GlossaryTermEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val novelId: String,
+    val source: String,
+    val target: String,
+    val note: String = ""
 )

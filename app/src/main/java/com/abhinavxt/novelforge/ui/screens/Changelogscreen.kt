@@ -174,6 +174,16 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.6.0",
+        date = "Nov 2026",
+        changes = listOf(
+            "Translate raw or machine-translated books as you read",
+            "Use your own AI key or free on-device translation",
+            "A glossary per book keeps names and terms the same in every chapter",
+            "Translate downloaded chapters in bulk, and restore the originals any time"
+        )
+    ),
+    VersionEntry(
         version = "v2.5.0",
         date = "Nov 2026",
         changes = listOf(

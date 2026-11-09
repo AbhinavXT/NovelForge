@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FindReplace
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.FormatLineSpacing
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.RecordVoiceOver
@@ -101,6 +102,7 @@ fun QuickSettingsSheet(
     onSettingsChanged: (ReaderSettings) -> Unit,
     onNavigateToPronunciation: (() -> Unit)? = null,
     onOpenTextReplacements: (() -> Unit)? = null,
+    onOpenTranslation: (() -> Unit)? = null,
     // null hides the switch, for a book that isn't in the library.
     bookLookOn: Boolean? = null,
     onBookLookChange: (Boolean) -> Unit = {},
@@ -407,6 +409,41 @@ fun QuickSettingsSheet(
                                 )
                                 Text(
                                     text = "Fix names or remove junk text while reading",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (onOpenTranslation != null) {
+                    Surface(
+                        onClick = onOpenTranslation,
+                        color = Color.Transparent,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Translate,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Translation",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = "Translate this book, with a glossary for names",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

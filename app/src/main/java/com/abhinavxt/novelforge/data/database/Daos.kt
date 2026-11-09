@@ -877,3 +877,75 @@ interface VocabularyDao {
 
 /** A chapter's number and stored text. */
 data class ChapterText(val number: Int, val content: String)
+
+// ============ Translation DAO ============
+
+@Dao
+interface TranslationDao {
+
+    @Query("SELECT translate FROM novels WHERE id = :novelId")
+    suspend fun isTranslateOn(novelId: String): Boolean?
+
+    @Query("SELECT translate FROM novels WHERE id = :novelId")
+    fun observeTranslateOn(novelId: String): Flow<Boolean?>
+
+    @Query("SELECT language FROM novels WHERE id = :novelId")
+    suspend fun getLanguage(novelId: String): String?
+
+    @Query("UPDATE novels SET translate = :on WHERE id = :novelId")
+    suspend fun setTranslate(novelId: String, on: Boolean)
+
+    @Query("SELECT * FROM chapter_originals WHERE chapterId = :chapterId")
+    suspend fun getOriginal(chapterId: String): ChapterOriginalEntity?
+
+    @Query("SELECT * FROM chapter_originals WHERE novelId = :novelId")
+    suspend fun getOriginals(novelId: String): List<ChapterOriginalEntity>
+
+    @Query("SELECT * FROM chapter_originals")
+    suspend fun getAllOriginals(): List<ChapterOriginalEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveOriginal(original: ChapterOriginalEntity)
+
+    @Query("DELETE FROM chapter_originals WHERE chapterId = :chapterId")
+    suspend fun deleteOriginal(chapterId: String)
+
+    @Query("DELETE FROM chapter_originals WHERE novelId = :novelId")
+    suspend fun deleteOriginals(novelId: String)
+
+    /** Chapters whose stored text is in place, translated or not; the caller sorts out which are. */
+    @Query("SELECT id, content FROM chapters WHERE novelId = :novelId AND content IS NOT NULL ORDER BY number")
+    suspend fun getStoredChapterIds(novelId: String): List<StoredChapterRef>
+
+    @Query("SELECT content FROM chapters WHERE id = :chapterId")
+    suspend fun getContent(chapterId: String): String?
+
+    /** Stores a chapter's text; one read online becomes downloaded, so its translation is kept. */
+    @Query("UPDATE chapters SET content = :content, isDownloaded = 1, downloadedAt = COALESCE(downloadedAt, :now) WHERE id = :chapterId")
+    suspend fun setContent(chapterId: String, content: String, now: Long = System.currentTimeMillis())
+
+    @Query("SELECT * FROM glossary_terms WHERE novelId = :novelId ORDER BY source COLLATE NOCASE")
+    fun observeGlossary(novelId: String): Flow<List<GlossaryTermEntity>>
+
+    @Query("SELECT * FROM glossary_terms WHERE novelId = :novelId")
+    suspend fun getGlossary(novelId: String): List<GlossaryTermEntity>
+
+    @Query("SELECT * FROM glossary_terms")
+    suspend fun getAllGlossary(): List<GlossaryTermEntity>
+
+    /** New terms the translator found; one the reader already has is kept as they set it. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun addTerms(terms: List<GlossaryTermEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveTerm(term: GlossaryTermEntity): Long
+
+    @Query("DELETE FROM glossary_terms WHERE id = :id")
+    suspend fun deleteTerm(id: Long)
+
+    @Query("DELETE FROM glossary_terms WHERE novelId = :novelId")
+    suspend fun deleteGlossary(novelId: String)
+}
+
+/** A stored chapter's id and text, to tell translated chapters from the rest. */
+data class StoredChapterRef(val id: String, val content: String)

@@ -1,6 +1,6 @@
 // ── Version ──────────────────────────────────────────────────────────────
 // Single source of truth. Edit this line only.
-val appVersionName = "2.5.0"
+val appVersionName = "2.6.0"
 
 /**
  * major.minor.patch -> major*10000 + minor*100 + patch
@@ -119,6 +119,8 @@ android {
     }
 
     compileOptions {
+        // The Anthropic SDK uses java.time, which Android only has from API 26.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
@@ -169,6 +171,10 @@ dependencies {
     implementation(libs.jsoup)
     implementation(libs.coil.compose)
     implementation(libs.gson)
+    // Translation: Claude through the official SDK, and Google's offline translator.
+    implementation(libs.anthropic.java)
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    implementation(libs.mlkit.translate)
     // JavaScript engine for source plugins (data/source/plugin). Pure Java,
     // so no extra native ABIs and the runtime is unit-testable on the JVM.
     implementation(libs.rhino)
