@@ -174,6 +174,15 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.7.0",
+        date = "Nov 2026",
+        changes = listOf(
+            "Read-aloud gives each character their own voice on Kokoro and other multi-speaker voices",
+            "Cast the narrator and every codex character, or let it pick by gender and accent",
+            "Audiobook export uses the same cast"
+        )
+    ),
+    VersionEntry(
         version = "v2.6.0",
         date = "Nov 2026",
         changes = listOf(
