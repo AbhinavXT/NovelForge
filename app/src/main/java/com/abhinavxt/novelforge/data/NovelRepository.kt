@@ -496,15 +496,6 @@ class NovelRepository(
         }
     }
 
-    /** Where E-ink mode starts the reader: black on white, paged, pages that turn without a slide. */
-    suspend fun applyEinkReaderPreset() = saveReaderSettings(
-        getReaderSettings().copy(
-            theme = ReaderTheme.EINK,
-            readingMode = ReadingMode.PAGED,
-            pageTransition = PageTransition.NONE
-        )
-    )
-
     suspend fun saveReaderSettings(settings: ReaderSettings) {
         val entity = ReaderSettingsEntity(
             id = 1,
@@ -551,6 +542,9 @@ class NovelRepository(
     /** Chapter id → stored title for chapters of the book: what translation and restoring change. */
     suspend fun getStoredChapterTitles(novelId: String): Map<String, String> =
         chapterDao.getChaptersForNovel(novelId).first().associate { it.id to it.title }
+
+    /** A chapter's stored title, or null when the chapter isn't stored. */
+    suspend fun getChapterTitle(chapterId: String): String? = chapterDao.getChapterById(chapterId)?.title
 
     /** Chapter id → translated title, for chapters whose title was translated. */
     suspend fun getTranslatedTitles(novelId: String): Map<String, String> {

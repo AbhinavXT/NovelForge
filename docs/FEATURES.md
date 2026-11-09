@@ -246,7 +246,7 @@ For e-ink phones and tablets (Boox, Hisense, Bigme and similar). Settings → Ap
 - Scroll-mode taps, volume keys, find and TTS follow jump straight to the spot instead of scrolling there
 - Paged-mode page turns are instant
 
-Turning it on also switches the app and the reader to the **E-ink** theme and the reader to paged mode with no page animation. You can change any of these afterwards; turning e-ink mode off leaves them as they are. Auto-scroll still scrolls smoothly, so it will smear on e-ink.
+Turning it on also switches the app and the reader to the **E-ink** theme and the reader to paged mode with no page animation. You can change any of these afterwards. Turning e-ink mode off puts back the app theme, reader theme, reading mode and page animation you had before, except any you changed while it was on. Auto-scroll still scrolls smoothly, so it will smear on e-ink.
 
 ### Reader fonts
 

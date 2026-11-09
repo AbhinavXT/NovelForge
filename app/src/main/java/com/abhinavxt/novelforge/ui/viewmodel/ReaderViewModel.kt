@@ -143,7 +143,12 @@ class ReaderViewModel(
         if (!t.isTranslateOn(novelId) || t.isTranslated(chapterId, content)) return content
         if (showProgress) _uiState.value = ReaderUiState.Translating
         return try {
-            t.translateChapter(novelId, chapterId, content)
+            t.translateChapter(novelId, chapterId, content).also {
+                // The title was translated too; the top bar and contents read it from the list.
+                repository.getChapterTitle(chapterId)?.let { title ->
+                    chapterList = chapterList.map { c -> if (c.id == chapterId) c.copy(title = title) else c }
+                }
+            }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -1072,7 +1077,8 @@ class ReaderViewModel(
                         return@launch
                     }
                     _stitchedChapters.value = _stitchedChapters.value + StitchedChapter(
-                        nav = next.toChapterNav(),
+                        // Translating may have just renamed it.
+                        nav = (chapterList.firstOrNull { it.id == next.id } ?: next).toChapterNav(),
                         paragraphs = paragraphs,
                         content = content,
                         formatting = formatting

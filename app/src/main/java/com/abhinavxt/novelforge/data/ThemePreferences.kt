@@ -221,6 +221,13 @@ class ThemePreferences(context: Context) {
         _einkMode.value = on
     }
 
+    /** The look E-ink mode replaced, encoded by [EinkLook.encode]; null when none is saved. */
+    var preEinkLook: String?
+        get() = prefs.getString(KEY_PRE_EINK_LOOK, null)
+        set(value) = prefs.edit().apply {
+            if (value == null) remove(KEY_PRE_EINK_LOOK) else putString(KEY_PRE_EINK_LOOK, value)
+        }.apply()
+
     fun setLibraryViewMode(mode: LibraryViewMode) {
         prefs.edit().putString(KEY_LIBRARY_VIEW_MODE, mode.name).apply()
         _libraryViewMode.value = mode
@@ -303,6 +310,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_DAILY_GOAL_MINUTES = "daily_goal_minutes"
         private const val KEY_APP_LOCK = "app_lock"
         private const val KEY_EINK_MODE = "eink_mode"
+        private const val KEY_PRE_EINK_LOOK = "pre_eink_look"
         private const val KEY_INCOGNITO = "incognito"
         private const val KEY_APP_FONT = "app_font"
         private const val KEY_APP_THEME = "app_theme"
