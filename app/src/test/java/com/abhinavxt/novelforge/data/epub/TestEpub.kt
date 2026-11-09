@@ -22,7 +22,8 @@ object TestEpub {
         spine: List<Item>,
         others: List<Item> = emptyList(),
         coverId: String? = null,
-        ncxId: String? = null
+        ncxId: String? = null,
+        language: String? = null
     ): ByteArray {
         val all = spine + others
         val manifest = all.joinToString("\n") { item ->
@@ -35,7 +36,7 @@ object TestEpub {
         val opf = """<?xml version="1.0"?>
     <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
     <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-    <dc:title>Test Book</dc:title><dc:creator>Someone</dc:creator>$coverMeta
+    <dc:title>Test Book</dc:title><dc:creator>Someone</dc:creator>${language?.let { "<dc:language>$it</dc:language>" } ?: ""}$coverMeta
     </metadata>
     <manifest>$manifest</manifest>
     <spine$tocAttr>$itemrefs</spine>

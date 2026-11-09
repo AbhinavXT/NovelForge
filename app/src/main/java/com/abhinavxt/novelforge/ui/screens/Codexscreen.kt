@@ -42,6 +42,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -78,6 +80,8 @@ fun CodexScreen(
     onBackClick: () -> Unit,
     onMentionClick: (chapterId: String, chapterUrl: String, paragraphIndex: Int) -> Unit,
     onGraphClick: () -> Unit = {},
+    // A name to open the detail of once the list loads (from the reader).
+    openName: String? = null,
     viewModel: CodexViewModel = viewModel(
         factory = CodexViewModel.provideFactory(novelId, repository)
     )
@@ -92,6 +96,15 @@ fun CodexScreen(
     val detail by viewModel.detail.collectAsState()
     val maxChapter by viewModel.maxChapterNumber.collectAsState()
     val scope = rememberCoroutineScope()
+
+    var openNamePending by rememberSaveable { mutableStateOf(openName != null) }
+    LaunchedEffect(names) {
+        if (!openNamePending) return@LaunchedEffect
+        names.firstOrNull { it.name.equals(openName, ignoreCase = true) }?.let {
+            openNamePending = false
+            viewModel.selectName(it)
+        }
+    }
 
     // Overflow menu + rebuild confirmation. A rebuild discards no user
     // data — codex_names is derived from chapter text and nothing in the

@@ -164,7 +164,9 @@ fun ReaderSettings.textStyle(): TextStyle = TextStyle(
     lineHeight = (fontSize * lineSpacing).sp,
     textAlign = if (justifyText) TextAlign.Justify else TextAlign.Start,
     textIndent = if (paragraphIndent) TextIndent(firstLine = (fontSize * 1.5).sp) else TextIndent.None,
-    hyphens = if (hyphenation) Hyphens.Auto else Hyphens.None
+    hyphens = if (hyphenation) Hyphens.Auto else Hyphens.None,
+    // Hyphenation patterns follow the text's locale; null keeps the device's.
+    localeList = bookLanguage?.let { androidx.compose.ui.text.intl.LocaleList(it) }
 )
 
 fun ReaderFont.toFontFamily(): FontFamily {

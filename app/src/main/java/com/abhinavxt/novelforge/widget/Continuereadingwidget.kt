@@ -83,20 +83,40 @@ class ContinueReadingWidget : GlanceAppWidget() {
         // parses it into our sealed WidgetState type.
         val repo = WidgetStateRepository(context)
         val state = repo.getStateOnce()
+        val goal = dailyGoalLine(context)
 
         provideContent {
             GlanceTheme {
-                WidgetContent(state = state)
+                WidgetContent(state = state, goal = goal)
             }
         }
     }
 
     @Composable
-    private fun WidgetContent(state: WidgetStateRepository.WidgetState) {
+    private fun WidgetContent(state: WidgetStateRepository.WidgetState, goal: String?) {
         when (state) {
             is WidgetStateRepository.WidgetState.Empty -> EmptyStateLayout()
-            is WidgetStateRepository.WidgetState.HasNovel -> ReadingLayout(state)
+            is WidgetStateRepository.WidgetState.HasNovel -> ReadingLayout(state, goal)
         }
+    }
+
+    /** "12 / 30 min today", or null when no daily goal is set. Same wording as the home screen. */
+    private suspend fun dailyGoalLine(context: Context): String? = runCatching {
+        val app = context.applicationContext as com.abhinavxt.novelforge.NovelReaderApplication
+        val goal = app.themePreferences.dailyGoalMinutes.value
+        if (goal <= 0) return@runCatching null
+        val today = (app.readingStatsTracker.getStatsForToday().readingTimeMs / 60_000).toInt()
+        if (today >= goal) "Daily goal met · $today min today" else "$today / $goal min today"
+    }.getOrNull()
+
+    @Composable
+    private fun GoalText(goal: String?) {
+        goal ?: return
+        Text(
+            text = goal,
+            style = TextStyle(color = GlanceTheme.colors.primary, fontSize = 11.sp),
+            maxLines = 1
+        )
     }
 
     // ─── Empty state ────────────────────────────────────────────────
@@ -145,7 +165,7 @@ class ContinueReadingWidget : GlanceAppWidget() {
     // ─── Reading layout (three responsive variants) ─────────────────
 
     @Composable
-    private fun ReadingLayout(state: WidgetStateRepository.WidgetState.HasNovel) {
+    private fun ReadingLayout(state: WidgetStateRepository.WidgetState.HasNovel, goal: String?) {
         val context = LocalContext.current
         val size = androidx.glance.LocalSize.current
 
@@ -163,10 +183,10 @@ class ContinueReadingWidget : GlanceAppWidget() {
                 size.width < MEDIUM_SIZE.width -> SmallLayout(state)
 
                 // Large: cover + text + progress bar. Two-row-ish.
-                size.height >= LARGE_SIZE.height -> LargeLayout(state)
+                size.height >= LARGE_SIZE.height -> LargeLayout(state, goal)
 
                 // Medium: default middle ground.
-                else -> MediumLayout(state)
+                else -> MediumLayout(state, goal)
             }
         }
     }
@@ -207,7 +227,7 @@ class ContinueReadingWidget : GlanceAppWidget() {
     }
 
     @Composable
-    private fun MediumLayout(state: WidgetStateRepository.WidgetState.HasNovel) {
+    private fun MediumLayout(state: WidgetStateRepository.WidgetState.HasNovel, goal: String?) {
         Row(
             modifier = GlanceModifier
                 .fillMaxSize()
@@ -246,12 +266,13 @@ class ContinueReadingWidget : GlanceAppWidget() {
                     ),
                     maxLines = 1
                 )
+                GoalText(goal)
             }
         }
     }
 
     @Composable
-    private fun LargeLayout(state: WidgetStateRepository.WidgetState.HasNovel) {
+    private fun LargeLayout(state: WidgetStateRepository.WidgetState.HasNovel, goal: String?) {
         Column(
             modifier = GlanceModifier
                 .fillMaxSize()
@@ -314,6 +335,7 @@ class ContinueReadingWidget : GlanceAppWidget() {
                     fontSize = 11.sp
                 )
             )
+            GoalText(goal)
         }
     }
 

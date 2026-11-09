@@ -1071,6 +1071,42 @@ fun SettingsScreen(
             HorizontalDivider()
             Spacer(modifier = Modifier.height(24.dp))
 
+            // ── Privacy Section ──────────────────────────────────
+            Text(
+                text = "Privacy",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            val appLockOn by themePreferences.appLock.collectAsState()
+            val incognitoOn by themePreferences.incognito.collectAsState()
+            PrivacySwitchRow(
+                title = "App lock",
+                summary = "Ask for your fingerprint, face or screen lock when you open " +
+                        "the app and after a minute away. Hides the app in Recents.",
+                checked = appLockOn,
+                onCheckedChange = { on ->
+                    if (on && !com.abhinavxt.novelforge.ui.components.AppLock.hasScreenLock(context)) {
+                        android.widget.Toast.makeText(
+                            context, "Set a screen lock in Android settings first", android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        themePreferences.setAppLock(on)
+                    }
+                }
+            )
+            PrivacySwitchRow(
+                title = "Incognito mode",
+                summary = "Reading isn't recorded in history, stats, streaks or your daily " +
+                        "goal. Your place in each book still saves.",
+                checked = incognitoOn,
+                onCheckedChange = themePreferences::setIncognito
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(24.dp))
+
             // ── About Section ────────────────────────────────────
             Text(
                 text = "About",
@@ -1257,6 +1293,24 @@ fun SettingsScreen(
             )
         }
         is BackupUiState.Idle -> { /* Do nothing */ }
+    }
+}
+
+@Composable
+private fun PrivacySwitchRow(title: String, summary: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

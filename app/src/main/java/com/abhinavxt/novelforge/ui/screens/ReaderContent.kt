@@ -25,6 +25,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -202,7 +207,10 @@ internal fun ReaderContent(
     onBookLookChange: (Boolean) -> Unit = {},
     // The codex entry for the word being defined, if the reader has reached one.
     codexHit: CodexNameEntity? = null,
-    onOpenCodex: (() -> Unit)? = null
+    onOpenCodex: ((name: String) -> Unit)? = null,
+    // Whether the defined word is in the vocabulary list, and the save/forget action.
+    wordSaved: Boolean = false,
+    onToggleSaveWord: () -> Unit = {}
 ) {
     val colors = getThemeColors(settings)
 
@@ -1126,7 +1134,9 @@ internal fun ReaderContent(
     DictionaryBottomSheet(
         dictionaryState = dictionaryState,
         codexHit = codexHit,
-        onOpenCodex = onOpenCodex?.let { open -> { onDismissDictionary(); open() } },
+        onOpenCodex = onOpenCodex?.let { open -> { name: String -> onDismissDictionary(); open(name) } },
+        wordSaved = wordSaved,
+        onToggleSaveWord = onToggleSaveWord,
         onDismiss = onDismissDictionary
     )
 
@@ -1498,7 +1508,7 @@ private fun AddPronunciationDialog(
 
 /** What the codex knows about the selected name, shown above its definition. Spoiler-safe: only where it first appeared. */
 @Composable
-private fun CodexCard(entry: CodexNameEntity, onOpenCodex: (() -> Unit)?) {
+private fun CodexCard(entry: CodexNameEntity, onOpenCodex: ((String) -> Unit)?) {
     Card(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -1513,7 +1523,7 @@ private fun CodexCard(entry: CodexNameEntity, onOpenCodex: (() -> Unit)?) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             if (onOpenCodex != null) {
-                TextButton(onClick = onOpenCodex, contentPadding = PaddingValues(0.dp)) { Text("Open in codex") }
+                TextButton(onClick = { onOpenCodex(entry.name) }, contentPadding = PaddingValues(0.dp)) { Text("Open in codex") }
             }
         }
     }
@@ -1527,7 +1537,9 @@ private fun CodexCard(entry: CodexNameEntity, onOpenCodex: (() -> Unit)?) {
 private fun DictionaryBottomSheet(
     dictionaryState: DictionaryState,
     codexHit: CodexNameEntity?,
-    onOpenCodex: (() -> Unit)?,
+    onOpenCodex: ((String) -> Unit)?,
+    wordSaved: Boolean,
+    onToggleSaveWord: () -> Unit,
     onDismiss: () -> Unit
 ) {
     if (dictionaryState is DictionaryState.Idle) return
@@ -1611,6 +1623,16 @@ private fun DictionaryBottomSheet(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.outline
                         )
+                    }
+
+                    TextButton(onClick = onToggleSaveWord, contentPadding = PaddingValues(0.dp)) {
+                        Icon(
+                            if (wordSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (wordSaved) "Saved to vocabulary" else "Save word")
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))

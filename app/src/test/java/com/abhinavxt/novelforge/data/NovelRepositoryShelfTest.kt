@@ -107,6 +107,10 @@ class NovelRepositoryShelfTest {
             BookmarkEntity(novelId = "old_1", chapterId = "old_1_c3", chapterUrl = "u", chapterNumber = 3,
                 chapterTitle = "Chapter 3", paragraphIndex = 2, textSnippet = "s")
         )
+        db.bookmarkDao().insertBookmark(
+            BookmarkEntity(novelId = "old_1", chapterId = "old_1_c9", chapterUrl = "u9", chapterNumber = 9,
+                chapterTitle = "Chapter 9", paragraphIndex = 5, textSnippet = "late")
+        )
         db.highlightDao().insertHighlight(
             HighlightEntity(novelId = "old_1", chapterId = "old_1_c9", chapterNumber = 9, chapterTitle = "Chapter 9",
                 paragraphIndex = 0, startOffset = 0, endOffset = 4, selectedText = "Wei!")
@@ -128,9 +132,18 @@ class NovelRepositoryShelfTest {
         assertEquals(12, progress.paragraphIndex)
         assertNull(repo.getReadingProgress("old_1"))
 
-        val bookmark = db.bookmarkDao().getBookmarksForNovelOnce("new_1").single()
-        assertEquals("new_1_c3", bookmark.chapterId)
-        assertEquals("https://x/new_1/3", bookmark.chapterUrl)
+        val bookmarks = db.bookmarkDao().getBookmarksForNovelOnce("new_1").associateBy { it.textSnippet }
+        assertEquals("new_1_c3", bookmarks.getValue("s").chapterId)
+        assertEquals("https://x/new_1/3", bookmarks.getValue("s").chapterUrl)
+        assertEquals(2, bookmarks.getValue("s").paragraphIndex)
+        // Chapter 9 has no counterpart: the bookmark opens at the top of chapter 7, the nearest before it.
+        val late = bookmarks.getValue("late")
+        assertEquals("new_1_c7", late.chapterId)
+        assertEquals("https://x/new_1/7", late.chapterUrl)
+        assertEquals(7, late.chapterNumber)
+        assertEquals(0, late.paragraphIndex)
+        assertEquals(1, result.movedBookmarks)
+        assertEquals(1, result.bookmarksToNearest)
 
         // Chapter 9 has no counterpart: the highlight moves book but keeps its old chapter.
         val highlight = db.highlightDao().getHighlightsForNovelOnce("new_1").single()
@@ -139,6 +152,41 @@ class NovelRepositoryShelfTest {
 
         assertEquals(setOf(cat), repo.getCategoryIdsForNovel("new_1"))
         assertEquals(0, db.chapterDao().getChapterCount("old_1"))
+    }
+
+    @Test
+    fun upgradeReattachesBookmarksStrandedByAnEarlierMigration() = runBlocking {
+        // The book now has only chapters 2 and 5.
+        repo.addToLibrary(novel("new_1", 1..0).copy(chapters = listOf(2, 5).map {
+            Chapter(id = "new_1_c$it", number = it, title = "Chapter $it", url = "https://x/new_1/$it")
+        }))
+        fun bookmark(novelId: String, chapterId: String, number: Int) = BookmarkEntity(
+            novelId = novelId, chapterId = chapterId, chapterUrl = "old", chapterNumber = number,
+            chapterTitle = "Old", paragraphIndex = 9, textSnippet = "$novelId/$chapterId"
+        )
+        db.bookmarkDao().insertBookmark(bookmark("new_1", "old_1_c4", 4))   // gone: nearest before is 2
+        db.bookmarkDao().insertBookmark(bookmark("new_1", "old_1_c9", 9))   // gone: nearest before is 5
+        db.bookmarkDao().insertBookmark(bookmark("new_1", "old_1_c1", 1))   // gone, nothing before: first, 2
+        db.bookmarkDao().insertBookmark(bookmark("new_1", "new_1_c5", 5))   // fine: untouched
+        db.bookmarkDao().insertBookmark(bookmark("gone_1", "gone_1_c3", 3)) // book has no chapters: untouched
+
+        AppDatabase.reattachStrandedBookmarks(db.openHelper.writableDatabase)
+
+        val all = (db.bookmarkDao().getBookmarksForNovelOnce("new_1") +
+            db.bookmarkDao().getBookmarksForNovelOnce("gone_1")).associateBy { it.textSnippet }
+        fun check(key: String, chapterId: String, number: Int, paragraph: Int) {
+            val b = all.getValue(key)
+            assertEquals(key, chapterId, b.chapterId)
+            assertEquals(key, number, b.chapterNumber)
+            assertEquals(key, paragraph, b.paragraphIndex)
+        }
+        check("new_1/old_1_c4", "new_1_c2", 2, 0)
+        check("new_1/old_1_c9", "new_1_c5", 5, 0)
+        check("new_1/old_1_c1", "new_1_c2", 2, 0)
+        check("new_1/new_1_c5", "new_1_c5", 5, 9)
+        check("gone_1/gone_1_c3", "gone_1_c3", 3, 9)
+        assertEquals("https://x/new_1/5", all.getValue("new_1/old_1_c9").chapterUrl)
+        assertEquals("Chapter 5", all.getValue("new_1/old_1_c9").chapterTitle)
     }
 
     @Test

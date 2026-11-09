@@ -63,7 +63,7 @@ fun ReaderScreen(
     // Full-text search deep-jump; -1 = normal progress restore.
     targetParagraph: Int = -1,
     onBackClick: () -> Unit,
-    onOpenCodex: (() -> Unit)? = null,
+    onOpenCodex: ((name: String) -> Unit)? = null,
     viewModel: ReaderViewModel = viewModel(
         factory = ReaderViewModel.provideFactory(
             novelId, chapterId, chapterUrl, novelUrl = novelUrl, repository,
@@ -116,6 +116,7 @@ fun ReaderScreen(
     // Dictionary state
     val dictionaryState by viewModel.dictionaryState.collectAsState()
     val codexHit by viewModel.codexHit.collectAsState()
+    val wordSaved by viewModel.wordSaved.collectAsState()
     val bookLookOn by viewModel.bookLookOn.collectAsState()
 
     // Reading time estimate
@@ -310,6 +311,8 @@ fun ReaderScreen(
                 onDismissDictionary = { viewModel.dismissDictionary() },
                 codexHit = codexHit,
                 onOpenCodex = onOpenCodex,
+                wordSaved = wordSaved,
+                onToggleSaveWord = viewModel::toggleSaveWord,
                 bookLookOn = if (isInLibrary) bookLookOn else null,
                 onBookLookChange = { viewModel.setBookLookOn(it) },
                 estimatedMinutesLeft = estimatedMinutesLeft,
@@ -349,6 +352,19 @@ fun ReaderScreen(
                     }
                 },
                 onDeleteReplacement = { id -> scope.launch { textReplacements?.delete(id) } }
+            )
+        }
+    }
+
+    // "Previously in…" once the chapter is up, after a week or more away.
+    val recap by viewModel.recap.collectAsState()
+    val loaded = uiState as? ReaderUiState.Success
+    recap?.let { r ->
+        if (loaded != null) {
+            com.abhinavxt.novelforge.ui.components.RecapSheet(
+                recap = r,
+                title = loaded.chapter.novelTitle,
+                onDismiss = viewModel::dismissRecap
             )
         }
     }

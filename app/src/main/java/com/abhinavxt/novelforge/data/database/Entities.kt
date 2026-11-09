@@ -84,7 +84,10 @@ data class NovelEntity(
     val readingStatus: String? = null,
 
     /** This book's own font, size and theme as JSON (see BookLook), or null to follow the app. NEW in v24. */
-    val readerSettingsJson: String? = null
+    val readerSettingsJson: String? = null,
+
+    /** The book's language (BCP 47), for hyphenation; null = the device's. From dc:language or set by hand. NEW in v25. */
+    val language: String? = null
 )
 
 /** Where a book sits on the reader's own shelf. Separate from the source's Ongoing/Completed. */
@@ -438,5 +441,30 @@ data class TextReplacementEntity(
     val novelId: String? = null,
     val find: String,
     val replace: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+// ============ Vocabulary ============
+
+/**
+ * A word saved from the Define sheet, with a sentence from the book that
+ * uses it. [box] and [dueAt] schedule its review (see Vocabulary.next).
+ * [novelTitle] is kept so the card still says where it came from after the
+ * book leaves the library. NEW in v25.
+ */
+@Entity(tableName = "vocabulary", indices = [Index(value = ["key"], unique = true)])
+data class VocabularyEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val word: String,
+    /** [word] lowercased: one card per word. */
+    val key: String,
+    val definition: String,
+    val sentence: String? = null,
+    val novelId: String? = null,
+    val novelTitle: String? = null,
+    val chapterNumber: Int? = null,
+    val box: Int = 0,
+    val dueAt: Long = System.currentTimeMillis(),
     val createdAt: Long = System.currentTimeMillis()
 )

@@ -21,6 +21,7 @@ import com.abhinavxt.novelforge.data.model.ReaderSettings
 import com.abhinavxt.novelforge.data.model.ReaderTheme
 import com.abhinavxt.novelforge.data.model.ReaderFont
 import com.abhinavxt.novelforge.data.model.BookLook
+import com.abhinavxt.novelforge.data.Vocabulary
 import com.abhinavxt.novelforge.data.database.CodexNameEntity
 import com.abhinavxt.novelforge.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -242,12 +243,44 @@ class ReaderViewModel(
                 .maxByOrNull { it.occurrences }
     }
 
+    // ============ VOCABULARY ============
+
+    /** Whether the word in the Define sheet is in the vocabulary list. */
+    private val _wordSaved = MutableStateFlow(false)
+    val wordSaved: StateFlow<Boolean> = _wordSaved.asStateFlow()
+
+    /** Saves the defined word with a sentence from this chapter that uses it; again forgets it. */
+    fun toggleSaveWord() {
+        val result = (_dictionaryState.value as? DictionaryState.Success)?.result ?: return
+        val state = _uiState.value as? ReaderUiState.Success
+        val saving = !_wordSaved.value
+        _wordSaved.value = saving
+        viewModelScope.launch {
+            if (!saving) {
+                repository.forgetWord(result.word)
+                return@launch
+            }
+            val number = if (activeChapterNumber > 0) activeChapterNumber else state?.chapter?.chapterNumber
+            val paragraphs = _stitchedChapters.value.firstOrNull { it.nav.number == number }?.paragraphs
+                ?: state?.chapter?.paragraphs.orEmpty()
+            repository.saveWord(
+                word = result.word,
+                definition = Vocabulary.definitionText(result.definitions.map { it.definition }),
+                sentence = Vocabulary.sentenceWith(result.word, paragraphs),
+                novelId = novelId,
+                novelTitle = state?.chapter?.novelTitle,
+                chapterNumber = number
+            )
+        }
+    }
+
     fun lookupWord(word: String) {
         val cleanWord = word.trim()
         if (cleanWord.isBlank()) return
 
         _dictionaryState.value = DictionaryState.Loading
         _codexHit.value = null
+        _wordSaved.value = false
         viewModelScope.launch {
             _codexHit.value = runCatching { findCodexEntry(cleanWord) }.getOrNull()
         }
@@ -257,6 +290,8 @@ class ReaderViewModel(
         viewModelScope.launch {
             val result = offlineDictionaries?.lookup(cleanWord)
                 ?: DictionaryRepository.lookup(cleanWord, languageCode)
+            // Saving uses the dictionary's headword, so check that, not the raw selection.
+            _wordSaved.value = result != null && repository.isWordSaved(result.word)
             _dictionaryState.value = if (result != null) {
                 DictionaryState.Success(result)
             } else {
@@ -270,7 +305,25 @@ class ReaderViewModel(
         _codexHit.value = null
     }
 
+    // ============ RECAP ============
+
+    /** "Previously in…" after a week or more away; null once dismissed or when there's nothing to say. */
+    private val _recap = MutableStateFlow<com.abhinavxt.novelforge.data.RecapData?>(null)
+    val recap: StateFlow<com.abhinavxt.novelforge.data.RecapData?> = _recap.asStateFlow()
+
+    fun dismissRecap() {
+        _recap.value = null
+    }
+
     init {
+        // Launched first so it reads the progress as it was, before this visit saves over it.
+        // Not for a jump to a particular spot (search, codex, highlight): the reader came for that.
+        if (targetParagraph < 0) {
+            viewModelScope.launch {
+                val progress = repository.getReadingProgress(novelId) ?: return@launch
+                _recap.value = runCatching { repository.buildRecap(progress) }.getOrNull()
+            }
+        }
         loadChapterList()
     }
 
@@ -748,7 +801,7 @@ class ReaderViewModel(
     private suspend fun withBookLook(app: ReaderSettings): ReaderSettings {
         val look = repository.getBookLook(novelId)
         _bookLookOn.value = look != null
-        return look?.applyTo(app) ?: app
+        return (look?.applyTo(app) ?: app).copy(bookLanguage = repository.getBookLanguage(novelId))
     }
 
     /** On: the book keeps the look on screen now. Off: it goes back to the app's. */
@@ -760,8 +813,9 @@ class ReaderViewModel(
                 repository.setBookLook(novelId, BookLook.of(currentState.settings))
             } else {
                 repository.setBookLook(novelId, null)
-                val app = repository.getReaderSettings()
-                (_uiState.value as? ReaderUiState.Success)?.let { _uiState.value = it.copy(settings = app) }
+                (_uiState.value as? ReaderUiState.Success)?.let {
+                    _uiState.value = it.copy(settings = repository.getReaderSettings().copy(bookLanguage = it.settings.bookLanguage))
+                }
             }
         }
     }
@@ -771,6 +825,9 @@ class ReaderViewModel(
         if (currentState is ReaderUiState.Success) {
             _uiState.value = currentState.copy(settings = newSettings)
             viewModelScope.launch {
+                if (newSettings.bookLanguage != currentState.settings.bookLanguage) {
+                    repository.setBookLanguage(novelId, newSettings.bookLanguage)
+                }
                 if (_bookLookOn.value) {
                     repository.setBookLook(novelId, BookLook.of(newSettings))
                     // Behaviour (mode, tap zones, ...) stays app-wide; the app's own look is left as it was.

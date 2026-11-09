@@ -144,6 +144,15 @@ fun HomeScreen(
             )
         }
 
+        val incognito by (themePreferences?.incognito ?: kotlinx.coroutines.flow.MutableStateFlow(false)).collectAsState()
+        if (incognito) {
+            Text(
+                text = "Incognito · reading isn't being recorded",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+            )
+        }
         val goalMinutes by (themePreferences?.dailyGoalMinutes ?: kotlinx.coroutines.flow.MutableStateFlow(0)).collectAsState()
         if (goalMinutes > 0) {
             DailyGoalBar(
