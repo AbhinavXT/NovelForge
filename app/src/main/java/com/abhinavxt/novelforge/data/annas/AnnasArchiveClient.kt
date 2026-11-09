@@ -4,8 +4,8 @@ import android.content.Context
 import android.webkit.CookieManager
 import com.abhinavxt.novelforge.data.UserFacingException
 import com.abhinavxt.novelforge.data.source.SourceHttp
-import com.abhinavxt.novelforge.data.source.nf.USER_AGENT
-import com.abhinavxt.novelforge.data.source.nf.WebViewResolver
+import com.abhinavxt.novelforge.data.source.net.USER_AGENT
+import com.abhinavxt.novelforge.data.source.net.WebViewSupport
 import com.abhinavxt.novelforge.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -278,7 +278,7 @@ class AnnasArchiveClient(
      * out to the browser that earned them.
      */
     private fun userAgent(): String =
-        runCatching { WebViewResolver.getWebViewUserAgent() }.getOrNull() ?: USER_AGENT
+        WebViewSupport.userAgent ?: USER_AGENT
 
     // ── Download ────────────────────────────────────────────────────────
 

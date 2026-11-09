@@ -5,16 +5,23 @@ attribution record; it does not replace the individual licenses.
 
 ---
 
-## QuickNovel — the reason this project is GPL-3.0
+## Source plugins
 
-The source layer is derived from
-[QuickNovel](https://github.com/LagradOst/QuickNovel) by LagradOst, licensed
-**GPL-3.0**. NovelForge's sources were Kotlin ports of QuickNovel providers
-(plus original sources that used QuickNovel's selectors); since 1.9.0 they are
-JavaScript plugins ported from that code.
+The plugins bundled in the APK (`app/src/main/assets/plugins/`: Royal Road,
+Primordial Translation, WTR-Lab, WuxiaClick) are NovelForge's own code. The
+WTR-Lab plugin's encrypted-chapter handling follows the approach of
+[LNReader](https://github.com/LNReader/lnreader-plugins)'s WTR-Lab plugin
+(MIT).
 
-| Component                                                      | Relationship                                            |
-| -------------------------------------------------------------- | ------------------------------------------------------- |
+Every other source plugin lives only in
+[NovelForge-plugins](https://github.com/AbhinavXT/NovelForge-plugins), is
+installed separately by the user, and carries its own license and notices
+there.
+
+Releases up to 2.7.x bundled plugins and network helpers derived from
+third-party GPL-3.0 code; their notices are in those releases' tags.
+
+-------------------------------------------------------------- | ------------------------------------------------------- |
 | `app/src/main/assets/plugins/*.js`                             | Plugins ported from QuickNovel providers (see below)    |
 | `data/source/nf/` — `NfCloudflare`, `NfHttp`, `NfShared`       | QuickNovel's Cloudflare solver and HTML clean-up, ported |
 
@@ -122,9 +129,6 @@ Practical checklist, not a restatement of the license:
 - **Source must accompany binaries.** Publishing the APK on GitHub Releases
   from a public repo satisfies this; the tag the APK was built from must stay
   available.
-- **Modified files should say so.** §5(a) asks for prominent notices on changed
-  files carrying a date. The ported providers already carry comments naming
-  QuickNovel as the origin — worth making sure each one says it was modified.
 - **The About screen must show the license and point to the source.** §5(d):
   an interactive program that displays legal notices has to keep displaying
   them. The Settings → About entry is how this is satisfied.

@@ -29,7 +29,6 @@ import com.abhinavxt.novelforge.data.model.NovelPreview
 import com.abhinavxt.novelforge.data.source.BrowseFilters
 import com.abhinavxt.novelforge.data.source.BrowseSource
 import com.abhinavxt.novelforge.data.source.FilterOption
-import com.abhinavxt.novelforge.data.source.nf.stripHtml
 import com.abhinavxt.novelforge.util.Logger
 import com.abhinavxt.novelforge.util.ReaderText
 import kotlinx.coroutines.CancellationException
@@ -108,7 +107,7 @@ class JsPluginSource(
         BrowseFilters(categories = options("categories"), orderBys = options("orderBys"), tags = options("tags"))
     }
 
-    /** `rateLimitMs`: wait this long before each call, one call at a time (QuickNovel's rateLimitTime). */
+    /** `rateLimitMs`: wait this long before each call, one call at a time. */
     private val rateLimitMutex = Mutex()
 
     /**
@@ -248,11 +247,9 @@ class JsPluginSource(
     override suspend fun getChapterContent(chapterUrl: String): String? = guarded("parseChapter", null) {
         val html = call("parseChapter", chapterUrl) as? String ?: return@guarded null
         runInterruptible(Dispatchers.Default) {
-            // Same clean-up the QuickNovel adapter applied: author-note
-            // containers and "Translator: … Editor: …" credit lines.
             // `stripCredits: false` keeps "Translator: … Editor: …" lines and author notes.
             val stripCredits = runtime().capabilities.stripCredits
-            ReaderText.fromHtml(if (stripCredits) stripHtml(html, stripAuthorNotes = true) else html)
+            ReaderText.fromHtml(if (stripCredits) CreditStripper.strip(html) else html)
         }.ifBlank { null }
     }
 

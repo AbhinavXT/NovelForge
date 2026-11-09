@@ -26,6 +26,10 @@ package com.abhinavxt.novelforge.data.source.plugin
 // return explicit novel/chapter ids in the old format (see JsPluginSource).
 // Only ids listed in LEGACY_SOURCES are accepted, and never from a
 // downloaded repository.
+//
+// Most first-party plugins are no longer in the APK and come only from the
+// official repository (OFFICIAL_ONLY). They keep their old source ids when
+// installed from there, so libraries and restored backups still resolve.
 
 import android.content.Context
 import com.abhinavxt.novelforge.data.source.SourceHttp
@@ -33,7 +37,8 @@ import com.abhinavxt.novelforge.data.source.SourceManager
 import com.abhinavxt.novelforge.util.Logger
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import com.abhinavxt.novelforge.data.source.nf.CloudflareKiller
+import com.abhinavxt.novelforge.data.source.net.CloudflareInterceptor
+import com.abhinavxt.novelforge.data.source.net.USER_AGENT
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -82,8 +87,6 @@ data class RepoPlugin(
     val iconUrl: String?,
     val repo: String,
     val legacySourceId: String? = null,
-    /** Bundled only: the site is gone; installed only for users upgrading from the Kotlin sources. */
-    val retired: Boolean = false,
 )
 
 object PluginManager {
@@ -111,8 +114,8 @@ object PluginManager {
     /**
      * Built-in source ids a bundled plugin may take over, mapped to the
      * prefix of the novel ids that source wrote ("rr_12345" for royalroad).
-     * QuickNovel-adapter sources already used "<sourceId>_<base64url>", which
-     * is the plugin default, so their prefix is the source id itself.
+     * The "q…" sources already used "<sourceId>_<base64url>", which is the
+     * plugin default, so their prefix is the source id itself.
      */
     val LEGACY_SOURCES: Map<String, String> = mapOf(
         "royalroad" to "rr",
@@ -127,6 +130,18 @@ object PluginManager {
         "qanv", "qfmtl", "qgray", "qhir", "qlnt", "qlnw", "qlno", "qmtln", "qnbn",
         "qnful", "qnlig", "qrnb", "qrfn", "qrhv", "qsonic", "qwatt", "qwbox", "qwclick",
     ).associateWith { it }
+
+    /**
+     * First-party plugins that used to ship in the APK and are now installed
+     * from the official repository only, with the source id each keeps.
+     */
+    val OFFICIAL_ONLY: Map<String, String> = mapOf(
+        "readnovelfull" to "rnf", "freewebnovel" to "fwn", "libread" to "lr", "novelfull-net" to "nfn",
+        "pawread" to "pr", "fanmtl" to "qfmtl", "hiraethtranslation" to "qhir", "lightnoveltranslations" to "qlnt",
+        "lnori" to "qlno", "mtlnovel" to "qmtln", "nobadnovel" to "qnbn", "novelfull-com" to "qnful",
+        "novellight" to "qnlig", "ranobes" to "qrnb", "readfromnet" to "qrfn", "readhive" to "qrhv",
+        "sonicmtl" to "qsonic", "wattpad" to "qwatt", "wuxiabox" to "qwbox",
+    )
 
     /**
      * Legacy source ids that SourceManager.constructNovelUrl() parses as
@@ -169,13 +184,10 @@ object PluginManager {
         if (appContextField != null) return
         appContextField = context.applicationContext
         _repos.value = loadRepos()
-        // No installed.json on an app that was already installed before:
-        // an upgrade from a version with built-in Kotlin sources.
-        val upgradingFromBuiltIns = !installedFile.exists() && wasUpdatedInPlace(context)
         _installed.value = readInstalled()
         bundled = readBundledIndex()
-        syncBundled(includeRetired = upgradingFromBuiltIns)
-        _available.value = offerable(bundled)
+        syncBundled()
+        _available.value = bundled
         val sources = _installed.value.map { register(it) }
         // Compile scripts in the background so the first search, or the
         // Browse screen reading a plugin's filters, rarely waits for it.
@@ -237,14 +249,13 @@ object PluginManager {
         // First-party ids may only come from the bundle or the official
         // repository: anything else listing them would replace a built-in
         // source (and inherit its library ids).
-        val firstParty = bundled.map { it.id }.toSet()
+        val firstParty = firstPartyIds()
         val trusted = all.filter { it.id !in firstParty || it.repo == OFFICIAL_REPO }
         // Bundled entries first so they win ties; otherwise the highest version wins.
         _available.value = (bundled + trusted)
             .groupBy { it.id }
             .map { (_, entries) -> entries.reduce { best, e -> if (compareVersions(e.version, best.version) > 0) e else best } }
             .sortedBy { it.name.lowercase() }
-            .let { offerable(it) }
         errors
     }
 
@@ -329,7 +340,7 @@ object PluginManager {
         if (expectedId != null && info.id != expectedId) {
             throw PluginException("Script declares id '${info.id}', repository says '$expectedId'")
         }
-        if (!firstPartyOrigin && bundled.any { it.id == info.id }) {
+        if (!firstPartyOrigin && info.id in firstPartyIds()) {
             throw PluginException("'${info.id}' is the id of a built-in source; a plugin from elsewhere can't replace it")
         }
         if (sourceIdFor(info.id) == "js-") throw PluginException("Plugin id '${info.id}' has no letters or digits")
@@ -382,22 +393,17 @@ object PluginManager {
         }
     }
 
-    /** What "Available" offers: everything except retired bundled plugins. */
-    private fun offerable(entries: List<RepoPlugin>) = entries.filter { !it.retired }
-
-    private fun wasUpdatedInPlace(context: Context): Boolean = runCatching {
-        val info = context.packageManager.getPackageInfo(context.packageName, 0)
-        info.lastUpdateTime > info.firstInstallTime
-    }.getOrDefault(false)
+    private fun firstPartyIds(): Set<String> = bundled.map { it.id }.toSet() + OFFICIAL_ONLY.keys
 
     private fun legacySourceIdFor(pluginId: String): String? =
         bundled.find { it.id == pluginId }?.legacySourceId
             ?: _installed.value.find { it.id == pluginId }?.legacySourceId
+            ?: OFFICIAL_ONLY[pluginId]
 
     /**
      * Keeps NovelForge's own plugins current between app releases: at most
      * every 12 hours, re-reads the repositories and installs any newer
-     * version of a bundled plugin that the official repository offers.
+     * version of a first-party plugin that the official repository offers.
      * Third-party plugins are never updated without the user.
      */
     private suspend fun autoUpdateFirstParty() {
@@ -409,7 +415,7 @@ object PluginManager {
         // Offline, or the repository is down: try again on the next start.
         if (refreshRepos().any { it.startsWith(OFFICIAL_REPO) }) return
         prefs().edit().putLong(PREF_LAST_AUTO_UPDATE, now).apply()
-        val firstParty = bundled.map { it.id }.toSet()
+        val firstParty = firstPartyIds()
         for ((id, remote) in updatesAvailable()) {
             if (id !in firstParty || remote.repo != OFFICIAL_REPO) continue
             install(remote)
@@ -443,7 +449,6 @@ object PluginManager {
                 iconUrl = s("iconUrl"),
                 repo = BUNDLED,
                 legacySourceId = legacy,
-                retired = e["retired"] == true,
             )
         }
     } catch (e: Exception) {
@@ -457,17 +462,13 @@ object PluginManager {
      * instead of evaluating each script at startup; BundledPluginsTest checks
      * that the two agree.
      */
-    private fun syncBundled(includeRetired: Boolean) {
+    private fun syncBundled() {
         val declined = declinedIds()
         var changed = false
         for (entry in bundled) {
             val current = _installed.value.find { it.id == entry.id }
-            val wanted = when {
-                // Retired: only for users who had the Kotlin source, so their
-                // novels keep a source.
-                current == null -> entry.id !in declined && (!entry.retired || includeRetired)
-                else -> compareVersions(entry.version, current.version) > 0
-            }
+            val wanted = if (current == null) entry.id !in declined
+                else compareVersions(entry.version, current.version) > 0
             if (!wanted) continue
             try {
                 val plugin = InstalledPlugin(
@@ -569,8 +570,7 @@ object PluginManager {
     }
 }
 
-internal const val DEFAULT_USER_AGENT =
-    "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
+internal const val DEFAULT_USER_AGENT = USER_AGENT
 
 private fun readLimited(body: okhttp3.ResponseBody, limit: Long): String {
     val source = body.source()
@@ -580,14 +580,13 @@ private fun readLimited(body: okhttp3.ResponseBody, limit: Long): String {
 
 /**
  * fetch() for plugins, on the shared source client (retries, timeouts,
- * pooling) plus the Cloudflare solver the QuickNovel sources used: when a
- * response is a Cloudflare challenge, a hidden WebView solves it and the
- * request is replayed with the clearance cookies.
+ * pooling) plus CloudflareInterceptor: when a response is a Cloudflare
+ * challenge, a hidden WebView solves it and the request is replayed.
  */
 private class OkHttpPluginHttp : PluginHttp {
 
     private val client by lazy {
-        SourceHttp.client.newBuilder().addInterceptor(CloudflareKiller()).build()
+        SourceHttp.client.newBuilder().addInterceptor(CloudflareInterceptor()).build()
     }
 
     override fun execute(request: PluginRequest): PluginResponse {

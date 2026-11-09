@@ -23,7 +23,7 @@ enum class HealthStatus {
 
     /**
      * Site is alive but behind an active Cloudflare challenge (403/503 with
-     * cf markers). Sources using the NfCloudflare layer may still work, so
+     * cf markers). Plugin requests solve the challenge in a WebView, so
      * this is "degraded", not dead.
      */
     CLOUDFLARE,

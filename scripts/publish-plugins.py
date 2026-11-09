@@ -11,7 +11,8 @@ repository is not allowed to set.
 It refuses to publish a plugin whose version is lower than the one already
 in the repository, or whose script changed without a version bump, since
 installed copies only update when the version goes up. Plugins in the
-repository that are no longer bundled are removed.
+repository that aren't bundled (most of them: they are maintained only
+there) are left as they are.
 
 Review the result with `git diff` in the repository, then commit and push.
 """
@@ -34,10 +35,7 @@ def main():
     if not os.path.isdir(os.path.join(repo, ".git")):
         sys.exit(f"{repo} is not a git checkout")
 
-    # Retired plugins (sites that are gone) stay in the app only for users
-    # upgrading from the built-in sources; they are not offered publicly.
-    bundled = [e for e in json.load(open(os.path.join(ASSETS, "index.json"), encoding="utf-8"))
-               if not e.get("retired")]
+    bundled = json.load(open(os.path.join(ASSETS, "index.json"), encoding="utf-8"))
     repo_index_path = os.path.join(repo, "index.json")
     existing = {}
     if os.path.exists(repo_index_path):
@@ -57,29 +55,26 @@ def main():
             elif entry["version"] == old["version"] and os.path.exists(dest):
                 if open(src, "rb").read() != open(dest, "rb").read():
                     problems.append(f"{entry['id']}: script changed but version is still {entry['version']}")
-        published = {k: v for k, v in entry.items() if k not in ("sourceId", "retired")}
+        published = {k: v for k, v in entry.items() if k != "sourceId"}
         published["url"] = dest_rel
         out.append((src, dest, published, old))
 
     if problems:
         sys.exit("Not publishing:\n  " + "\n  ".join(problems))
 
-    keep = set()
     for src, dest, published, old in out:
         shutil.copyfile(src, dest)
-        keep.add(os.path.basename(dest))
         if not old:
             print(f"added    {published['id']} {published['version']}")
         elif old["version"] != published["version"]:
             print(f"updated  {published['id']} {old['version']} -> {published['version']}")
-    for name in os.listdir(os.path.join(repo, "plugins")):
-        if name.endswith(".js") and name not in keep:
-            os.remove(os.path.join(repo, "plugins", name))
-            print(f"removed  {name}")
+    # Existing order kept, bundled entries replaced in place, new ones at the end.
+    fresh = {p["id"]: p for _, _, p, _ in out}
+    index = [fresh.pop(i, e) for i, e in existing.items()] + list(fresh.values())
     with open(repo_index_path, "w", encoding="utf-8") as f:
-        json.dump([p for _, _, p, _ in out], f, indent=2, ensure_ascii=False)
+        json.dump(index, f, indent=2, ensure_ascii=False)
         f.write("\n")
-    print(f"wrote {repo_index_path} ({len(out)} plugins)")
+    print(f"wrote {repo_index_path} ({len(index)} plugins)")
 
 
 if __name__ == "__main__":

@@ -183,9 +183,8 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
         // even in debug builds.
         Logger.init(this)
 
-        // Give the QuickNovel-ported source layer an application context
-        // (needed by the Cloudflare WebView resolver).
-        com.abhinavxt.novelforge.data.source.nf.NfBridge.init(this)
+        // The Cloudflare solver and the WebView User-Agent need an application context.
+        com.abhinavxt.novelforge.data.source.net.WebViewSupport.init(this)
 
         // Register installed JS source plugins. Reads one small JSON file;
         // the scripts themselves compile on first use.

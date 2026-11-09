@@ -1235,7 +1235,6 @@ fun SettingsScreen(
                                 "It is free software, and you are welcome to " +
                                 "redistribute it under the terms of the GNU " +
                                 "General Public License v3 or later.\n\n" +
-                                "Includes code derived from QuickNovel (GPL-3.0). " +
                                 "Tap to read the full license.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant

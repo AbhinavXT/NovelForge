@@ -99,7 +99,7 @@ added if you don't set one, and requests are retried on 5xx and network
 errors (GET only). Cloudflare challenges are solved automatically in a
 hidden WebView, and the request is replayed with the clearance cookies.
 
-Chapter HTML gets the same clean-up as the QuickNovel sources: author-note
+Chapter HTML is cleaned up before it reaches the reader: author-note
 containers (`div.qnauthornotecontainer`) and "Translator: … Editor: …"
 credit lines are removed, unless the plugin exports `stripCredits: false`.
 
@@ -124,14 +124,15 @@ requests to any site, so only add repositories you trust.
 NovelForge lists its official repository by default:
 `https://raw.githubusercontent.com/AbhinavXT/NovelForge-plugins/main/index.json`
 ([github.com/AbhinavXT/NovelForge-plugins](https://github.com/AbhinavXT/NovelForge-plugins)).
-The app's own (bundled) plugins update themselves from it, at most every 12
-hours and only to a higher version. Plugins from other repositories are
+The app's own plugins (bundled or not) update themselves from it, at most
+every 12 hours and only to a higher version. Plugins from other repositories are
 only updated when the user taps **Update**. Removing the official
 repository turns the automatic updates off.
 
 The bundled plugins are published there with
 `python3 scripts/publish-plugins.py <checkout of NovelForge-plugins>`,
-which refuses to lower a version or to change a script without bumping it.
+which refuses to lower a version or to change a script without bumping it,
+and leaves the repository's other plugins alone.
 
 A repository is any URL that serves a JSON array (the same fields as
 LNReader's `plugins.json`):
@@ -174,21 +175,19 @@ ignored and the default id is used. Downloaded repositories can't set
 `BundledPluginsTest` checks that each bundled script loads and matches its
 index entry.
 
-All of NovelForge's own sources are bundled plugins: Royal Road,
-ReadNovelFull, FreeWebNovel, LibRead, NovelFull (.net and .com), PawRead,
-Primordial Translation, WTR-Lab, FanMTL, HiraethTranslation, Light Novel
-Translations, Inori, MtlNovel, NoBadNovel, Novel Light, Ranobes,
-ReadFrom.Net, ReadHive, SonicMTL, Wattpad, WuxiaBox and WuxiaClick. Their
+Bundled: Royal Road, Primordial Translation, WTR-Lab and WuxiaClick. Their
 scripts are the best reference for writing new ones.
 
-Retired sources (AllNovel, Graycity, LightNovelWorld: the sites are gone)
-are marked `"retired": true` in the bundled index. They are installed only
-for users upgrading from a version with built-in Kotlin sources, so novels
-from them keep their source; fresh installs don't get them, and they are
-never offered under "Available" or published to the repository.
+NovelForge's other first-party plugins (ReadNovelFull, FanMTL, Ranobes,
+Wattpad and the rest) are maintained only in the official repository. They
+are listed in `PluginManager.OFFICIAL_ONLY` with the source id each one had
+when it was bundled, and installing one from the official repository gives
+it that id again, so novels already in a library (or in a restored backup)
+resolve.
 
-The ids of bundled plugins are reserved: only the bundle and the official
-repository can install a plugin with one of them. A script installed from a
+The ids of first-party plugins (bundled or in `OFFICIAL_ONLY`) are
+reserved: only the bundle and the official repository can install a plugin
+with one of them. A script installed from a
 file or another repository with such an id is rejected, and entries in
 other repositories that use one are ignored. (To test a change to a
 built-in plugin, give your copy a different id.)
