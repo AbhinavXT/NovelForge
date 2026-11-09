@@ -552,7 +552,14 @@ class NovelRepository(
 
     // ============ SOURCE MIGRATION ============
 
-    data class MigrationResult(val newNovelId: String, val matchedChapters: Int, val movedBookmarks: Int, val movedHighlights: Int)
+    data class MigrationResult(
+        val newNovelId: String,
+        val matchedChapters: Int,
+        val movedBookmarks: Int,
+        val movedHighlights: Int,
+        /** Bookmarks whose chapter the new source lacks, moved to the top of the nearest one. */
+        val bookmarksToNearest: Int = 0
+    )
 
     /**
      * Moves a library book onto another source's copy of it ([target], with
@@ -573,6 +580,7 @@ class NovelRepository(
         val byNumber = target.chapters.associateBy { it.number }
         val matched = chapterDao.getChaptersForNovelOnce(oldId).count { it.number in byNumber }
         var bookmarksMoved = 0
+        var bookmarksToNearest = 0
         var highlightsMoved = 0
 
         database.withTransaction {
@@ -598,9 +606,20 @@ class NovelRepository(
             }
             for (b in bookmarkDao.getBookmarksForNovelOnce(oldId)) {
                 val c = byNumber[b.chapterNumber]
-                if (c != null) bookmarksMoved++
+                if (c != null) {
+                    bookmarksMoved++
+                    bookmarkDao.insertBookmarkReplace(b.copy(novelId = target.id, chapterId = c.id, chapterUrl = c.url))
+                    continue
+                }
+                // No counterpart: the nearest chapter, like your place, at its top (the paragraph was other text).
+                val near = closestChapter(target.chapters, b.chapterNumber)
+                if (near != null) bookmarksToNearest++
                 bookmarkDao.insertBookmarkReplace(
-                    b.copy(novelId = target.id, chapterId = c?.id ?: b.chapterId, chapterUrl = c?.url ?: b.chapterUrl)
+                    if (near == null) b.copy(novelId = target.id)
+                    else b.copy(
+                        novelId = target.id, chapterId = near.id, chapterUrl = near.url,
+                        chapterNumber = near.number, chapterTitle = near.title, paragraphIndex = 0
+                    )
                 )
             }
             for (h in highlightDao.getHighlightsForNovelOnce(oldId)) {
@@ -622,7 +641,7 @@ class NovelRepository(
         } catch (e: Exception) {
             Logger.e("NovelRepository", "widget hook (migrate) failed", e)
         }
-        return MigrationResult(target.id, matched, bookmarksMoved, highlightsMoved)
+        return MigrationResult(target.id, matched, bookmarksMoved, highlightsMoved, bookmarksToNearest)
     }
 
     // ============ EXTENSION FUNCTIONS FOR MAPPING ============

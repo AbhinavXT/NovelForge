@@ -424,11 +424,36 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        /** v25: the book's language, so hyphenation follows the book rather than the device. */
+        /**
+         * v25: the book's language, so hyphenation follows the book rather than the device.
+         * Also repairs bookmarks that 2.3.0's source migration left on chapters the new source lacks.
+         */
         internal val MIGRATION_24_25 = object : Migration(24, 25) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE novels ADD COLUMN language TEXT")
+                reattachStrandedBookmarks(db)
             }
+        }
+
+        /**
+         * Points each bookmark whose chapter is gone at the book's nearest chapter (same rule as
+         * closestChapter: the last one at or before its number, else the first), at its top, since
+         * the paragraph belonged to other text. Books with no chapter rows are left alone.
+         * SQLite evaluates every SET against the row as it was, so the subqueries see the old number.
+         */
+        internal fun reattachStrandedBookmarks(db: SupportSQLiteDatabase) {
+            val nearest = { column: String ->
+                "COALESCE(" +
+                    "(SELECT c.$column FROM chapters c WHERE c.novelId = bookmarks.novelId " +
+                    "AND c.number <= bookmarks.chapterNumber ORDER BY c.number DESC LIMIT 1), " +
+                    "(SELECT c.$column FROM chapters c WHERE c.novelId = bookmarks.novelId ORDER BY c.number LIMIT 1))"
+            }
+            db.execSQL(
+                "UPDATE bookmarks SET chapterId = ${nearest("id")}, chapterUrl = ${nearest("url")}, " +
+                    "chapterNumber = ${nearest("number")}, chapterTitle = ${nearest("title")}, paragraphIndex = 0 " +
+                    "WHERE NOT EXISTS (SELECT 1 FROM chapters c WHERE c.id = bookmarks.chapterId AND c.novelId = bookmarks.novelId) " +
+                    "AND EXISTS (SELECT 1 FROM chapters c WHERE c.novelId = bookmarks.novelId)"
+            )
         }
 
         /** The file name under the app's databases directory. */
