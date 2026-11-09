@@ -5,37 +5,22 @@ attribution record; it does not replace the individual licenses.
 
 ---
 
-## QuickNovel — the reason this project is GPL-3.0
+## Source plugins
 
-The source layer is derived from
-[QuickNovel](https://github.com/LagradOst/QuickNovel) by LagradOst, licensed
-**GPL-3.0**. NovelForge's sources were Kotlin ports of QuickNovel providers
-(plus original sources that used QuickNovel's selectors); since 1.9.0 they are
-JavaScript plugins ported from that code.
+The plugins bundled in the APK (`app/src/main/assets/plugins/`: Royal Road,
+Primordial Translation, WTR-Lab, WuxiaClick) are NovelForge's own code. The
+WTR-Lab plugin's encrypted-chapter handling follows the approach of
+[LNReader](https://github.com/LNReader/lnreader-plugins)'s WTR-Lab plugin
+(MIT).
 
-| Component                                                      | Relationship                                            |
-| -------------------------------------------------------------- | ------------------------------------------------------- |
-| `app/src/main/assets/plugins/*.js`                             | Plugins ported from QuickNovel providers (see below)    |
-| `data/source/nf/` — `NfCloudflare`, `NfHttp`, `NfShared`       | QuickNovel's Cloudflare solver and HTML clean-up, ported |
+Every other source plugin lives only in
+[NovelForge-plugins](https://github.com/AbhinavXT/NovelForge-plugins), is
+installed separately by the user, and carries its own license and notices
+there.
 
-Ported from QuickNovel providers: fanmtl, hiraethtranslation,
-lightnoveltranslations, lnori, mtlnovel, nobadnovel, novelfull-com,
-novellight, ranobes, readfromnet, readhive, sonicmtl, wattpad, wuxiabox
-(and wuxiaclick, since rewritten). freewebnovel, libread, novelfull,
-pawread and readnovelfull follow QuickNovel's selectors. The same plugins are
-published, under GPL-3.0, at
-[NovelForge-plugins](https://github.com/AbhinavXT/NovelForge-plugins).
-
-The WTR-Lab plugin's encrypted-chapter handling follows the approach of
-[LNReader](https://github.com/LNReader/lnreader-plugins)'s WTR-Lab plugin.
-
-GPL-3.0 is copyleft: a derivative must be distributed under GPL-3.0. NovelForge
-therefore is. **This project was previously labelled MIT, which was incorrect
-for any release containing the ported source layer.** Fixed as of the license
-change; releases prior to that carried the wrong LICENSE file.
-
-Thanks to LagradOst and the QuickNovel contributors — a large part of what
-makes NovelForge able to read anything at all came from their work.
+Releases up to 2.7.x bundled plugins and network helpers derived from
+third-party GPL-3.0 code and were licensed GPL-3.0; that still applies to
+them. From 2.8.0 the app contains none of that code and is MIT.
 
 ---
 
@@ -114,25 +99,11 @@ extends to it.
 
 ---
 
-## What GPL-3.0 requires of this project
+## What the licenses require of this project
 
-Practical checklist, not a restatement of the license:
-
-- **`LICENSE` contains the full GPL-3.0 text.** Not a summary, not a link.
-- **Source must accompany binaries.** Publishing the APK on GitHub Releases
-  from a public repo satisfies this; the tag the APK was built from must stay
-  available.
-- **Modified files should say so.** §5(a) asks for prominent notices on changed
-  files carrying a date. The ported providers already carry comments naming
-  QuickNovel as the origin — worth making sure each one says it was modified.
-- **The About screen must show the license and point to the source.** §5(d):
-  an interactive program that displays legal notices has to keep displaying
-  them. The Settings → About entry is how this is satisfied.
-- **No adding restrictions.** Release notes and store listings can't impose
-  extra terms on top of the GPL.
-- **Contributions are GPL-3.0.** Worth stating in the README so contributors
-  know what they're agreeing to.
-
-One thing GPL-3.0 does _not_ require: making the app free of charge, or
-accepting every contribution. It constrains distribution terms, not the
-project's direction.
+- **MIT:** keep the copyright and license notice (`LICENSE`) with copies of
+  the source and the APK. The About screen links to it.
+- **Apache-2.0 libraries:** keep their notices; see above.
+- **ML Kit and Google Play services:** proprietary Google libraries under the
+  Android SDK and ML Kit terms. Fine in an MIT app; forks that redistribute
+  the APK take on the same terms.

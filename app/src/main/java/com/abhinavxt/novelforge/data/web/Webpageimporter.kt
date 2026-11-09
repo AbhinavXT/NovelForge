@@ -5,7 +5,7 @@ import com.abhinavxt.novelforge.data.database.AppDatabase
 import com.abhinavxt.novelforge.data.database.ChapterEntity
 import com.abhinavxt.novelforge.data.database.NovelEntity
 import com.abhinavxt.novelforge.data.source.SourceHttp
-import com.abhinavxt.novelforge.data.source.nf.USER_AGENT
+import com.abhinavxt.novelforge.data.source.net.USER_AGENT
 import com.abhinavxt.novelforge.util.Logger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers

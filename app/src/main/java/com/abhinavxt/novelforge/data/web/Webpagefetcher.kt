@@ -1,7 +1,7 @@
 package com.abhinavxt.novelforge.data.web
 
 import com.abhinavxt.novelforge.data.source.SourceHttp
-import com.abhinavxt.novelforge.data.source.nf.USER_AGENT
+import com.abhinavxt.novelforge.data.source.net.USER_AGENT
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext

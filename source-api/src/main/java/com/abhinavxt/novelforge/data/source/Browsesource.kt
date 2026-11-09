@@ -13,9 +13,8 @@ data class FilterOption(
 )
 
 /**
- * The filter surface a source offers for catalog browsing. Mirrors the
- * QuickNovel MainAPI trio (mainCategories / orderBys / tags); any list may be
- * empty, in which case the UI hides that filter.
+ * The filter surface a source offers for catalog browsing: categories,
+ * sort orders and tags. Any list may be empty, in which case the UI hides that filter.
  */
 data class BrowseFilters(
     val categories: List<FilterOption> = emptyList(),
@@ -44,7 +43,7 @@ interface BrowseSource : Source {
 
     /**
      * Load one catalog page. Any filter value may be null = provider default.
-     * Pages are 1-based (QuickNovel convention). An empty list means the
+     * Pages are 1-based. An empty list means the
      * catalog is exhausted.
      */
     suspend fun browse(
