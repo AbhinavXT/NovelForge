@@ -111,11 +111,11 @@ class ReadingStatsTracker(private val dao: ReadingStatDao) {
                     ReadingStatEvent(
                         novelId = session.novelId,
                         chapterId = session.chapterId,
-                        wordsRead = session.wordCount,
+                        wordsRead = creditedWords(session.wordCount, elapsed),
                         readingTimeMs = elapsed
                     )
                 )
-                Logger.d("StatsTracker", "Recorded: ${session.wordCount}w, ${elapsed / 1000}s for ${session.chapterId}")
+                Logger.d("StatsTracker", "Recorded: ${creditedWords(session.wordCount, elapsed)}w, ${elapsed / 1000}s for ${session.chapterId}")
                 onSessionRecorded?.invoke()
             } catch (e: Exception) {
                 Logger.e("StatsTracker", "Failed to record stat", e)
@@ -224,6 +224,17 @@ class ReadingStatsTracker(private val dao: ReadingStatDao) {
     companion object {
         /** Default reading speed before we have enough data. Average adult = ~250 WPM. */
         const val DEFAULT_WPM = 250
+
+        /** Faster than anyone reads; a session is never credited more than this allows. */
+        const val MAX_WPM = 1000
+
+        /**
+         * Words to credit for a session: the chapter's words, but no more than [MAX_WPM] allows in
+         * [elapsedMs]. A short visit to a long chapter used to count the whole chapter (30 seconds
+         * once logged 45,838 words), which inflated words read and the measured reading speed.
+         */
+        fun creditedWords(chapterWords: Int, elapsedMs: Long): Int =
+            minOf(chapterWords.toLong(), elapsedMs * MAX_WPM / 60_000).toInt().coerceAtLeast(0)
 
         /** Reading time needed before the user's own speed replaces [DEFAULT_WPM]. */
         private const val MIN_MINUTES_FOR_WPM = 10.0
