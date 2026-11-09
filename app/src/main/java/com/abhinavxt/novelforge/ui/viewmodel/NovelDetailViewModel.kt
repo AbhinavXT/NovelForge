@@ -510,6 +510,7 @@ class NovelDetailViewModel(
                     speakerId = if (ttsManager.sherpaEngine.isReady)
                         ttsManager.sherpaEngine.getCurrentSpeakerIdValue() else 0,
                     speed = 1.0f,
+                    cast = ttsManager.castFor(novelId),
                     onComplete = { success ->
                         if (success) refreshAudioExportStatus()
                     }
@@ -574,6 +575,7 @@ class NovelDetailViewModel(
                 novelTitle = novel.title,
                 voiceName = voiceName,
                 speakerId = speakerId,
+                cast = ttsManager.castFor(novelId),
                 alreadyExported = exported,
                 onEachComplete = { chapterId ->
                     _audioExportedChapters.value = _audioExportedChapters.value + chapterId
@@ -636,6 +638,7 @@ class NovelDetailViewModel(
                 novelTitle = novel.title,
                 voiceName = voiceName,
                 speakerId = speakerId,
+                cast = ttsManager.castFor(novelId),
                 alreadyExported = exported,
                 onEachComplete = { chapterId ->
                     _audioExportedChapters.value = _audioExportedChapters.value + chapterId
