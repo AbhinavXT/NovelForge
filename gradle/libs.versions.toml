@@ -27,6 +27,7 @@ coil = "2.5.0"
 gson = "2.13.2"
 anthropic = "3.2.0"
 mlkitTranslate = "17.0.3"
+mlkitLanguageId = "17.0.6"
 rhino = "1.7.15"
 
 # --- Test ---
@@ -76,6 +77,7 @@ coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coi
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 anthropic-java = { group = "com.anthropic", name = "anthropic-java", version.ref = "anthropic" }
 mlkit-translate = { group = "com.google.mlkit", name = "translate", version.ref = "mlkitTranslate" }
+mlkit-language-id = { group = "com.google.mlkit", name = "language-id", version.ref = "mlkitLanguageId" }
 rhino = { group = "org.mozilla", name = "rhino", version.ref = "rhino" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }

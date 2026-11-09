@@ -153,7 +153,10 @@ class TranslationManager(
         val config = settings?.config?.value ?: TranslationConfig()
         return when (config.engine) {
             TranslationEngine.ON_DEVICE -> {
-                val source = dao.getLanguage(novelId) ?: TranslationText.detectLanguage(sample) ?: config.targetLanguage
+                val source = dao.getLanguage(novelId)
+                    ?: TranslationText.detectLanguage(sample)
+                    ?: identifyLanguage(sample)
+                    ?: config.targetLanguage
                 OnDeviceTranslator(source, config.targetLanguage) to ENGINE_ON_DEVICE
             }
             TranslationEngine.AI -> {

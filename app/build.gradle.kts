@@ -175,6 +175,8 @@ dependencies {
     implementation(libs.anthropic.java)
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation(libs.mlkit.translate)
+    // Tells French from English etc. for on-device translation; offline, model bundled.
+    implementation(libs.mlkit.language.id)
     // JavaScript engine for source plugins (data/source/plugin). Pure Java,
     // so no extra native ABIs and the runtime is unit-testable on the JVM.
     implementation(libs.rhino)
