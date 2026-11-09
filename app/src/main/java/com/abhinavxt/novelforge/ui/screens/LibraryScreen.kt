@@ -359,6 +359,12 @@ fun LibraryScreen(
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) viewModel.importDocuments(uris)
     }
+    val onboardingAction by com.abhinavxt.novelforge.data.Onboarding.pendingAction.collectAsState()
+    LaunchedEffect(onboardingAction) {
+        if (com.abhinavxt.novelforge.data.Onboarding.pendingAction.compareAndSet(
+                com.abhinavxt.novelforge.data.Onboarding.Action.IMPORT_EPUB, null)
+        ) epubPickerLauncher.launch(DocumentFormat.PICKER_MIME_TYPES)
+    }
 
     // Library folder — the reader keeps books on disk for other apps and
     // wants them here without copying anything. Read permission only: this

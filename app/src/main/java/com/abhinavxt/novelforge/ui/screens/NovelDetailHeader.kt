@@ -326,42 +326,44 @@ internal fun NovelHeader(
                 val totalCount = novel.chapters.size
                 val allDownloaded = downloadedCount == totalCount && totalCount > 0
 
-                OutlinedButton(
-                    onClick = onDownloadAll,
-                    enabled = !isDownloading && !allDownloaded && novel.chapters.isNotEmpty(),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (isDownloading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Downloading ${downloadState?.downloadedChapters}/${downloadState?.totalChapters}")
-                    } else if (allDownloaded) {
-                        Icon(
-                            imageVector = Icons.Default.DownloadDone,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("All Downloaded")
-                    } else if (downloadedCount > 0) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Download Remaining (${totalCount - downloadedCount})")
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Download All ($totalCount)")
+                com.abhinavxt.novelforge.ui.components.TipAnchor(com.abhinavxt.novelforge.data.Tip.DOWNLOAD) {
+                    OutlinedButton(
+                        onClick = onDownloadAll,
+                        enabled = !isDownloading && !allDownloaded && novel.chapters.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (isDownloading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Downloading ${downloadState?.downloadedChapters}/${downloadState?.totalChapters}")
+                        } else if (allDownloaded) {
+                            Icon(
+                                imageVector = Icons.Default.DownloadDone,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("All Downloaded")
+                        } else if (downloadedCount > 0) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Download Remaining (${totalCount - downloadedCount})")
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Download All ($totalCount)")
+                        }
                     }
                 }
             }

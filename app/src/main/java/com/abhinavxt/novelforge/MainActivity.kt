@@ -47,6 +47,7 @@ import com.abhinavxt.novelforge.data.BackupManager
 import com.abhinavxt.novelforge.data.ChapterPrefetcher
 import com.abhinavxt.novelforge.data.DownloadManager
 import com.abhinavxt.novelforge.data.NovelRepository
+import com.abhinavxt.novelforge.data.Onboarding
 import com.abhinavxt.novelforge.data.PronunciationManager
 import com.abhinavxt.novelforge.data.ReadingStatsTracker
 import com.abhinavxt.novelforge.data.TTSManager
@@ -61,6 +62,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import com.abhinavxt.novelforge.ui.NavigationHost
 import com.abhinavxt.novelforge.ui.Screen
 import com.abhinavxt.novelforge.ui.components.UpdateAvailableDialog
+import com.abhinavxt.novelforge.ui.components.WelcomeScreen
 import com.abhinavxt.novelforge.ui.components.openUpdateUrlInBrowser
 import com.abhinavxt.novelforge.ui.theme.NovelReaderTheme
 import com.abhinavxt.novelforge.ui.theme.resolveDarkTheme
@@ -515,6 +517,17 @@ fun NovelReaderApp(
         }
     }
 
+    fun navigateToTab(route: String) = navController.navigate(route) {
+        // saveState/restoreState preserve each tab's back stack — search
+        // query, scroll position, results. Without them every tab switch
+        // recreated the destination from scratch.
+        popUpTo(navController.graph.findStartDestination().id) {
+            saveState = true
+        }
+        launchSingleTop = true
+        restoreState = true
+    }
+
     Scaffold(
         // The reader paints its own theme behind the system bars; padding
         // here would show the app background there (light strips on dark
@@ -538,20 +551,7 @@ fun NovelReaderApp(
                             },
                             label = { Text(screen.title) },
                             selected = isSelected,
-                            onClick = {
-                                navController.navigate(screen.route) {
-                                    // saveState/restoreState preserve each
-                                    // tab's back stack — search query, scroll
-                                    // position, results. Without them every
-                                    // tab switch recreated the destination
-                                    // from scratch.
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
+                            onClick = { navigateToTab(screen.route) }
                         )
                     }
                 }
@@ -581,4 +581,16 @@ fun NovelReaderApp(
             )
         }
     )
+
+    val welcomeDone by Onboarding.welcomeDone.collectAsState()
+    if (!welcomeDone) {
+        WelcomeScreen { action ->
+            Onboarding.finishWelcome(action)
+            when (action) {
+                Onboarding.Action.IMPORT_EPUB -> navigateToTab(Screen.Library.route)
+                Onboarding.Action.RESTORE_BACKUP -> navigateToTab(Screen.Settings.route)
+                null -> {}
+            }
+        }
+    }
 }

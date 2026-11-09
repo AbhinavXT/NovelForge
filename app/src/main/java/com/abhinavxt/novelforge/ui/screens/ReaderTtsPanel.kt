@@ -406,7 +406,9 @@ internal fun TTSControlsPanel(
             val casting = ttsManager.voiceCasting
             if (speakerCount > 1 && modelId != null && casting != null) {
                 Spacer(modifier = Modifier.height(8.dp))
-                TextButton(onClick = { showCharacterVoices = true }) { Text("Character voices") }
+                com.abhinavxt.novelforge.ui.components.TipAnchor(com.abhinavxt.novelforge.data.Tip.CHARACTER_VOICES) {
+                    TextButton(onClick = { showCharacterVoices = true }) { Text("Character voices") }
+                }
                 if (showCharacterVoices) {
                     com.abhinavxt.novelforge.ui.components.CharacterVoicesSheet(
                         novelId = novelId,
