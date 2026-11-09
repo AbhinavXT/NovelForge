@@ -21,6 +21,7 @@ import com.abhinavxt.novelforge.data.model.ReaderSettings
 import com.abhinavxt.novelforge.data.model.ReaderTheme
 import com.abhinavxt.novelforge.data.model.ReaderFont
 import com.abhinavxt.novelforge.data.model.BookLook
+import com.abhinavxt.novelforge.data.Vocabulary
 import com.abhinavxt.novelforge.data.database.CodexNameEntity
 import com.abhinavxt.novelforge.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -242,12 +243,44 @@ class ReaderViewModel(
                 .maxByOrNull { it.occurrences }
     }
 
+    // ============ VOCABULARY ============
+
+    /** Whether the word in the Define sheet is in the vocabulary list. */
+    private val _wordSaved = MutableStateFlow(false)
+    val wordSaved: StateFlow<Boolean> = _wordSaved.asStateFlow()
+
+    /** Saves the defined word with a sentence from this chapter that uses it; again forgets it. */
+    fun toggleSaveWord() {
+        val result = (_dictionaryState.value as? DictionaryState.Success)?.result ?: return
+        val state = _uiState.value as? ReaderUiState.Success
+        val saving = !_wordSaved.value
+        _wordSaved.value = saving
+        viewModelScope.launch {
+            if (!saving) {
+                repository.forgetWord(result.word)
+                return@launch
+            }
+            val number = if (activeChapterNumber > 0) activeChapterNumber else state?.chapter?.chapterNumber
+            val paragraphs = _stitchedChapters.value.firstOrNull { it.nav.number == number }?.paragraphs
+                ?: state?.chapter?.paragraphs.orEmpty()
+            repository.saveWord(
+                word = result.word,
+                definition = Vocabulary.definitionText(result.definitions.map { it.definition }),
+                sentence = Vocabulary.sentenceWith(result.word, paragraphs),
+                novelId = novelId,
+                novelTitle = state?.chapter?.novelTitle,
+                chapterNumber = number
+            )
+        }
+    }
+
     fun lookupWord(word: String) {
         val cleanWord = word.trim()
         if (cleanWord.isBlank()) return
 
         _dictionaryState.value = DictionaryState.Loading
         _codexHit.value = null
+        _wordSaved.value = false
         viewModelScope.launch {
             _codexHit.value = runCatching { findCodexEntry(cleanWord) }.getOrNull()
         }
@@ -257,6 +290,8 @@ class ReaderViewModel(
         viewModelScope.launch {
             val result = offlineDictionaries?.lookup(cleanWord)
                 ?: DictionaryRepository.lookup(cleanWord, languageCode)
+            // Saving uses the dictionary's headword, so check that, not the raw selection.
+            _wordSaved.value = result != null && repository.isWordSaved(result.word)
             _dictionaryState.value = if (result != null) {
                 DictionaryState.Success(result)
             } else {

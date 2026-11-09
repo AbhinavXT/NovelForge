@@ -443,3 +443,28 @@ data class TextReplacementEntity(
     val replace: String,
     val createdAt: Long = System.currentTimeMillis()
 )
+
+// ============ Vocabulary ============
+
+/**
+ * A word saved from the Define sheet, with a sentence from the book that
+ * uses it. [box] and [dueAt] schedule its review (see Vocabulary.next).
+ * [novelTitle] is kept so the card still says where it came from after the
+ * book leaves the library. NEW in v25.
+ */
+@Entity(tableName = "vocabulary", indices = [Index(value = ["key"], unique = true)])
+data class VocabularyEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val word: String,
+    /** [word] lowercased: one card per word. */
+    val key: String,
+    val definition: String,
+    val sentence: String? = null,
+    val novelId: String? = null,
+    val novelTitle: String? = null,
+    val chapterNumber: Int? = null,
+    val box: Int = 0,
+    val dueAt: Long = System.currentTimeMillis(),
+    val createdAt: Long = System.currentTimeMillis()
+)

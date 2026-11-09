@@ -35,7 +35,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CodexScanInfoEntity::class,      // NEW in v16 — codex scan watermark
         ChapterFormattingEntity::class,  // NEW in v21 — EPUB formatting beside the text
         TocEntryEntity::class,           // NEW in v21 — EPUB table of contents
-        TextReplacementEntity::class     // NEW in v22 — text replacement while reading
+        TextReplacementEntity::class,    // NEW in v22 — text replacement while reading
+        VocabularyEntity::class          // NEW in v25 — words saved from Define
     ],
     version = 25,
     exportSchema = false
@@ -55,6 +56,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun updateDao(): UpdateDao                  // NEW in v12
     abstract fun bookFormattingDao(): BookFormattingDao  // NEW in v21
     abstract fun textReplacementDao(): TextReplacementDao // NEW in v22
+    abstract fun vocabularyDao(): VocabularyDao          // NEW in v25
 
     companion object {
         @Volatile
@@ -426,13 +428,26 @@ abstract class AppDatabase : RoomDatabase() {
 
         /**
          * v25: the book's language, so hyphenation follows the book rather than the device.
-         * Also repairs bookmarks that 2.3.0's source migration left on chapters the new source lacks.
+         * Also repairs bookmarks that 2.3.0's source migration left on chapters the new source lacks,
+         * and adds the vocabulary table.
          */
         internal val MIGRATION_24_25 = object : Migration(24, 25) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE novels ADD COLUMN language TEXT")
                 reattachStrandedBookmarks(db)
+                createVocabularyTable(db)
             }
+        }
+
+        /** Must match what Room generates for [VocabularyEntity]; a test compares the two. */
+        internal fun createVocabularyTable(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `vocabulary` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`word` TEXT NOT NULL, `key` TEXT NOT NULL, `definition` TEXT NOT NULL, `sentence` TEXT, " +
+                    "`novelId` TEXT, `novelTitle` TEXT, `chapterNumber` INTEGER, `box` INTEGER NOT NULL, " +
+                    "`dueAt` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL)"
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_vocabulary_key` ON `vocabulary` (`key`)")
         }
 
         /**

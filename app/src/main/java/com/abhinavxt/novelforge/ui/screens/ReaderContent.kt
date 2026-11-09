@@ -25,6 +25,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -202,7 +207,10 @@ internal fun ReaderContent(
     onBookLookChange: (Boolean) -> Unit = {},
     // The codex entry for the word being defined, if the reader has reached one.
     codexHit: CodexNameEntity? = null,
-    onOpenCodex: ((name: String) -> Unit)? = null
+    onOpenCodex: ((name: String) -> Unit)? = null,
+    // Whether the defined word is in the vocabulary list, and the save/forget action.
+    wordSaved: Boolean = false,
+    onToggleSaveWord: () -> Unit = {}
 ) {
     val colors = getThemeColors(settings)
 
@@ -1127,6 +1135,8 @@ internal fun ReaderContent(
         dictionaryState = dictionaryState,
         codexHit = codexHit,
         onOpenCodex = onOpenCodex?.let { open -> { name: String -> onDismissDictionary(); open(name) } },
+        wordSaved = wordSaved,
+        onToggleSaveWord = onToggleSaveWord,
         onDismiss = onDismissDictionary
     )
 
@@ -1528,6 +1538,8 @@ private fun DictionaryBottomSheet(
     dictionaryState: DictionaryState,
     codexHit: CodexNameEntity?,
     onOpenCodex: ((String) -> Unit)?,
+    wordSaved: Boolean,
+    onToggleSaveWord: () -> Unit,
     onDismiss: () -> Unit
 ) {
     if (dictionaryState is DictionaryState.Idle) return
@@ -1611,6 +1623,16 @@ private fun DictionaryBottomSheet(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.outline
                         )
+                    }
+
+                    TextButton(onClick = onToggleSaveWord, contentPadding = PaddingValues(0.dp)) {
+                        Icon(
+                            if (wordSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (wordSaved) "Saved to vocabulary" else "Save word")
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))

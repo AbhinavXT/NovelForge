@@ -86,6 +86,12 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
         icon = Icons.Default.MenuBook
     )
 
+    object Vocabulary : Screen(
+        route = "vocabulary",
+        title = "Vocabulary",
+        icon = Icons.Default.MenuBook
+    )
+
     object TextSearch : Screen(
         route = "text_search",
         title = "Search in Books",
@@ -427,6 +433,9 @@ fun NavigationHost(
                             onHighlightsClick = {
                                 navController.navigate(Screen.Highlights.route)
                             },
+                            onVocabularyClick = {
+                                navController.navigate(Screen.Vocabulary.route)
+                            },
                             onImportUrlClick = { url ->
                                 navController.navigate(Screen.ImportFromUrl.createRoute(url))
                             },
@@ -440,6 +449,10 @@ fun NavigationHost(
                         )
 
                     }
+                }
+
+                composable(Screen.Vocabulary.route) {
+                    VocabularyScreen(repository = repository, onBackClick = { navController.popBackStack() })
                 }
 
                 composable(Screen.Highlights.route) {

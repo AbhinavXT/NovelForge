@@ -17,6 +17,7 @@ If you just want a quick summary, see the [README](../README.md).
     - [Contents](#contents)
     - [Text replacement](#text-replacement)
     - [Offline dictionaries](#offline-dictionaries)
+    - [Vocabulary](#vocabulary)
     - [Keep screen on](#keep-screen-on)
   - [Reading modes](#reading-modes)
     - [Scroll mode](#scroll-mode)
@@ -143,6 +144,16 @@ Dictionaries stay on this device. They aren't in [backups](#backup-and-restore),
 
 **Names from the codex.** When the word you Define is a character, place or faction [the codex](#the-codex) knows, the sheet shows that first: what kind of name it is and the chapter it first appears in, with **Open in codex** to go straight to its entry (mentions and your highlights of it). The same [spoiler guard](#the-spoiler-guard) applies, so a name you haven't reached yet never shows. Selecting part of a name works too: "Wei" finds "Li Wei". The codex has to have been scanned for this to work.
 
+
+### Vocabulary
+
+Keep the words you look up. In the Define sheet, tap **Save word**: the word is saved with its definition, the book and chapter, and a sentence from that chapter that uses it. Tap again (**Saved to vocabulary**) to remove it. Saving a word you already have keeps the original card.
+
+Library → the translate icon opens **Vocabulary**: every saved word, newest first. Remove one with the bin icon (there's an Undo).
+
+**Review** (top right, with how many are due) runs through the due words as flashcards: the word and its sentence, **Show meaning**, then **Again** or **Got it**. Got it moves the word further out each time: 1 day, 3, 7, 14, then every 30 days. Again sends it back to the start and shows it once more before the session ends. New words are due straight away.
+
+The sentence is the first one in the chapter that uses the word as a whole word, which may not be the exact spot you selected. Vocabulary is in [backups](#backup-and-restore).
 
 ### Keep screen on
 
@@ -704,6 +715,7 @@ The widget refreshes itself when you save reading position, finish a reading ses
 - Bookmarks and highlights with notes
 - Pronunciation dictionary
 - Text replacement rules
+- Vocabulary, with each word's review progress
 - Reading stats history
 
 The ZIP can be saved to Drive, Dropbox, anywhere.

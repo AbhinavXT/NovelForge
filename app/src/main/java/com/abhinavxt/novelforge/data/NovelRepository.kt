@@ -3,6 +3,7 @@ package com.abhinavxt.novelforge.data
 import com.abhinavxt.novelforge.data.database.AppDatabase
 import androidx.room.withTransaction
 import com.abhinavxt.novelforge.data.database.BookmarkEntity
+import com.abhinavxt.novelforge.data.database.VocabularyEntity
 import com.abhinavxt.novelforge.data.database.ChapterEntity
 import com.abhinavxt.novelforge.data.database.HighlightEntity
 import com.abhinavxt.novelforge.data.database.NovelEntity
@@ -63,6 +64,7 @@ class NovelRepository(
     private val updateDao = database.updateDao()
     private val readingStatDao = database.readingStatDao()
     private val codexDao = database.codexDao()
+    private val vocabularyDao = database.vocabularyDao()
 
     // ============ NETWORK OPERATIONS ============
 
@@ -549,6 +551,39 @@ class NovelRepository(
 
     fun getAllHighlightsWithBook(): Flow<List<HighlightWithBook>> =
         highlightDao.getAllHighlightsWithBook()
+
+    // ============ VOCABULARY ============
+
+    fun observeVocabulary(): Flow<List<VocabularyEntity>> = vocabularyDao.observeAll()
+
+    suspend fun isWordSaved(word: String): Boolean = vocabularyDao.has(word.trim().lowercase())
+
+    suspend fun saveWord(
+        word: String, definition: String, sentence: String?,
+        novelId: String?, novelTitle: String?, chapterNumber: Int?
+    ) {
+        val w = word.trim()
+        vocabularyDao.insert(
+            VocabularyEntity(
+                word = w, key = w.lowercase(), definition = definition, sentence = sentence,
+                novelId = novelId, novelTitle = novelTitle, chapterNumber = chapterNumber
+            )
+        )
+    }
+
+    suspend fun forgetWord(word: String) = vocabularyDao.deleteByKey(word.trim().lowercase())
+
+    suspend fun deleteWord(id: Long) = vocabularyDao.delete(id)
+
+    /** Records a review answer: see [Vocabulary.next]. */
+    suspend fun reviewWord(card: VocabularyEntity, knewIt: Boolean) {
+        val (box, dueAt) = Vocabulary.next(card.box, knewIt, System.currentTimeMillis())
+        vocabularyDao.schedule(card.id, box, dueAt)
+    }
+
+    suspend fun getAllVocabularyForBackup(): List<VocabularyEntity> = vocabularyDao.getAll()
+
+    suspend fun insertVocabularyForRestore(words: List<VocabularyEntity>) = vocabularyDao.insertAll(words)
 
     // ============ SOURCE MIGRATION ============
 

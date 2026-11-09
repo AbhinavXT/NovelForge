@@ -116,6 +116,7 @@ fun ReaderScreen(
     // Dictionary state
     val dictionaryState by viewModel.dictionaryState.collectAsState()
     val codexHit by viewModel.codexHit.collectAsState()
+    val wordSaved by viewModel.wordSaved.collectAsState()
     val bookLookOn by viewModel.bookLookOn.collectAsState()
 
     // Reading time estimate
@@ -310,6 +311,8 @@ fun ReaderScreen(
                 onDismissDictionary = { viewModel.dismissDictionary() },
                 codexHit = codexHit,
                 onOpenCodex = onOpenCodex,
+                wordSaved = wordSaved,
+                onToggleSaveWord = viewModel::toggleSaveWord,
                 bookLookOn = if (isInLibrary) bookLookOn else null,
                 onBookLookChange = { viewModel.setBookLookOn(it) },
                 estimatedMinutesLeft = estimatedMinutesLeft,

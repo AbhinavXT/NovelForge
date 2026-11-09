@@ -839,3 +839,34 @@ interface TextReplacementDao {
     @Query("DELETE FROM text_replacements WHERE id = :id")
     suspend fun delete(id: Long)
 }
+
+// ============ Vocabulary DAO ============
+
+@Dao
+interface VocabularyDao {
+
+    @Query("SELECT * FROM vocabulary ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<VocabularyEntity>>
+
+    @Query("SELECT * FROM vocabulary ORDER BY createdAt DESC")
+    suspend fun getAll(): List<VocabularyEntity>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM vocabulary WHERE `key` = :key)")
+    suspend fun has(key: String): Boolean
+
+    /** Saving a word twice keeps the first card and its progress. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(word: VocabularyEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(words: List<VocabularyEntity>)
+
+    @Query("UPDATE vocabulary SET box = :box, dueAt = :dueAt WHERE id = :id")
+    suspend fun schedule(id: Long, box: Int, dueAt: Long)
+
+    @Query("DELETE FROM vocabulary WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("DELETE FROM vocabulary WHERE `key` = :key")
+    suspend fun deleteByKey(key: String)
+}
