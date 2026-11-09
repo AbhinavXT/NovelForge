@@ -543,6 +543,9 @@ class NovelRepository(
     suspend fun getStoredChapterTitles(novelId: String): Map<String, String> =
         chapterDao.getChaptersForNovel(novelId).first().associate { it.id to it.title }
 
+    /** A chapter's stored title, or null when the chapter isn't stored. */
+    suspend fun getChapterTitle(chapterId: String): String? = chapterDao.getChapterById(chapterId)?.title
+
     /** Chapter id → translated title, for chapters whose title was translated. */
     suspend fun getTranslatedTitles(novelId: String): Map<String, String> {
         val dao = database.translationDao()
