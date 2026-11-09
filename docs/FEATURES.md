@@ -865,9 +865,7 @@ Whatever's set here is the starting point for new novels; per-novel changes are 
 - **Source code** - opens the GitHub repo
 - **Report a bug** - opens GitHub Issues
 - **Pronunciation Dictionary** - separate screen for managing entries (also reachable from Quick Settings)
-- **License** - GPL-3.0, with a link to the full text and to the source repository
-
-GPL-3.0 §5(d) requires an interactive program that displays legal notices to keep displaying them, so this entry isn't decorative — it's how the app satisfies that. It must show the license and point users to the corresponding source.
+- **License** - MIT, with a link to the full text and to the source repository
 
 ---
 

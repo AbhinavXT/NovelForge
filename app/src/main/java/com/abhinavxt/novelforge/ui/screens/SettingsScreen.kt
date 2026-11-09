@@ -1201,11 +1201,6 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             // ── License notice ───────────────────────────────────
-            // Not decorative. GPL-3.0 §5(d) requires an interactive program
-            // that displays legal notices to keep displaying them, and §0
-            // defines what those notices must contain: the license, the
-            // absence of warranty, and how to obtain the corresponding
-            // source. Both cards below are how NovelForge satisfies that.
             Card(
                 onClick = {
                     runCatching {
@@ -1224,17 +1219,15 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "License — GNU GPL v3.0",
+                        text = "License — MIT",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Copyright © 2026 Abhinav\n\n" +
-                                "This program comes with ABSOLUTELY NO WARRANTY. " +
-                                "It is free software, and you are welcome to " +
-                                "redistribute it under the terms of the GNU " +
-                                "General Public License v3 or later.\n\n" +
+                                "Free and open source under the MIT License. " +
+                                "Provided as is, without warranty of any kind.\n\n" +
                                 "Tap to read the full license.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1244,7 +1237,6 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Corresponding source, as GPL-3.0 requires alongside binaries.
             Card(
                 onClick = {
                     runCatching {

@@ -75,7 +75,7 @@ Bug reports and feature suggestions go in [Issues](https://github.com/abhinavxt/
 
 The project is built on weekends. Reviews aren't instant. Be patient.
 
-Contributions are accepted under GPL-3.0, the same license as the project.
+Contributions are accepted under MIT, the same license as the project.
 
 ## Disclaimer 
 
@@ -85,11 +85,10 @@ If a work is available through an official platform, Patreon, or paid tier, plea
 
 ## License
 
-[GPL-3.0](LICENSE).
+[MIT](LICENSE).
 
-Use it, read it, fork it, ship it. If you distribute a modified version, that
-version has to be GPL-3.0 too, with its source available. That's the whole
-deal - it keeps forks open rather than closing them off.
+Use it, read it, fork it, ship it. Keep the copyright notice. Releases up to
+2.7.x were GPL-3.0 and stay that way.
 
 Source plugins other than the four bundled ones are installed from
 [NovelForge-plugins](https://github.com/AbhinavXT/NovelForge-plugins) and
