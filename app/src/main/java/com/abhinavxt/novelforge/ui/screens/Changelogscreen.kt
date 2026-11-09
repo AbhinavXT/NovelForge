@@ -174,6 +174,16 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.9.3",
+        date = "Nov 2026",
+        changes = listOf(
+            "App lock no longer stops the app from opening",
+            "Turning off e-ink mode puts your previous theme and reading mode back",
+            "A chapter's translated title shows as soon as it's translated",
+            "Reading stats count only what you could have read in the time, not a whole chapter for a short visit"
+        )
+    ),
+    VersionEntry(
         version = "v2.9.2",
         date = "Nov 2026",
         changes = listOf(
