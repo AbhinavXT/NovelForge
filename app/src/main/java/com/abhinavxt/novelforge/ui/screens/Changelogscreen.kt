@@ -174,6 +174,14 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.9.0",
+        date = "Nov 2026",
+        changes = listOf(
+            "A welcome screen on first launch to add sources, import a book or restore a backup",
+            "A guide to where every feature lives, from the welcome screen or Settings \u2192 Reading \u2192 Guide"
+        )
+    ),
+    VersionEntry(
         version = "v2.8.0",
         date = "Nov 2026",
         changes = listOf(

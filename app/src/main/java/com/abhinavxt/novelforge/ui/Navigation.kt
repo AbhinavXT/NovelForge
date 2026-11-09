@@ -181,6 +181,12 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
         icon = Icons.Default.MenuBook
     )
 
+    object Guide : Screen(
+        route = "guide",
+        title = "Guide",
+        icon = Icons.Default.MenuBook
+    )
+
     object Plugins : Screen(
         route = "plugins",
         title = "Source plugins",
@@ -496,6 +502,9 @@ fun NavigationHost(
                         onNavigateToChangelog = {
                             navController.navigate(Screen.Changelog.route)
                         },
+                        onNavigateToGuide = {
+                            navController.navigate(Screen.Guide.route)
+                        },
                         onNavigateToPlugins = {
                             navController.navigate(Screen.Plugins.route)
                         },
@@ -517,6 +526,10 @@ fun NavigationHost(
                         onBackClick = { navController.popBackStack() },
                         onHistoryClick = { navController.navigate(Screen.History.route) }
                     )
+                }
+
+                composable(Screen.Guide.route) {
+                    GuideScreen(onBackClick = { navController.popBackStack() })
                 }
 
                 composable(Screen.Changelog.route) {

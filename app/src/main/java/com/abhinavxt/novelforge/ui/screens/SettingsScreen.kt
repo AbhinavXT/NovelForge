@@ -59,6 +59,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -112,6 +113,7 @@ fun SettingsScreen(
     onNavigateToPronunciation: () -> Unit = {},
     onNavigateToReadingStats: () -> Unit = {},
     onNavigateToChangelog: () -> Unit = {},
+    onNavigateToGuide: () -> Unit = {},
     onNavigateToPlugins: () -> Unit = {},
     updateChecker: UpdateChecker,
     viewModel: SettingsViewModel = viewModel(
@@ -137,6 +139,12 @@ fun SettingsScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let { viewModel.prepareRestore(it) }
+    }
+    val onboardingAction by com.abhinavxt.novelforge.data.Onboarding.pendingAction.collectAsState()
+    LaunchedEffect(onboardingAction) {
+        if (com.abhinavxt.novelforge.data.Onboarding.pendingAction.compareAndSet(
+                com.abhinavxt.novelforge.data.Onboarding.Action.RESTORE_BACKUP, null)
+        ) restoreBackupLauncher.launch(arrayOf("application/json"))
     }
 
     val updateStatus by updateChecker.status.collectAsState()
@@ -1083,6 +1091,8 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            TextButton(onClick = onNavigateToGuide) { Text("Guide") }
 
             Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider()
