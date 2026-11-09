@@ -174,6 +174,15 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.5.0",
+        date = "Nov 2026",
+        changes = listOf(
+            "E-ink mode: no animations, a black-on-white theme and paged reading",
+            "In e-ink mode, scroll-mode taps, volume keys, find and read-aloud jump instead of scrolling",
+            "Page turn \"None\" also snaps on taps and volume keys"
+        )
+    ),
+    VersionEntry(
         version = "v2.4.0",
         date = "Nov 2026",
         changes = listOf(
