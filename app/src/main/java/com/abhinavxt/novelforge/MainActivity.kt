@@ -34,6 +34,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -94,6 +95,13 @@ class MainActivity : ComponentActivity() {
     @Volatile
     private var volumeKeyNavEnabled = false
 
+    private lateinit var appLock: com.abhinavxt.novelforge.ui.components.AppLock
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        appLock.save(outState)
+    }
+
     // ── Deep-link intents delivered while the Activity is alive ─
     //
     // onNewIntent() fires when the app is already running (share
@@ -127,7 +135,8 @@ class MainActivity : ComponentActivity() {
         // fall through to system default (volume bar appears, volume
         // changes). This fixes the bug where disabling the setting
         // silently swallowed volume presses.
-        if (isReaderScreenActive && volumeKeyNavEnabled) {
+        // Not while locked: the page underneath would turn unseen.
+        if (isReaderScreenActive && volumeKeyNavEnabled && !appLock.locked.value) {
             when (keyCode) {
                 KeyEvent.KEYCODE_VOLUME_UP -> {
                     (application as NovelReaderApplication).emitVolumeKey(VolumeKeyEvent.UP)
@@ -146,7 +155,7 @@ class MainActivity : ComponentActivity() {
         // Must also intercept KEYUP when we intercepted KEYDOWN, otherwise
         // the system receives an unmatched KEYUP and on some OEMs plays
         // the volume click sound or flashes the volume bar briefly.
-        if (isReaderScreenActive && volumeKeyNavEnabled) {
+        if (isReaderScreenActive && volumeKeyNavEnabled && !appLock.locked.value) {
             when (keyCode) {
                 KeyEvent.KEYCODE_VOLUME_UP,
                 KeyEvent.KEYCODE_VOLUME_DOWN -> return true
@@ -179,6 +188,7 @@ class MainActivity : ComponentActivity() {
         val readingStatsTracker = app.readingStatsTracker
         val updateChecker = app.updateChecker
         val networkMonitor = app.networkMonitor
+        appLock = com.abhinavxt.novelforge.ui.components.AppLock(this, themePreferences, savedInstanceState)
 
         setContent {
             val themeMode by themePreferences.themeMode.collectAsState()
@@ -222,8 +232,13 @@ class MainActivity : ComponentActivity() {
                 customAppBackground = customAppBackground,
                 customAppTextColor = customAppTextColor
             ) {
+                val locked by appLock.locked.collectAsState()
+                val appLockOn by themePreferences.appLock.collectAsState()
+                LaunchedEffect(appLockOn) { appLock.applyRecents() }
                 Surface(
-                    modifier = Modifier.fillMaxSize(),
+                    // Locked: the app stays underneath (same place on unlock) but hidden from TalkBack.
+                    modifier = Modifier.fillMaxSize()
+                        .then(if (locked) Modifier.clearAndSetSemantics {} else Modifier),
                     color = MaterialTheme.colorScheme.background
                 ) {
                     NovelReaderApp(
@@ -237,6 +252,12 @@ class MainActivity : ComponentActivity() {
                         chapterPrefetcher = app.chapterPrefetcher,
                         updateChecker = updateChecker,
                         networkMonitor = networkMonitor
+                    )
+                }
+                if (locked) {
+                    com.abhinavxt.novelforge.ui.components.LockScreen(
+                        onUnlock = appLock::unlock,
+                        onLeave = { moveTaskToBack(true) }
                     )
                 }
             }

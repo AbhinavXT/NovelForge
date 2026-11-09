@@ -62,6 +62,9 @@ If you just want a quick summary, see the [README](../README.md).
     - [Privacy](#privacy)
   - [Continue-reading widget](#continue-reading-widget)
   - [Backup and restore](#backup-and-restore)
+  - [Privacy](#privacy-1)
+    - [App lock](#app-lock)
+    - [Incognito mode](#incognito-mode)
   - [Settings reference](#settings-reference)
     - [Reader](#reader)
     - [Downloads](#downloads)
@@ -718,6 +721,22 @@ The ZIP can be saved to Drive, Dropbox, anywhere.
 These are excluded because they're large and re-derivable. Including voice models would push backup ZIPs to 500 MB+.
 
 **Cross-device:** backup ZIPs are platform-portable across Android versions. The internal schema is versioned, so restoring a v1.6 backup on v1.8 works (forward-compatible). Backwards compatibility (v1.8 backup on v1.6) is not guaranteed; downgrades are not a supported flow.
+
+---
+
+## Privacy
+
+Settings → Privacy.
+
+### App lock
+
+Asks for your fingerprint, face, PIN, pattern or password, whichever your phone's screen lock uses, before showing the app. It asks when the app starts and when you come back after more than a minute away. A quick trip to a file picker or the share sheet doesn't count. Unlocking puts you back exactly where you were. While the lock is on, Android 13 and later show a blank card for the app in Recents instead of your page.
+
+It needs a screen lock set in Android's settings. If you remove the screen lock later, the app opens without asking, so you can never be locked out. NovelForge stores no PIN of its own; the check is entirely Android's.
+
+### Incognito mode
+
+While it's on, nothing you read is recorded: no [history](#reading-stats), no stats, no streak, no minutes toward your daily goal. Your place in each book still saves, so you don't lose it. The home screen shows a reminder while it's on. Turn it off and recording picks up from the next chapter you open.
 
 ---
 

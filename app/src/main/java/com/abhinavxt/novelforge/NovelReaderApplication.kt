@@ -127,6 +127,7 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
         ReadingStatsTracker(database.readingStatDao()).also {
             // The widget shows today's minutes against the daily goal.
             it.onSessionRecorded = { com.abhinavxt.novelforge.widget.WidgetUpdater.requestUpdate(this) }
+            it.isPaused = { themePreferences.incognito.value }
         }
     }
 

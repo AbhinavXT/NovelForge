@@ -29,6 +29,9 @@ class ReadingStatsTracker(private val dao: ReadingStatDao) {
     /** Called after a session is saved, so today's minutes can be shown elsewhere (the widget). */
     var onSessionRecorded: (() -> Unit)? = null
 
+    /** True while incognito: sessions are dropped, so stats and history never see them. */
+    var isPaused: () -> Boolean = { false }
+
     private data class Session(
         val novelId: String,
         val chapterId: String,
@@ -100,6 +103,7 @@ class ReadingStatsTracker(private val dao: ReadingStatDao) {
 
         // Minimum 10 seconds to count as reading
         if (elapsed < 10_000) return
+        if (isPaused()) return
 
         withContext(Dispatchers.IO) {
             try {
