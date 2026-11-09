@@ -19,6 +19,7 @@ enum class ReaderTheme(val displayName: String, val isDark: Boolean) {
     PAPER("Paper", false),                        // Soft cream — reduced glare vs pure white
     SEPIA("Sepia", false),                        // Kindle-matched warm — proven eye comfort
     SOLARIZED_LIGHT("Solarized Light", false),    // Scientifically designed L*a*b* contrast
+    EINK("E-ink", false),                         // Pure black on white: no greys for an e-ink panel to dither
 
     // ── Nighttime / dark themes ─────────────────────────────────
     DARK("Dark", true),                           // Standard dark — grey text, not pure white

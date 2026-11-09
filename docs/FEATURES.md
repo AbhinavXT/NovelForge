@@ -25,6 +25,7 @@ If you just want a quick summary, see the [README](../README.md).
     - [Paged mode](#paged-mode)
   - [Themes and typography](#themes-and-typography)
     - [Themes](#themes)
+    - [E-ink mode](#e-ink-mode)
     - [Reader fonts](#reader-fonts)
     - [Sizing](#sizing)
   - [Bookmarks and highlights](#bookmarks-and-highlights)
@@ -194,7 +195,7 @@ Continuous vertical scroll, the default. The whole chapter is one long page; you
 Horizontal page-turn, like a real book. The chapter is split into discrete pages.
 
 - **Swipe left/right** to turn pages, or tap according to your [tap-zone layout](#tap-zones).
-- **Page-turn animation** is configurable in Quick Settings → Page Turn Animation: slide, fade, page curl, or none (instant).
+- **Page-turn animation** is configurable in Quick Settings → Page Turn Animation: slide, fade, page curl, or none. None turns pages instantly from taps and volume keys too.
 
 Auto-scroll is not available in paged mode (the button is hidden when paged is active).
 
@@ -202,15 +203,16 @@ Auto-scroll is not available in paged mode (the button is hidden when paged is a
 
 ## Themes and typography
 
-11 themes, 8 fonts plus your own, all switchable from Quick Settings. Changes apply immediately and are saved per-app, not per-novel.
+12 themes, 8 fonts plus your own, all switchable from Quick Settings. Changes apply immediately and are saved per-app, not per-novel.
 
 ### Themes
 
-Three light:
+Four light:
 
 - **Paper** - warm off-white, the default
 - **Sepia** - beige with brown text, classic e-reader feel
 - **Solari** - bright yellow paper
+- **E-ink** - pure black on white, no greys for an e-ink screen to dither
 
 Eight dark:
 
@@ -224,6 +226,16 @@ Eight dark:
 - **Grey** - neutral mid-grey
 
 Each theme defines its own background, ink, and accent colors. The reading-stats share card uses its own pinned color scheme that doesn't follow the reader theme - by design, so shared cards look consistent across users.
+
+### E-ink mode
+
+For e-ink phones and tablets (Boox, Hisense, Bigme and similar). Settings → Appearance → **E-ink mode**:
+
+- No screen transitions, no touch ripples
+- Scroll-mode taps, volume keys, find and TTS follow jump straight to the spot instead of scrolling there
+- Paged-mode page turns are instant
+
+Turning it on also switches the app and the reader to the **E-ink** theme and the reader to paged mode with no page animation. You can change any of these afterwards; turning e-ink mode off leaves them as they are. Auto-scroll still scrolls smoothly, so it will smear on e-ink.
 
 ### Reader fonts
 

@@ -252,6 +252,7 @@ fun NavigationHost(
         )
     }
 
+    val eink = com.abhinavxt.novelforge.ui.theme.LocalEinkMode.current
     androidx.compose.animation.SharedTransitionLayout(modifier = modifier) {
         androidx.compose.runtime.CompositionLocalProvider(
             com.abhinavxt.novelforge.ui.components.LocalSharedTransitionScope provides this@SharedTransitionLayout
@@ -264,25 +265,25 @@ fun NavigationHost(
                 // Slide out to right + fade out when navigating back.
                 // 250ms feels snappy without being jarring.
                 enterTransition = {
-                    slideInHorizontally(
+                    if (eink) androidx.compose.animation.EnterTransition.None else slideInHorizontally(
                         initialOffsetX = { fullWidth -> fullWidth / 4 },
                         animationSpec = tween(250)
                     ) + fadeIn(animationSpec = tween(250))
                 },
                 exitTransition = {
-                    slideOutHorizontally(
+                    if (eink) androidx.compose.animation.ExitTransition.None else slideOutHorizontally(
                         targetOffsetX = { fullWidth -> -fullWidth / 4 },
                         animationSpec = tween(250)
                     ) + fadeOut(animationSpec = tween(150))
                 },
                 popEnterTransition = {
-                    slideInHorizontally(
+                    if (eink) androidx.compose.animation.EnterTransition.None else slideInHorizontally(
                         initialOffsetX = { fullWidth -> -fullWidth / 4 },
                         animationSpec = tween(250)
                     ) + fadeIn(animationSpec = tween(250))
                 },
                 popExitTransition = {
-                    slideOutHorizontally(
+                    if (eink) androidx.compose.animation.ExitTransition.None else slideOutHorizontally(
                         targetOffsetX = { fullWidth -> fullWidth / 4 },
                         animationSpec = tween(250)
                     ) + fadeOut(animationSpec = tween(150))

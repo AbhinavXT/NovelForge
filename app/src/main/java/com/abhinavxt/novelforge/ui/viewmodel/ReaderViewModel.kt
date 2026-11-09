@@ -859,7 +859,8 @@ class ReaderViewModel(
             val nextTheme = when (currentState.settings.theme) {
                 ReaderTheme.PAPER -> ReaderTheme.SEPIA
                 ReaderTheme.SEPIA -> ReaderTheme.SOLARIZED_LIGHT
-                ReaderTheme.SOLARIZED_LIGHT -> ReaderTheme.DARK
+                ReaderTheme.SOLARIZED_LIGHT -> ReaderTheme.EINK
+                ReaderTheme.EINK -> ReaderTheme.DARK
                 ReaderTheme.DARK -> ReaderTheme.AMOLED
                 ReaderTheme.AMOLED -> ReaderTheme.NORD
                 ReaderTheme.NORD -> ReaderTheme.DRACULA

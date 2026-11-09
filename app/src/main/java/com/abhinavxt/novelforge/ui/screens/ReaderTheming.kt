@@ -69,6 +69,11 @@ fun getThemeColors(theme: ReaderTheme): ThemeColors {
             text = Color(0xFF657B83),           // base00
             secondaryText = Color(0xFF93A1A1)   // base1
         )
+        ReaderTheme.EINK -> ThemeColors(
+            background = Color.White,
+            text = Color.Black,
+            secondaryText = Color(0xFF333333)
+        )
 
         // ── Nighttime / dark themes ─────────────────────────────
         ReaderTheme.DARK -> ThemeColors(

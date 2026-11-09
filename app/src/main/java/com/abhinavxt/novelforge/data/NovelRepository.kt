@@ -477,6 +477,15 @@ class NovelRepository(
         }
     }
 
+    /** Where E-ink mode starts the reader: black on white, paged, pages that turn without a slide. */
+    suspend fun applyEinkReaderPreset() = saveReaderSettings(
+        getReaderSettings().copy(
+            theme = ReaderTheme.EINK,
+            readingMode = ReadingMode.PAGED,
+            pageTransition = PageTransition.NONE
+        )
+    )
+
     suspend fun saveReaderSettings(settings: ReaderSettings) {
         val entity = ReaderSettingsEntity(
             id = 1,
