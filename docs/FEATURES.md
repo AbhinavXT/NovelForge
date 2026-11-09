@@ -240,7 +240,7 @@ Quick Settings → Typography section:
 
 All of these are saved per-app and apply in both scroll and paged mode. New novels open with your last-used settings.
 
-Hyphenation is off by default. It follows your device language, not the book's, so a book in another language may break words in odd places, and some languages have no hyphenation rules on Android. Headings are never hyphenated.
+Hyphenation is off by default. Words break by the rules of the book's language: an imported EPUB that names its language uses it, and anything else follows your device language. To change it, turn on hyphenation and tap **Book language** under the switch (library books only). The language is stored with the book, carried by backups and by moving to another source. Some languages have no hyphenation rules on Android. Headings are never hyphenated.
 
 **This book only.** Quick Settings → **Font, size and theme for this book only** gives the book its own look: font, size, theme and colours, line and paragraph spacing, margins, justify, hyphenation and indent. Changes you make while it's on stay with this book; turn it off and the book goes back to the app's look. Reading mode, tap zones, volume keys and auto-scroll speed stay app-wide. The switch only appears for books in your library, and the book's look is included in [backups](#backup-and-restore).
 

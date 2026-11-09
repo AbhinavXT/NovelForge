@@ -83,7 +83,9 @@ data class NovelBackup(
     val textFingerprint: String? = null,
     // v24 shelf status and per-book look; null in older backups.
     val readingStatus: String? = null,
-    val readerSettingsJson: String? = null
+    val readerSettingsJson: String? = null,
+    // v25 book language; null in older backups.
+    val language: String? = null
 )
 
 data class ChapterBackup(
@@ -224,7 +226,8 @@ class BackupManager(
                     archivedAt = novel.archivedAt,
                     textFingerprint = novel.textFingerprint,
                     readingStatus = novel.readingStatus,
-                    readerSettingsJson = novel.readerSettingsJson
+                    readerSettingsJson = novel.readerSettingsJson,
+                    language = novel.language
                 )
             }
 
@@ -399,7 +402,8 @@ class BackupManager(
                         } else null,
                     textFingerprint = novelBackup.textFingerprint,
                     readingStatus = novelBackup.readingStatus,
-                    readerSettingsJson = novelBackup.readerSettingsJson
+                    readerSettingsJson = novelBackup.readerSettingsJson,
+                    language = novelBackup.language
                 )
                 repository.insertNovelForRestore(novelEntity)
                 novelsRestored++

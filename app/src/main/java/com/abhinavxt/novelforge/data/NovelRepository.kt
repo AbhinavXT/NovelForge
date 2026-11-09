@@ -514,6 +514,11 @@ class NovelRepository(
     suspend fun setBookLook(novelId: String, look: BookLook?) =
         novelDao.setReaderSettingsJson(novelId, look?.let { gson.toJson(it) })
 
+    /** The book's language tag for hyphenation, or null for the device's. */
+    suspend fun getBookLanguage(novelId: String): String? = novelDao.getLanguage(novelId)
+
+    suspend fun setBookLanguage(novelId: String, language: String?) = novelDao.setLanguage(novelId, language)
+
     // ============ READING STATUS ============
 
     fun getReadingStatuses(): Flow<Map<String, ReadingStatus>> =
@@ -576,7 +581,8 @@ class NovelRepository(
                     addedToLibraryAt = old.addedToLibraryAt,
                     previousTotalChapters = target.chapters.size,
                     readingStatus = old.readingStatus,
-                    readerSettingsJson = old.readerSettingsJson
+                    readerSettingsJson = old.readerSettingsJson,
+                    language = old.language
                 )
             )
             chapterDao.insertChapters(target.chapters.map {

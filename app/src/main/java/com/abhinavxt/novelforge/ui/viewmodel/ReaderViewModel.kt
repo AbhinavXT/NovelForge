@@ -748,7 +748,7 @@ class ReaderViewModel(
     private suspend fun withBookLook(app: ReaderSettings): ReaderSettings {
         val look = repository.getBookLook(novelId)
         _bookLookOn.value = look != null
-        return look?.applyTo(app) ?: app
+        return (look?.applyTo(app) ?: app).copy(bookLanguage = repository.getBookLanguage(novelId))
     }
 
     /** On: the book keeps the look on screen now. Off: it goes back to the app's. */
@@ -760,8 +760,9 @@ class ReaderViewModel(
                 repository.setBookLook(novelId, BookLook.of(currentState.settings))
             } else {
                 repository.setBookLook(novelId, null)
-                val app = repository.getReaderSettings()
-                (_uiState.value as? ReaderUiState.Success)?.let { _uiState.value = it.copy(settings = app) }
+                (_uiState.value as? ReaderUiState.Success)?.let {
+                    _uiState.value = it.copy(settings = repository.getReaderSettings().copy(bookLanguage = it.settings.bookLanguage))
+                }
             }
         }
     }
@@ -771,6 +772,9 @@ class ReaderViewModel(
         if (currentState is ReaderUiState.Success) {
             _uiState.value = currentState.copy(settings = newSettings)
             viewModelScope.launch {
+                if (newSettings.bookLanguage != currentState.settings.bookLanguage) {
+                    repository.setBookLanguage(novelId, newSettings.bookLanguage)
+                }
                 if (_bookLookOn.value) {
                     repository.setBookLook(novelId, BookLook.of(newSettings))
                     // Behaviour (mode, tap zones, ...) stays app-wide; the app's own look is left as it was.

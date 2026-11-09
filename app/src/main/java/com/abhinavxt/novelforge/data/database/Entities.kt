@@ -84,7 +84,10 @@ data class NovelEntity(
     val readingStatus: String? = null,
 
     /** This book's own font, size and theme as JSON (see BookLook), or null to follow the app. NEW in v24. */
-    val readerSettingsJson: String? = null
+    val readerSettingsJson: String? = null,
+
+    /** The book's language (BCP 47), for hyphenation; null = the device's. From dc:language or set by hand. NEW in v25. */
+    val language: String? = null
 )
 
 /** Where a book sits on the reader's own shelf. Separate from the source's Ongoing/Completed. */

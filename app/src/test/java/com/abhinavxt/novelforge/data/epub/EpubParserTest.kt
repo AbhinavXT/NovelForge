@@ -47,6 +47,15 @@ class EpubParserTest {
     // ── Text must not change ────────────────────────────────────────
 
     @Test
+    fun `reads the book's language, dropping values that are not tags`() {
+        val body = listOf(chapter("c1", "<p>Long enough to count as a chapter of this little book.</p>"))
+        assertEquals("de-DE", parse(TestEpub.build(body, language = " de-DE ")).language)
+        assertNull(parse(TestEpub.build(body, language = "English")).language)
+        assertNull(parse(TestEpub.build(body, language = "und")).language)
+        assertNull(parse(TestEpub.build(body)).language)
+    }
+
+    @Test
     fun `blockquotes of bare text are separate paragraphs`() {
         val bytes = epub(listOf(chapter("c1",
             "<blockquote>He spoke at some length about the case.</blockquote><blockquote>“I assume this is the glass.”</blockquote>"

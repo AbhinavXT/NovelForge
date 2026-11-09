@@ -175,6 +175,12 @@ interface NovelDao {
     @Query("UPDATE novels SET readerSettingsJson = :json WHERE id = :novelId")
     suspend fun setReaderSettingsJson(novelId: String, json: String?)
 
+    @Query("SELECT language FROM novels WHERE id = :novelId")
+    suspend fun getLanguage(novelId: String): String?
+
+    @Query("UPDATE novels SET language = :language WHERE id = :novelId")
+    suspend fun setLanguage(novelId: String, language: String?)
+
     // Source migration: rows that only need their novelId re-pointed.
     @Query("UPDATE reading_stats SET novelId = :to WHERE novelId = :from")
     suspend fun moveReadingStats(from: String, to: String)
