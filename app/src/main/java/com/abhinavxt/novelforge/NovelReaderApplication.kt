@@ -122,6 +122,11 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
     val offlineDictionaries by lazy { com.abhinavxt.novelforge.data.StarDictManager(this) }
     val readerFonts by lazy { com.abhinavxt.novelforge.data.ReaderFontManager(this) }
 
+    // Character voices for multi-speaker TTS models
+    val voiceCasting by lazy {
+        com.abhinavxt.novelforge.data.tts.VoiceCasting(this, database.codexDao(), database.translationDao())
+    }
+
     // Translation: settings (API keys, kept out of backups) and the chapter translator
     val translationSettings by lazy { com.abhinavxt.novelforge.data.translation.TranslationSettings(this) }
     val translations by lazy {
@@ -197,6 +202,7 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
         // Wire pronunciation manager into TTS and backup
         ttsManager.pronunciationManager = pronunciationManager
         ttsManager.textReplacements = textReplacements
+        ttsManager.voiceCasting = voiceCasting
         backupManager.pronunciationManager = pronunciationManager
         backupManager.textReplacements = textReplacements
         backupManager.readingStatsTracker = readingStatsTracker

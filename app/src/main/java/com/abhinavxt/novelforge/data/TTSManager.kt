@@ -69,7 +69,9 @@ private data class TextSegment(
     val text: String,
     val paragraphIndex: Int,
     val sentenceIndexInParagraph: Int,
-    val isParagraphEnd: Boolean = false
+    val isParagraphEnd: Boolean = false,
+    /** Speaker of a multi-speaker voice model; 0 = the model's first. */
+    val voice: Int = 0
 )
 
 /**
@@ -89,6 +91,17 @@ class TTSManager(private val context: Context) {
 
     /** Text replacement rules, applied before pronunciation so TTS says what the reader shows. */
     var textReplacements: TextReplacementManager? = null
+
+    /** Each book's character voices; null leaves every line in the narrator's voice. */
+    var voiceCasting: com.abhinavxt.novelforge.data.tts.VoiceCasting? = null
+
+    /** The book's cast for the loaded multi-speaker voice, or null when the voice has one speaker. */
+    fun castFor(novelId: String): com.abhinavxt.novelforge.data.tts.VoiceCast? {
+        val sherpa = activeEngine as? SherpaOnnxEngine ?: return null
+        val model = sherpa.getCurrentVoiceId() ?: return null
+        if (sherpa.speakerCount() < 2) return null
+        return voiceCasting?.load(novelId, model)
+    }
 
     /** A sentence as it goes to the engine: replacements, then pronunciation. */
     private fun spokenText(text: String): String {
@@ -426,35 +439,20 @@ class TTSManager(private val context: Context) {
 
     // ── Text parsing (unchanged from original) ───────────────────
 
-    private fun parseTextIntoSegments(text: String): List<TextSegment> {
-        val result = mutableListOf<TextSegment>()
-
-        val paragraphs = text.split(Regex("\n\n+|\n"))
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-
-        paragraphs.forEachIndexed { pIndex, paragraph ->
-            val sentences = paragraph
-                .split(Regex("(?<=[.!?])\\s+"))
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-
-            sentences.forEachIndexed { sIndex, sentence ->
-                val isLastSentenceInParagraph = sIndex == sentences.size - 1
-                val isLastParagraph = pIndex == paragraphs.size - 1
-
-                result.add(
-                    TextSegment(
-                        text = sentence,
-                        paragraphIndex = pIndex,
-                        sentenceIndexInParagraph = sIndex,
-                        isParagraphEnd = isLastSentenceInParagraph && !isLastParagraph
-                    )
-                )
-            }
+    private fun parseTextIntoSegments(text: String, cast: com.abhinavxt.novelforge.data.tts.VoiceCast?): List<TextSegment> {
+        val pieces = com.abhinavxt.novelforge.data.tts.Dialogue.pieces(
+            text, cast?.characters?.keys?.toList().orEmpty(), voiced = cast?.enabled == true
+        )
+        val lastParagraph = pieces.lastOrNull()?.paragraph ?: 0
+        return pieces.map {
+            TextSegment(
+                text = it.text,
+                paragraphIndex = it.paragraph,
+                sentenceIndexInParagraph = it.sentence,
+                isParagraphEnd = it.paragraphEnd && it.paragraph != lastParagraph,
+                voice = cast?.voiceFor(it) ?: 0
+            )
         }
-
-        return result
     }
 
     // ── Playback control ─────────────────────────────────────────
@@ -492,7 +490,7 @@ class TTSManager(private val context: Context) {
         if (chapterTitle.isNotBlank()) nowPlayingChapterTitle = chapterTitle
         if (coverUrl != null) nowPlayingCoverUrl = coverUrl
 
-        segments = parseTextIntoSegments(text)
+        segments = parseTextIntoSegments(text, novelId?.let { castFor(it) })
 
         if (segments.isEmpty()) {
             Logger.e("TTSManager", "No sentences to speak")
@@ -593,6 +591,7 @@ class TTSManager(private val context: Context) {
         Logger.d("TTSManager", "Speaking sentence $currentIndex: ${segment.text.take(50)}...")
 
         val s = _settings.value
+        (activeEngine as? SherpaOnnxEngine)?.setSpeakerId(segment.voice)
 
         activeEngine.speak(
             text = textToSpeak,
@@ -648,11 +647,11 @@ class TTSManager(private val context: Context) {
         if (startIdx >= segments.size) return
 
         // The same text speakCurrentSentence will send, so the cache hits.
-        val upcomingTexts = segments.subList(startIdx, endIdx).map { spokenText(it.text) }.filter { it.isNotBlank() }
+        val upcoming = segments.subList(startIdx, endIdx).map { spokenText(it.text) to it.voice }.filter { it.first.isNotBlank() }
         val s = _settings.value
 
         sherpaEngine.pregenerateBatchAsync(
-            sentences = upcomingTexts,
+            sentences = upcoming,
             speed = s.speed
         )
     }
@@ -672,6 +671,10 @@ class TTSManager(private val context: Context) {
             // Apply pause between sentences/paragraphs
             val pauseMs = if (currentSegment?.isParagraphEnd == true) {
                 _settings.value.paragraphPauseMs
+            } else if (currentSegment?.paragraphIndex == nextSegment.paragraphIndex &&
+                currentSegment.sentenceIndexInParagraph == nextSegment.sentenceIndexInParagraph
+            ) {
+                0L   // a quote and its tag are one sentence
             } else {
                 _settings.value.sentencePauseMs
             }

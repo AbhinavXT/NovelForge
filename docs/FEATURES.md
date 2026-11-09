@@ -55,6 +55,7 @@ If you just want a quick summary, see the [README](../README.md).
     - [System TTS](#system-tts)
     - [Piper](#piper)
     - [Kokoro](#kokoro)
+    - [Character voices](#character-voices)
     - [Controls](#controls)
     - [Foreground service](#foreground-service)
   - [Pronunciation dictionary](#pronunciation-dictionary)
@@ -627,6 +628,19 @@ Higher-quality neural engine (also via Sherpa-ONNX). Larger model (~80–250 MB 
 
 Pros: closest to human-quality.
 Cons: bigger download, slower on older phones.
+
+### Character voices
+
+With a voice that has several speakers (the Kokoro models: 11, 53 or 103 of them), each character can be read in their own voice. In the TTS panel, tap **Character voices**:
+
+- **Narrator** picks the voice for everything outside quotes. This works even with character voices off.
+- **Give characters their own voices** turns on the casting. Characters come from the book's [codex](#the-codex), so scan it first.
+- **Cast everyone automatically** gives each character a different voice in the narrator's accent, matching gender where it's known. Translated books know it from the [glossary](#glossary) notes ("female, she/her"). Change any of them by hand.
+- **Anyone else** reads quotes whose speaker can't be told.
+
+A quote's speaker is the character next to a speech verb ("said Lin", "Chen asked"), else the only character the paragraph names, else, in a back-and-forth of bare lines, whoever spoke two lines before. "He said" and crowds of three or more aren't worked out; those lines go to Anyone else. A quote and its tag are read as two parts of one sentence, so the reader still highlights the whole sentence.
+
+Casts are kept per book and per voice model (speaker numbers mean different voices in each model) and aren't in backups. Changes apply from the next time you press play. [Audiobook generation](#audiobook-generation) uses the same cast. Piper and system voices have one speaker, so the option doesn't show for them.
 
 ### Controls
 

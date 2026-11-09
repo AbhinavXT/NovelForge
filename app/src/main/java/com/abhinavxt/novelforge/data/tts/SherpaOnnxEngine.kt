@@ -106,15 +106,14 @@ class SherpaOnnxEngine(
      * (JNI not thread-safe) but runs on a background coroutine.
      */
     fun pregenerateBatchAsync(
-        sentences: List<String>,
-        speakerId: Int = currentSpeakerId,
+        sentences: List<Pair<String, Int>>,
         speed: Float = 1.0f
     ) {
         if (sentences.isEmpty() || ttsWrapper == null) return
 
         pregenerateJob?.cancel()
         pregenerateJob = scope.launch {
-            for (text in sentences) {
+            for ((text, speakerId) in sentences) {
                 if (!isActive || isStopped) break
 
                 val cacheKey = buildCacheKey(text, speakerId, speed)
@@ -363,6 +362,9 @@ class SherpaOnnxEngine(
     }
 
     fun getCurrentSpeakerIdValue(): Int = currentSpeakerId
+
+    /** How many speakers the loaded model has; 1 for most Piper voices, 11+ for Kokoro. */
+    fun speakerCount(): Int = ttsWrapper?.numSpeakers() ?: 0
 
     /**
      * Expose the wrapper for direct generation (used by AudioExporter).
@@ -677,6 +679,9 @@ class SherpaOnnxWrapper private constructor(
     private val tts: OfflineTts,
     val sampleRate: Int
 ) {
+    /** A JNI call like the others; a model that can't say is treated as one speaker. */
+    fun numSpeakers(): Int = runCatching { tts.numSpeakers() }.getOrDefault(1)
+
     companion object {
         private const val TAG = "SherpaOnnxWrapper"
 

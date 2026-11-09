@@ -195,7 +195,7 @@ object NameExtractor {
      * strongest cheap signal that a name belongs to someone who can
      * act — a mountain never replies.
      */
-    private val SPEECH_VERBS: Set<String> = """
+    internal val SPEECH_VERBS: Set<String> = """
         said says say asked asks ask replied replies reply answered answers answer
         shouted shouts yelled cried called calls muttered murmured whispered
         laughed smiled smiles grinned frowned scowled sighed nodded shook
