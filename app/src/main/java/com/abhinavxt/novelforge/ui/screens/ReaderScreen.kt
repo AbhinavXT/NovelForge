@@ -71,7 +71,8 @@ fun ReaderScreen(
             bookArchive = (LocalContext.current.applicationContext as? NovelReaderApplication)
                 ?.bookArchive,
             offlineDictionaries = (LocalContext.current.applicationContext as? NovelReaderApplication)
-                ?.offlineDictionaries
+                ?.offlineDictionaries,
+            translations = (LocalContext.current.applicationContext as? NovelReaderApplication)?.translations
         )
     )
 ) {
@@ -92,6 +93,24 @@ fun ReaderScreen(
         .collectAsState()
     val replacementRules = remember(allReplacementRules, novelId) {
         textReplacements?.rulesFor(novelId, allReplacementRules).orEmpty()
+    }
+
+    // Translation: why a chapter came up untranslated, and the book's translation sheet.
+    val app = LocalContext.current.applicationContext as? NovelReaderApplication
+    val context = LocalContext.current
+    LaunchedEffect(viewModel) {
+        viewModel.translationErrors.collect { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show() }
+    }
+    var showTranslation by remember { mutableStateOf(false) }
+    if (showTranslation && app != null) {
+        val config by app.translationSettings.config.collectAsState()
+        com.abhinavxt.novelforge.ui.components.TranslationSheet(
+            novelId = novelId,
+            manager = app.translations,
+            config = config,
+            onChanged = { viewModel.reloadChapter() },
+            onDismiss = { showTranslation = false }
+        )
     }
 
     // TTS state
@@ -214,6 +233,10 @@ fun ReaderScreen(
 
         is ReaderUiState.Restoring -> {
             LoadingScreen(label = "Restoring book from its file…")
+        }
+
+        is ReaderUiState.Translating -> {
+            LoadingScreen(label = "Translating this chapter…")
         }
 
         is ReaderUiState.NeedsBookFile -> {
@@ -351,7 +374,8 @@ fun ReaderScreen(
                         else textReplacements?.update(id, ruleNovelId, find, replace)
                     }
                 },
-                onDeleteReplacement = { id -> scope.launch { textReplacements?.delete(id) } }
+                onDeleteReplacement = { id -> scope.launch { textReplacements?.delete(id) } },
+                onOpenTranslation = { showTranslation = true }.takeIf { app != null && isInLibrary }
             )
         }
     }

@@ -8,6 +8,7 @@
         <!-- Holds an Anna's Archive account key. -->
         <exclude domain="sharedpref" path="annas_archive.xml"/>
         <exclude domain="sharedpref" path="opds_credentials.xml"/>
+        <exclude domain="sharedpref" path="translation.xml"/>
         <!-- Offline dictionaries can exceed the 25 MB backup quota on their own. -->
         <exclude domain="file" path="dictionaries/"/>
         <!-- Same for an imported font: CJK fonts run to tens of MB. -->
@@ -16,5 +17,6 @@
     <device-transfer>
         <exclude domain="sharedpref" path="annas_archive.xml"/>
         <exclude domain="sharedpref" path="opds_credentials.xml"/>
+        <exclude domain="sharedpref" path="translation.xml"/>
     </device-transfer>
 </data-extraction-rules>

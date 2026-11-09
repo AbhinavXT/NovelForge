@@ -109,6 +109,9 @@ sealed interface ReaderUiState {
     /** An archived book's text is being read back from its file. */
     object Restoring : ReaderUiState
 
+    /** The chapter is being translated before it's shown. */
+    object Translating : ReaderUiState
+
     /** An archived book could not come back without the user's help. */
     data class NeedsBookFile(val problem: ArchiveProblem) : ReaderUiState
 }
@@ -124,8 +127,32 @@ class ReaderViewModel(
     private val prefetcher: ChapterPrefetcher? = null,
     targetParagraph: Int = -1,
     private val bookArchive: LocalBookArchive? = null,
-    private val offlineDictionaries: StarDictManager? = null
+    private val offlineDictionaries: StarDictManager? = null,
+    private val translations: com.abhinavxt.novelforge.data.translation.TranslationManager? = null
 ) : ViewModel() {
+
+    /** Why a chapter is showing untranslated, once per failure. */
+    val translationErrors = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
+
+    /**
+     * [content], translated first when the book is set to translate. A failed translation shows the
+     * original and says why, rather than leaving the reader stuck.
+     */
+    private suspend fun readable(chapterId: String, content: String, showProgress: Boolean): String {
+        val t = translations ?: return content
+        if (!t.isTranslateOn(novelId) || t.isTranslated(chapterId, content)) return content
+        if (showProgress) _uiState.value = ReaderUiState.Translating
+        return try {
+            t.translateChapter(novelId, chapterId, content)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            translationErrors.tryEmit(
+                (e as? com.abhinavxt.novelforge.data.UserFacingException)?.message ?: "Couldn't translate this chapter: ${e.message}"
+            )
+            content
+        }
+    }
 
     // The file the user last picked to restore from, kept so "Restore
     // anyway" applies to that file rather than to the one that went missing.
@@ -507,11 +534,11 @@ class ReaderViewModel(
             try {
                 val cachedContent = prefetcher?.getIfCached(currentChapterId)
 
-                val content = cachedContent ?: repository.getChapterContent(
+                val content = (cachedContent ?: repository.getChapterContent(
                     novelId = novelId,
                     chapterId = currentChapterId,
                     chapterUrl = currentChapterUrl
-                )
+                ))?.let { readable(currentChapterId, it, showProgress = true) }
                 val settings = withBookLook(repository.getReaderSettings())
 
                 if (content != null) {
@@ -1028,12 +1055,12 @@ class ReaderViewModel(
         stitchLoading = true
         viewModelScope.launch {
             try {
-                val content = prefetcher?.getIfCached(next.id)
+                val content = (prefetcher?.getIfCached(next.id)
                     ?: repository.getChapterContent(
                         novelId = novelId,
                         chapterId = next.id,
                         chapterUrl = next.url
-                    )
+                    ))?.let { readable(next.id, it, showProgress = false) }
                 // A hard navigation may have replaced the anchor while we
                 // were loading — if so, this result belongs to a dead window.
                 val cur = _uiState.value as? ReaderUiState.Success
@@ -1221,12 +1248,13 @@ class ReaderViewModel(
             prefetcher: ChapterPrefetcher? = null,
             targetParagraph: Int = -1,
             bookArchive: LocalBookArchive? = null,
-            offlineDictionaries: StarDictManager? = null
+            offlineDictionaries: StarDictManager? = null,
+            translations: com.abhinavxt.novelforge.data.translation.TranslationManager? = null
         ): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences, statsTracker, prefetcher, targetParagraph, bookArchive, offlineDictionaries) as T
+                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences, statsTracker, prefetcher, targetParagraph, bookArchive, offlineDictionaries, translations) as T
                 }
             }
         }

@@ -122,6 +122,12 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
     val offlineDictionaries by lazy { com.abhinavxt.novelforge.data.StarDictManager(this) }
     val readerFonts by lazy { com.abhinavxt.novelforge.data.ReaderFontManager(this) }
 
+    // Translation: settings (API keys, kept out of backups) and the chapter translator
+    val translationSettings by lazy { com.abhinavxt.novelforge.data.translation.TranslationSettings(this) }
+    val translations by lazy {
+        com.abhinavxt.novelforge.data.translation.TranslationManager(database.translationDao(), translationSettings)
+    }
+
     // Reading stats tracker
     val readingStatsTracker by lazy {
         ReadingStatsTracker(database.readingStatDao()).also {

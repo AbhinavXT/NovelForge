@@ -36,9 +36,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ChapterFormattingEntity::class,  // NEW in v21 — EPUB formatting beside the text
         TocEntryEntity::class,           // NEW in v21 — EPUB table of contents
         TextReplacementEntity::class,    // NEW in v22 — text replacement while reading
-        VocabularyEntity::class          // NEW in v25 — words saved from Define
+        VocabularyEntity::class,         // NEW in v25 — words saved from Define
+        ChapterOriginalEntity::class,    // NEW in v26 — text from before translation
+        GlossaryTermEntity::class        // NEW in v26 — per-book translation glossary
     ],
-    version = 25,
+    version = 26,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -57,6 +59,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun bookFormattingDao(): BookFormattingDao  // NEW in v21
     abstract fun textReplacementDao(): TextReplacementDao // NEW in v22
     abstract fun vocabularyDao(): VocabularyDao          // NEW in v25
+    abstract fun translationDao(): TranslationDao        // NEW in v26
 
     companion object {
         @Volatile
@@ -439,6 +442,31 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v26: translation — the per-book switch, originals of translated chapters, and the glossary. */
+        internal val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE novels ADD COLUMN translate INTEGER NOT NULL DEFAULT 0")
+                createTranslationTables(db)
+            }
+        }
+
+        /** Must match what Room generates for the two v26 tables; a test compares them. */
+        internal fun createTranslationTables(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `chapter_originals` (`chapterId` TEXT NOT NULL, `novelId` TEXT NOT NULL, " +
+                    "`original` TEXT NOT NULL, `translatedHash` INTEGER NOT NULL, `engine` TEXT NOT NULL, " +
+                    "`translatedAt` INTEGER NOT NULL, PRIMARY KEY(`chapterId`))"
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_chapter_originals_novelId` ON `chapter_originals` (`novelId`)")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `glossary_terms` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`novelId` TEXT NOT NULL, `source` TEXT NOT NULL, `target` TEXT NOT NULL, `note` TEXT NOT NULL)"
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_glossary_terms_novelId_source` ON `glossary_terms` (`novelId`, `source`)"
+            )
+        }
+
         /** Must match what Room generates for [VocabularyEntity]; a test compares the two. */
         internal fun createVocabularyTable(db: SupportSQLiteDatabase) {
             db.execSQL(
@@ -481,7 +509,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
+                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)
                     // No fallbackToDestructiveMigration() — if a migration is missing,
                     // the app crashes instead of silently wiping the user's library,
                     // bookmarks, reading progress, and stats. Always write migrations.

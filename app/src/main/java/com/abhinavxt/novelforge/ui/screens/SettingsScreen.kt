@@ -1088,6 +1088,21 @@ fun SettingsScreen(
             HorizontalDivider()
             Spacer(modifier = Modifier.height(24.dp))
 
+            // ── Translation Section ──────────────────────────────
+            Text(
+                text = "Translation",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            com.abhinavxt.novelforge.ui.components.TranslationSettingsSection(
+                (context.applicationContext as NovelReaderApplication).translationSettings
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(24.dp))
+
             // ── Privacy Section ──────────────────────────────────
             Text(
                 text = "Privacy",
