@@ -202,10 +202,12 @@ class ReadingStatsTracker(private val dao: ReadingStatDao) {
         val totalTimeMs = dao.getTotalReadingTimeMs()
         val totalMinutes = totalTimeMs / 60_000.0
 
-        if (totalMinutes < 1.0) {
+        // A minute or two (often idle, with the screen on) gave speeds like
+        // 17 WPM and estimates hours too long. Trust it after ten minutes.
+        if (totalMinutes < MIN_MINUTES_FOR_WPM) {
             DEFAULT_WPM // Not enough data yet
         } else {
-            (totalWords / totalMinutes).toInt().coerceIn(50, 1500)
+            (totalWords / totalMinutes).toInt().coerceIn(100, 1500)
         }
     }
 
@@ -222,6 +224,9 @@ class ReadingStatsTracker(private val dao: ReadingStatDao) {
     companion object {
         /** Default reading speed before we have enough data. Average adult = ~250 WPM. */
         const val DEFAULT_WPM = 250
+
+        /** Reading time needed before the user's own speed replaces [DEFAULT_WPM]. */
+        private const val MIN_MINUTES_FOR_WPM = 10.0
     }
 
     /**

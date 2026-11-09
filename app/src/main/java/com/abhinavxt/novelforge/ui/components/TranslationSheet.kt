@@ -65,6 +65,15 @@ fun TranslationSheet(
     val glossary by manager.observeGlossary(novelId).collectAsState(initial = emptyList())
     val bulk by manager.bulk.collectAsState()
     val progress = bulk?.takeIf { it.novelId == novelId }
+    // A finished "translate downloaded chapters" run changed text and titles.
+    var bulkWasRunning by remember { mutableStateOf(false) }
+    LaunchedEffect(progress?.running) {
+        if (progress?.running == true) bulkWasRunning = true
+        else if (bulkWasRunning) {
+            bulkWasRunning = false
+            onChanged()
+        }
+    }
     var untranslated by remember { mutableIntStateOf(0) }
     var showGlossary by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }

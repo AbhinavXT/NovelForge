@@ -174,6 +174,17 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.9.2",
+        date = "Nov 2026",
+        changes = listOf(
+            "E-ink mode no longer crashes the app when you turn it on",
+            "On-device translation works for French, Spanish, German and other books, not only Chinese, Japanese and Korean",
+            "Chapter titles are translated along with the text",
+            "In paged mode the page number no longer covers the last line",
+            "The time-to-finish estimate uses each book's real length"
+        )
+    ),
+    VersionEntry(
         version = "v2.9.1",
         date = "Nov 2026",
         changes = listOf(

@@ -509,12 +509,21 @@ fun NovelReaderTheme(
         androidx.compose.runtime.CompositionLocalProvider(
             LocalEinkMode provides eink,
             // A ripple is a dozen frames of grey an e-ink panel can't draw cleanly.
+            // Invisible rather than null: switching the configuration to null
+            // while screens are composed crashes Material3 1.3 ("Could not
+            // find delegate: AndroidRippleNode") as it removes ripples.
             androidx.compose.material3.LocalRippleConfiguration provides
-                if (eink) null else androidx.compose.material3.RippleConfiguration(),
+                if (eink) InvisibleRipple else androidx.compose.material3.RippleConfiguration(),
             content = content
         )
     }
 }
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+private val InvisibleRipple = androidx.compose.material3.RippleConfiguration(
+    color = androidx.compose.ui.graphics.Color.Transparent,
+    rippleAlpha = androidx.compose.material.ripple.RippleAlpha(0f, 0f, 0f, 0f),
+)
 
 /** True while E-ink mode is on: jump instead of animating. */
 val LocalEinkMode = androidx.compose.runtime.staticCompositionLocalOf { false }

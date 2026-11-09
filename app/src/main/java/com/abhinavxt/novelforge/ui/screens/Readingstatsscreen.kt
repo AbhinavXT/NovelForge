@@ -445,10 +445,10 @@ private fun PersonalRecords(state: StatsUiState) {
     }
     Spacer(Modifier.height(2.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        PRCard("Best Streak", "${state.longestStreak} days",
+        PRCard("Best Streak", dayCount(state.longestStreak),
             "Current: ${state.currentStreak}", Modifier.weight(1f))
         PRCard("Novels Read", "${state.distinctNovelsRead}",
-            "~${String.format("%.1f", state.booksEquivalent)} books worth", Modifier.weight(1f))
+            booksWorth(state.booksEquivalent), Modifier.weight(1f))
     }
 }
 
@@ -790,4 +790,13 @@ private fun formatTime(ms: Long): String {
             if (h > 0) "${d}d ${h}h" else "${d}d"
         }
     }
+}
+
+private fun dayCount(days: Int) = if (days == 1) "1 day" else "$days days"
+
+/** "~2.4 books worth"; below a tenth of a book, which rounds to 0.0, says so in words. */
+internal fun booksWorth(books: Float): String {
+    if (books < 0.05f) return "Less than a book's worth"
+    val shown = String.format(java.util.Locale.US, "%.1f", books)
+    return if (shown == "1.0") "~1 book's worth" else "~$shown books worth"
 }

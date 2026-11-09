@@ -16,6 +16,8 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.mlkit.common.model.DownloadConditions
+import com.google.mlkit.nl.languageid.LanguageIdentification
+import com.google.mlkit.nl.languageid.LanguageIdentificationOptions
 import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.TranslatorOptions
@@ -222,6 +224,24 @@ class OnDeviceTranslator(private val source: String, private val target: String)
 
     private fun languageName(tag: String) =
         java.util.Locale.forLanguageTag(tag).getDisplayLanguage(java.util.Locale.ENGLISH).ifEmpty { tag }
+}
+
+/**
+ * The language of [text] by ML Kit's offline identifier, or null when it isn't sure. The script
+ * check in [TranslationText.detectLanguage] only knows Chinese, Japanese and Korean, so without
+ * this a French or Spanish book read as English and on-device "translation" left it untouched.
+ */
+suspend fun identifyLanguage(text: String): String? {
+    val client = LanguageIdentification.getClient(
+        LanguageIdentificationOptions.Builder().setConfidenceThreshold(0.5f).build()
+    )
+    return try {
+        client.identifyLanguage(text.take(2000)).await().takeIf { it != "und" }
+    } catch (e: Exception) {
+        null
+    } finally {
+        client.close()
+    }
 }
 
 private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { cont ->

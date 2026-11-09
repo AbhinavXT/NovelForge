@@ -77,7 +77,7 @@ fun NovelDetailScreen(
             novelId = novelId,
             manager = app.translations,
             config = config,
-            onChanged = {},
+            onChanged = { viewModel.refreshChapterTitles() },
             onDismiss = { showTranslation = false }
         )
     }

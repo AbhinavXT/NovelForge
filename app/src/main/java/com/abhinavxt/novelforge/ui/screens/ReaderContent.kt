@@ -1087,8 +1087,17 @@ internal fun ReaderContent(
             } // end reading mode if/else
 
             // ── Immersive mode: "tap to exit" pill at top ───────
-            // Visible in BOTH scroll and paged modes.
-            if (isImmersive) {
+            // Visible in BOTH scroll and paged modes. A hint, not a fixture:
+            // it sat over the first line for as long as full screen was on.
+            var showImmersiveHint by remember { mutableStateOf(false) }
+            LaunchedEffect(isImmersive) {
+                showImmersiveHint = isImmersive
+                if (isImmersive) {
+                    delay(3_000)
+                    showImmersiveHint = false
+                }
+            }
+            if (isImmersive && showImmersiveHint) {
                 Surface(
                     onClick = { isImmersive = false },
                     color = colors.text.copy(alpha = 0.15f),

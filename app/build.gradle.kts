@@ -1,6 +1,6 @@
 // ── Version ──────────────────────────────────────────────────────────────
 // Single source of truth. Edit this line only.
-val appVersionName = "2.9.1"
+val appVersionName = "2.9.2"
 
 /**
  * major.minor.patch -> major*10000 + minor*100 + patch
@@ -175,6 +175,8 @@ dependencies {
     implementation(libs.anthropic.java)
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation(libs.mlkit.translate)
+    // Tells French from English etc. for on-device translation; offline, model bundled.
+    implementation(libs.mlkit.language.id)
     // JavaScript engine for source plugins (data/source/plugin). Pure Java,
     // so no extra native ABIs and the runtime is unit-testable on the JVM.
     implementation(libs.rhino)
