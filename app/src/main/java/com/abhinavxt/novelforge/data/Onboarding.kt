@@ -61,9 +61,12 @@ object Onboarding {
     fun claim(tip: Tip): Boolean =
         tip.name !in _seenTips.value && _activeTip.compareAndSet(null, tip)
 
-    fun markSeen(tip: Tip) {
-        _seenTips.value = _seenTips.value + tip.name
-        prefs.edit().putStringSet(KEY_SEEN_TIPS, _seenTips.value).apply()
+    /** Ends [tip]'s turn; [seen] keeps it from showing again. */
+    fun release(tip: Tip, seen: Boolean = true) {
+        if (seen) {
+            _seenTips.value = _seenTips.value + tip.name
+            prefs.edit().putStringSet(KEY_SEEN_TIPS, _seenTips.value).apply()
+        }
         _activeTip.compareAndSet(tip, null)
     }
 

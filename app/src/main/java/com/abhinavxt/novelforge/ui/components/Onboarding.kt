@@ -1,5 +1,6 @@
 package com.abhinavxt.novelforge.ui.components
 
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -32,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.boundsInWindow
@@ -44,6 +46,11 @@ import com.abhinavxt.novelforge.data.Onboarding
 import com.abhinavxt.novelforge.data.Tip
 import com.abhinavxt.novelforge.data.source.plugin.PluginManager
 import com.abhinavxt.novelforge.ui.viewmodel.PluginsViewModel
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /**
  * Wraps [content] and points a one-time tip at it. The tip waits until
@@ -56,12 +63,23 @@ fun TipAnchor(tip: Tip, modifier: Modifier = Modifier, content: @Composable () -
     val active by Onboarding.activeTip.collectAsState()
     val state = rememberTooltipState(isPersistent = true)
     var onScreen by remember { mutableStateOf(false) }
+    var gotIt by remember { mutableStateOf(false) }
     val ready = onScreen && tip.name !in seen && (active == null || active == tip)
 
     LaunchedEffect(ready) {
-        if (!ready || !Onboarding.claim(tip)) return@LaunchedEffect
-        // show() returns when the tip is dismissed or this screen goes away.
-        try { state.show() } finally { Onboarding.markSeen(tip) }
+        if (!ready) return@LaunchedEffect
+        delay(SETTLE_MS) // a control flashing past during a scroll gets no tip
+        if (!Onboarding.claim(tip)) return@LaunchedEffect
+        val shownAt = SystemClock.uptimeMillis()
+        // A persistent tip's show() never returns, so wait for it to be hidden instead.
+        val showing = launch(start = CoroutineStart.UNDISPATCHED) { state.show() }
+        try {
+            snapshotFlow { state.transition.targetState }.first { !it }
+        } finally {
+            showing.cancel()
+            // Gone before it could be read (scrolled away, left the screen): show it next time.
+            Onboarding.release(tip, seen = gotIt || SystemClock.uptimeMillis() - shownAt >= READ_MS)
+        }
     }
 
     TooltipBox(
@@ -69,7 +87,7 @@ fun TipAnchor(tip: Tip, modifier: Modifier = Modifier, content: @Composable () -
         tooltip = {
             RichTooltip(
                 title = { Text(tip.title) },
-                action = { TextButton(onClick = { state.dismiss() }) { Text("Got it") } },
+                action = { TextButton(onClick = { gotIt = true; state.dismiss() }) { Text("Got it") } },
             ) { Text(tip.text) }
         },
         state = state,
@@ -82,6 +100,9 @@ fun TipAnchor(tip: Tip, modifier: Modifier = Modifier, content: @Composable () -
     )
 }
 
+private const val SETTLE_MS = 600L
+private const val READ_MS = 1_500L
+
 /** First-launch screen: pick sources to install, import a book, restore a backup, or skip. */
 @Composable
 fun WelcomeScreen(onFinish: (Onboarding.Action?) -> Unit) {
@@ -89,6 +110,11 @@ fun WelcomeScreen(onFinish: (Onboarding.Action?) -> Unit) {
     val available by vm.available.collectAsState()
     val busy by vm.busy.collectAsState()
     val official = available.filter { it.repo == PluginManager.OFFICIAL_REPO }
+    val repoLoaded by remember {
+        PluginManager.available.map { all -> all.any { it.repo == PluginManager.OFFICIAL_REPO } }
+    }.collectAsState(initial = false)
+    // Loaded and nothing left to offer: every source is installed already.
+    val offerSources = AppConfig.ONLINE_SOURCES_ENABLED && !(repoLoaded && official.isEmpty())
     // The first-party sources that used to ship in the APK are the recommended ones.
     var checked by rememberSaveable { mutableStateOf(PluginManager.OFFICIAL_ONLY.keys.toSet()) }
     var installing by rememberSaveable { mutableStateOf(emptySet<String>()) }
@@ -110,7 +136,7 @@ fun WelcomeScreen(onFinish: (Onboarding.Action?) -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            if (AppConfig.ONLINE_SOURCES_ENABLED) {
+            if (offerSources) {
                 Text("Add sources", style = MaterialTheme.typography.titleMedium)
                 LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
                     if (official.isEmpty()) item {

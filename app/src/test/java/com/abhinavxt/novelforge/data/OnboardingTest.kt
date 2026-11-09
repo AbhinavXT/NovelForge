@@ -25,19 +25,25 @@ class OnboardingTest {
 
         assertTrue(Onboarding.claim(Tip.CODEX))
         assertFalse("another tip is up", Onboarding.claim(Tip.DOWNLOAD))
-        Onboarding.markSeen(Tip.CODEX)
+        Onboarding.release(Tip.CODEX)
         assertNull(Onboarding.activeTip.value)
 
         assertFalse("seen tips stay hidden", Onboarding.claim(Tip.CODEX))
         assertTrue(Onboarding.claim(Tip.DOWNLOAD))
-        Onboarding.markSeen(Tip.DOWNLOAD)
+        Onboarding.release(Tip.DOWNLOAD)
 
         Onboarding.init(context) // survives a restart
         assertEquals(setOf("CODEX", "DOWNLOAD"), Onboarding.seenTips.value)
 
+        Onboarding.release(Tip.PLUGINS, seen = false) // not its turn: no effect
+        assertTrue(Onboarding.claim(Tip.PLUGINS))
+        Onboarding.release(Tip.PLUGINS, seen = false)
+        assertTrue("unread tips come back", Onboarding.claim(Tip.PLUGINS))
+        Onboarding.release(Tip.PLUGINS)
+
         Onboarding.resetTips()
         assertTrue(Onboarding.claim(Tip.CODEX))
-        Onboarding.markSeen(Tip.CODEX)
+        Onboarding.release(Tip.CODEX)
     }
 
     @Test
