@@ -174,6 +174,13 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.9.1",
+        date = "Nov 2026",
+        changes = listOf(
+            "The reader's top and bottom bars no longer sit under the phone's status bar and navigation buttons"
+        )
+    ),
+    VersionEntry(
         version = "v2.9.0",
         date = "Nov 2026",
         changes = listOf(

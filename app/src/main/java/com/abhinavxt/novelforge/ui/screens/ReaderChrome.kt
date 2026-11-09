@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -167,6 +169,9 @@ internal fun ReaderTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(backgroundColor)
+            // The reader's Scaffold doesn't inset its bar slots; keep the
+            // background behind the status bar but the controls below it.
+            .statusBarsPadding()
             .padding(start = 4.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -285,6 +290,7 @@ internal fun ReaderBottomBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(backgroundColor)
+            .navigationBarsPadding()
             .padding(horizontal = 4.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
