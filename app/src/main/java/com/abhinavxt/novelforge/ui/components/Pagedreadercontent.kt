@@ -10,6 +10,9 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -22,11 +25,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import coil.compose.AsyncImage
@@ -101,18 +105,25 @@ fun PagedReaderContent(
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
-    val configuration = LocalConfiguration.current
     val textMeasurer = rememberTextMeasurer()
     val coroutineScope = rememberCoroutineScope()
 
-    // Calculate the available content area dimensions in pixels
-    // Subtract estimated padding: top bar ~56dp, bottom bar ~48dp, content padding 16dp each side
-    val screenHeightDp = configuration.screenHeightDp
-    val contentHeightDp = screenHeightDp - 120  // Rough bar + padding space
-    val contentWidthDp = configuration.screenWidthDp - (settings.horizontalMargin * 2)
-
-    val contentHeightPx = with(density) { contentHeightDp.dp.toPx() }
-    val contentWidthPx = with(density) { contentWidthDp.dp.toPx() }
+    // Paginate for the space this reader really has. It used to guess
+    // "screen height minus 120dp", which overfilled pages once the reader
+    // bars sat clear of the system bars: the last line ran under the page
+    // number. Nothing is paged until the first measurement arrives.
+    var areaPx by remember { mutableStateOf<IntSize?>(null) }
+    val sizedModifier = modifier.onSizeChanged { areaPx = it }
+    val area = areaPx ?: run {
+        Box(sizedModifier.fillMaxSize())
+        return
+    }
+    val contentHeightPx = with(density) {
+        area.height - (PAGE_VERTICAL_PADDING * 2 + PAGE_NUMBER_SPACE).toPx()
+    }.coerceAtLeast(1f)
+    val contentWidthPx = with(density) {
+        area.width - (settings.horizontalMargin * 2).dp.toPx()
+    }.coerceAtLeast(1f)
 
     // Build the text style used for measurement — must match rendering exactly
     val textStyle = remember(settings) { settings.textStyle() }
@@ -162,7 +173,7 @@ fun PagedReaderContent(
     // Guard: if no pages were generated, show a fallback
     if (pages.isEmpty()) {
         Box(
-            modifier = modifier.fillMaxSize(),
+            modifier = sizedModifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -198,13 +209,31 @@ fun PagedReaderContent(
         }
     }
 
+    // The paragraph being read. Page breaks move when the area changes
+    // (full screen hides the bars, font size, margins), so the reader
+    // follows this paragraph rather than a page number.
+    var anchorParagraph by remember { mutableIntStateOf(savedParagraphIndex) }
+    val currentPages by rememberUpdatedState(pages)
+
     // Track page changes → map back to paragraph index for position saving
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage }.collect { pageIndex ->
-            if (pageIndex in pages.indices) {
-                firstParagraphOf(pages, pageIndex)?.let(onParagraphIndexChanged)
+            val now = currentPages
+            if (pageIndex in now.indices) {
+                // Landing on the page that already holds the anchor (after a
+                // re-pagination) keeps it, so repeated toggles don't drift back.
+                if (findPageForParagraph(now, anchorParagraph) != pageIndex) {
+                    firstParagraphOf(now, pageIndex)?.let { anchorParagraph = it }
+                }
+                onParagraphIndexChanged(anchorParagraph)
             }
         }
+    }
+
+    // New page breaks: go back to the page holding the anchor paragraph.
+    LaunchedEffect(pages) {
+        val target = findPageForParagraph(pages, anchorParagraph).coerceIn(0, pages.size - 1)
+        if (pagerState.currentPage != target) pagerState.scrollToPage(target)
     }
 
     // ── Volume key navigation (paged mode) ──────────────────────
@@ -237,7 +266,7 @@ fun PagedReaderContent(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(modifier = sizedModifier.fillMaxSize()) {
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
@@ -281,7 +310,7 @@ fun PagedReaderContent(
             Box(
                 modifier = pageModifier
                     .background(colors.background)
-                    .padding(horizontal = settings.horizontalMargin.dp, vertical = 16.dp)
+                    .padding(horizontal = settings.horizontalMargin.dp, vertical = PAGE_VERTICAL_PADDING)
                     .pointerInput(pagerState.currentPage, settings.tapZoneLayout) {
                         detectTapGestures { offset ->
                             // Zone geometry from the user's layout —
@@ -461,6 +490,12 @@ internal fun paginateParagraphs(
 
     return pages
 }
+
+/** Top and bottom padding of a page. */
+private val PAGE_VERTICAL_PADDING = 16.dp
+
+/** Room kept under the text for the page number. */
+private val PAGE_NUMBER_SPACE = 20.dp
 
 /**
  * The paragraph a page stands for when saving the reading position: its
