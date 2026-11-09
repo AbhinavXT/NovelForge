@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -184,10 +186,15 @@ fun PagedReaderContent(
     // Turn to the page containing the requested match paragraph.
     // Keyed on the whole request pair — its monotonic id makes
     // repeat jumps to the same paragraph re-trigger.
+    // NONE turns pages without the slide; taps and volume keys used to animate anyway.
+    val snapTurns by rememberUpdatedState(settings.pageTransition == PageTransition.NONE)
+    suspend fun turnTo(page: Int) =
+        if (snapTurns) pagerState.scrollToPage(page) else pagerState.animateScrollToPage(page)
+
     LaunchedEffect(searchJumpRequest) {
         searchJumpRequest?.let { (_, paragraphIndex) ->
             val target = findPageForParagraph(pages, paragraphIndex)
-            pagerState.animateScrollToPage(target.coerceIn(0, pages.size - 1))
+            turnTo(target.coerceIn(0, pages.size - 1))
         }
     }
 
@@ -212,14 +219,14 @@ fun PagedReaderContent(
                     when (event) {
                         VolumeKeyEvent.DOWN -> {
                             if (pagerState.currentPage < pages.size - 1) {
-                                pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                turnTo(pagerState.currentPage + 1)
                             } else if (canGoNext) {
                                 onNextChapter()
                             }
                         }
                         VolumeKeyEvent.UP -> {
                             if (pagerState.currentPage > 0) {
-                                pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                                turnTo(pagerState.currentPage - 1)
                             } else if (canGoPrevious) {
                                 onPreviousChapter()
                             }
@@ -288,7 +295,7 @@ fun PagedReaderContent(
                                 TapAction.BACK -> {
                                     if (pagerState.currentPage > 0) {
                                         coroutineScope.launch {
-                                            pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                                            turnTo(pagerState.currentPage - 1)
                                         }
                                     } else if (canGoPrevious) {
                                         onPreviousChapter()
@@ -298,7 +305,7 @@ fun PagedReaderContent(
                                 TapAction.FORWARD -> {
                                     if (pagerState.currentPage < pages.size - 1) {
                                         coroutineScope.launch {
-                                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                            turnTo(pagerState.currentPage + 1)
                                         }
                                     } else if (canGoNext) {
                                         onNextChapter()
