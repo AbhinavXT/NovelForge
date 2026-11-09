@@ -136,8 +136,25 @@ class NovelRepository(
         novelDao.isSourceUriInUse(uri)
 
     /** How an imported chapter looked in its EPUB; null for online chapters and plain books. */
-    suspend fun getChapterFormatting(chapterId: String): com.abhinavxt.novelforge.data.epub.ChapterFormatting? =
-        formatting?.getFormatting(chapterId)
+    /** Null for a translated chapter: the book's italics and footnotes point into the original words. */
+    suspend fun getChapterFormatting(chapterId: String): com.abhinavxt.novelforge.data.epub.ChapterFormatting? {
+        val original = database.translationDao().getOriginal(chapterId)
+        if (original != null && chapterDao.getChapterById(chapterId)?.content?.hashCode() == original.translatedHash) return null
+        return formatting?.getFormatting(chapterId)
+    }
+
+    suspend fun getAllGlossaryForBackup() = database.translationDao().getAllGlossary()
+
+    suspend fun getAllChapterOriginalsForBackup() = database.translationDao().getAllOriginals()
+
+    suspend fun restoreTranslationData(
+        terms: List<com.abhinavxt.novelforge.data.database.GlossaryTermEntity>,
+        originals: List<com.abhinavxt.novelforge.data.database.ChapterOriginalEntity>
+    ) {
+        val dao = database.translationDao()
+        dao.addTerms(terms)
+        originals.forEach { dao.saveOriginal(it) }
+    }
 
     /** An imported book's own table of contents; empty when it has none. */
     suspend fun getBookToc(novelId: String): List<com.abhinavxt.novelforge.data.epub.TocEntry> =
@@ -155,6 +172,8 @@ class NovelRepository(
             highlightDao.deleteHighlightsForNovel(novelId)  // Clean up highlights too
             categoryDao.clearNovelCategories(novelId)       // Phase 6: category links
             updateDao.deleteForNovel(novelId)               // Phase 6: updates feed rows
+            database.translationDao().deleteOriginals(novelId)
+            database.translationDao().deleteGlossary(novelId)
         }
         formatting?.clearAll(novelId)
         // Widget hook — if the removed novel was the widget's novel, the

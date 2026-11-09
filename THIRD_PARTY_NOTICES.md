@@ -49,6 +49,9 @@ makes NovelForge able to read anything at all came from their work.
 | [Jsoup](https://jsoup.org/)                                         | MIT        | HTML parsing                                            |
 | [Rhino](https://github.com/mozilla/rhino)                           | MPL-2.0    | JavaScript engine that runs source plugins              |
 | [Gson](https://github.com/google/gson)                              | Apache-2.0 | JSON serialization for backup/restore                   |
+| [Anthropic Java SDK](https://github.com/anthropics/anthropic-sdk-java) | MIT | Translation with Claude |
+| [ML Kit Translation](https://developers.google.com/ml-kit/language/translation) | Google ML Kit Terms (proprietary) | On-device translation |
+| [desugar_jdk_libs](https://github.com/google/desugar_jdk_libs) | GPL-2.0 with Classpath Exception | `java.time` on Android 7 for the Anthropic SDK |
 | [Coil](https://coil-kt.github.io/coil/)                             | Apache-2.0 | Image loading                                           |
 | [AndroidX / Jetpack Compose](https://developer.android.com/jetpack) | Apache-2.0 | UI, Room, WorkManager, Glance, DataStore, Media         |
 | [Kotlin & kotlinx.coroutines](https://kotlinlang.org/)              | Apache-2.0 | Language and concurrency                                |

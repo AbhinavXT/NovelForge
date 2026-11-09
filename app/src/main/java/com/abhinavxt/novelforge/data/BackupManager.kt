@@ -32,7 +32,10 @@ data class BackupData(
     val pronunciationEntries: List<PronunciationBackup>? = null,
     val readingStats: List<ReadingStatBackup>? = null,
     val textReplacements: List<TextReplacementBackup>? = null,
-    val vocabulary: List<VocabularyBackup>? = null
+    val vocabulary: List<VocabularyBackup>? = null,
+    val glossary: List<GlossaryBackup>? = null,
+    /** Translated chapters' original text, so a restored translation can still be undone. */
+    val chapterOriginals: List<ChapterOriginalBackup>? = null
 ) {
     companion object {
         const val BACKUP_VERSION = 2
@@ -86,7 +89,9 @@ data class NovelBackup(
     val readingStatus: String? = null,
     val readerSettingsJson: String? = null,
     // v25 book language; null in older backups.
-    val language: String? = null
+    val language: String? = null,
+    // v26 translate switch; null in older backups.
+    val translate: Boolean? = null
 )
 
 data class ChapterBackup(
@@ -148,6 +153,17 @@ data class TextReplacementBackup(
     val novelId: String?,
     val find: String,
     val replace: String
+)
+
+data class GlossaryBackup(val novelId: String, val source: String, val target: String, val note: String)
+
+data class ChapterOriginalBackup(
+    val chapterId: String,
+    val novelId: String,
+    val original: String,
+    val translatedHash: Int,
+    val engine: String,
+    val translatedAt: Long
 )
 
 /** A saved word with its review schedule. */
@@ -241,7 +257,8 @@ class BackupManager(
                     textFingerprint = novel.textFingerprint,
                     readingStatus = novel.readingStatus,
                     readerSettingsJson = novel.readerSettingsJson,
-                    language = novel.language
+                    language = novel.language,
+                    translate = novel.translate
                 )
             }
 
@@ -340,7 +357,13 @@ class BackupManager(
                 pronunciationEntries = pronunciationBackups,
                 readingStats = readingStatBackups,
                 textReplacements = textReplacementBackups,
-                vocabulary = vocabularyBackups
+                vocabulary = vocabularyBackups,
+                glossary = repository.getAllGlossaryForBackup().map {
+                    GlossaryBackup(it.novelId, it.source, it.target, it.note)
+                },
+                chapterOriginals = repository.getAllChapterOriginalsForBackup().map {
+                    ChapterOriginalBackup(it.chapterId, it.novelId, it.original, it.translatedHash, it.engine, it.translatedAt)
+                }
             )
 
             // Write to file
@@ -423,7 +446,8 @@ class BackupManager(
                     textFingerprint = novelBackup.textFingerprint,
                     readingStatus = novelBackup.readingStatus,
                     readerSettingsJson = novelBackup.readerSettingsJson,
-                    language = novelBackup.language
+                    language = novelBackup.language,
+                    translate = novelBackup.translate == true
                 )
                 repository.insertNovelForRestore(novelEntity)
                 novelsRestored++
@@ -528,6 +552,24 @@ class BackupManager(
                 }
             } catch (e: Exception) {
                 Logger.w("BackupManager", "Failed to restore text replacements: ${e.message}")
+            }
+
+            // Restore the translation glossary, and originals only along with the translated text they undo.
+            try {
+                repository.restoreTranslationData(
+                    backup.glossary.orEmpty().map {
+                        com.abhinavxt.novelforge.data.database.GlossaryTermEntity(
+                            novelId = it.novelId, source = it.source, target = it.target, note = it.note
+                        )
+                    },
+                    if (!includeDownloads) emptyList() else backup.chapterOriginals.orEmpty().map {
+                        com.abhinavxt.novelforge.data.database.ChapterOriginalEntity(
+                            it.chapterId, it.novelId, it.original, it.translatedHash, it.engine, it.translatedAt
+                        )
+                    }
+                )
+            } catch (e: Exception) {
+                Logger.w("BackupManager", "Failed to restore translation data: ${e.message}")
             }
 
             // Restore vocabulary; a word already saved keeps its card.

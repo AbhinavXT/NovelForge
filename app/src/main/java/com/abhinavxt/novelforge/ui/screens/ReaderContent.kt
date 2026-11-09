@@ -203,6 +203,8 @@ internal fun ReaderContent(
     replacementRules: List<TextReplacementEntity> = emptyList(),
     onSaveReplacement: (id: Long?, novelId: String?, find: String, replace: String) -> Unit = { _, _, _, _ -> },
     onDeleteReplacement: (Long) -> Unit = {},
+    // null hides the Translation row (book not in the library).
+    onOpenTranslation: (() -> Unit)? = null,
     // Per-book look: null hides the switch (book not in the library).
     bookLookOn: Boolean? = null,
     onBookLookChange: (Boolean) -> Unit = {},
@@ -633,6 +635,12 @@ internal fun ReaderContent(
             onOpenTextReplacements = {
                 showAppearanceSheet = false
                 showReplacements = true
+            },
+            onOpenTranslation = onOpenTranslation?.let { open ->
+                {
+                    showAppearanceSheet = false
+                    open()
+                }
             },
             onDismiss = { showAppearanceSheet = false }
         )

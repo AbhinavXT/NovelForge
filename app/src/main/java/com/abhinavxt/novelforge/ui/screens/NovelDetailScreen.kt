@@ -1,5 +1,6 @@
 package com.abhinavxt.novelforge.ui.screens
 
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -67,6 +68,19 @@ fun NovelDetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val isArchived by viewModel.isArchived.collectAsState()
+
+    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.abhinavxt.novelforge.NovelReaderApplication
+    var showTranslation by remember { mutableStateOf(false) }
+    if (showTranslation && app != null) {
+        val config by app.translationSettings.config.collectAsState()
+        com.abhinavxt.novelforge.ui.components.TranslationSheet(
+            novelId = novelId,
+            manager = app.translations,
+            config = config,
+            onChanged = {},
+            onDismiss = { showTranslation = false }
+        )
+    }
     val estimatedTimeToFinish by viewModel.estimatedTimeToFinish.collectAsState()
     val downloadState by downloadManager.novelDownloadState.collectAsState()
     val downloadingChapters by viewModel.downloadingChapters.collectAsState()
@@ -142,6 +156,16 @@ fun NovelDetailScreen(
                         text = "Loading...",
                         style = MaterialTheme.typography.titleMedium
                     )
+                }
+
+                // Translation — only for a library book, whose row holds the switch
+                if ((uiState as? NovelDetailUiState.Success)?.isInLibrary == true) {
+                    IconButton(onClick = { showTranslation = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Translate,
+                            contentDescription = "Translation"
+                        )
+                    }
                 }
 
                 // Character Codex — who's who, spoiler-safe

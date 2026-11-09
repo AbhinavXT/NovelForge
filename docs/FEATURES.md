@@ -50,6 +50,7 @@ If you just want a quick summary, see the [README](../README.md).
     - [Library folder](#library-folder)
     - [Archiving imported books](#archiving-imported-books)
     - [Export](#export)
+  - [Translation](#translation)
   - [Text-to-speech](#text-to-speech)
     - [System TTS](#system-tts)
     - [Piper](#piper)
@@ -574,6 +575,34 @@ Only downloaded chapters are exported (the export works fully offline). Chapters
 
 ---
 
+## Translation
+
+Read raw Chinese, Japanese or Korean novels in English (or any of ~60 languages), or clean up machine-translated English, with names that stay the same from chapter to chapter.
+
+### Turning it on
+
+On a library book, tap the translate icon on its page, or Quick Settings → Translation in the reader, and switch on **Translate this book**. From then on each chapter is translated the first time you open it and kept, so it's only translated (and paid for) once. A chapter you were reading online is saved as downloaded once translated. **Translate N downloaded chapters** does the rest of what's downloaded in one go, while the app stays open.
+
+Translated text replaces the chapter's text, so search, TTS, audiobooks, highlights, EPUB export and the codex all work on the translation. Paragraphs stay paragraph for paragraph, so bookmarks and your place stay put. An EPUB's italics and footnotes aren't shown on translated chapters. **Restore original text** puts every translated chapter back and switches translation off.
+
+### Engines
+
+Settings → Translation:
+
+- **AI, with your key.** Claude, OpenAI, Gemini, DeepSeek, OpenRouter, or any other OpenAI-compatible address (https only). Best quality, and it handles both raw text and bad MTL. Chapter text goes to the provider you picked, who bills you. Claude defaults to `claude-opus-5-5`; for the others, type the model name your provider gives you. The key stays on the phone and is left out of backups.
+- **On-device.** Google's offline translator, about 30 MB per language pair, downloaded the first time. Free and private but rougher, and it can't improve English that's already English: on an English book it only applies the glossary. The source language comes from the book's language setting, else from its script. Some phones need Google Play services for the model download.
+
+### Glossary
+
+Each book keeps a glossary: a name or term as it appears in the original, how to translate it, and a note such as "female, she/her". The AI fills it in as it meets recurring names, and every later chapter is translated with it, which is what stops "Lin Feng" turning into "Lin Fung" fifty chapters later. Edit or add terms from the Translation sheet; one you set is never overwritten. Changes apply to chapters translated afterwards; restore and translate again to redo earlier ones.
+
+### Limits
+
+- A failed chapter (no key, no connection, a refusal) is shown untranslated with a message saying why.
+- Re-downloading a chapter or restoring an archived book brings back the original text; with translation on it's translated again when opened.
+- Restore the original text before archiving a translated imported book: archiving checks the stored text against the file.
+- After translating a book, rebuild its codex so it finds the translated names.
+
 ## Text-to-speech
 
 Three engine options. Pick from the headphones icon in the reader → settings cog → Voice.
@@ -738,6 +767,7 @@ The widget refreshes itself when you save reading position, finish a reading ses
 - Bookmarks and highlights with notes
 - Pronunciation dictionary
 - Text replacement rules
+- Translation glossaries and which books translate (API keys are not included)
 - Vocabulary, with each word's review progress
 - Reading stats history
 
@@ -848,7 +878,7 @@ GPL-3.0 §5(d) requires an interactive program that displays legal notices to ke
 Some explicit non-features so expectations match reality:
 
 - **No cloud sync.** The app is offline-first and stays that way. Backup/restore is the closest equivalent - manual, on your terms.
-- **No cloud AI.** The codex, the relationship graph, and search are local heuristics plus a local index. Nothing you read is sent anywhere to be "analyzed."
+- **No cloud AI unless you add it.** The codex, the relationship graph, and search are local heuristics plus a local index. The only thing that ever sends text out is [translation](#translation) with an AI provider, and only for books you switch it on for, with your own key.
 - **No account system.** Never. There is no NovelForge server.
 - **No iOS version.** App Store rules conflict with the way this app is built.
 - **No Play Store distribution.** Sideload only, see the [README](../README.md) for install steps.
