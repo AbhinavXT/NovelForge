@@ -12,16 +12,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import android.widget.Toast
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.abhinavxt.novelforge.data.Onboarding
 
 /** Where each feature lives. Each line names the control a reader has to find. */
 private val sections = listOf(
@@ -67,18 +63,6 @@ fun GuideScreen(onBackClick: () -> Unit) {
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-            }
-            item {
-                val context = LocalContext.current
-                OutlinedButton(
-                    onClick = {
-                        Onboarding.resetTips()
-                        Toast.makeText(context, "Tips will show again", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.padding(vertical = 16.dp),
-                ) {
-                    Text("Show tips again")
                 }
             }
         }

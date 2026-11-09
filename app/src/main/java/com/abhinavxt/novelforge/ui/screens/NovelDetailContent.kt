@@ -406,23 +406,21 @@ internal fun NovelDetailContent(
                                             Text("Cancel", style = MaterialTheme.typography.labelSmall)
                                         }
                                     } else if (exportedCount < totalCount) {
-                                        com.abhinavxt.novelforge.ui.components.TipAnchor(com.abhinavxt.novelforge.data.Tip.AUDIO_EXPORT) {
-                                            TextButton(
-                                                onClick = onExportAllAudio,
-                                                modifier = Modifier.height(28.dp),
-                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                                            ) {
-                                                Icon(
-                                                    Icons.Default.GraphicEq,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(14.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    text = if (exportedCount == 0) "Export" else "Export (${totalCount - exportedCount})",
-                                                    style = MaterialTheme.typography.labelSmall
-                                                )
-                                            }
+                                        TextButton(
+                                            onClick = onExportAllAudio,
+                                            modifier = Modifier.height(28.dp),
+                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.GraphicEq,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = if (exportedCount == 0) "Export" else "Export (${totalCount - exportedCount})",
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
                                         }
                                         TextButton(
                                             onClick = { showExportRangeDialog = true },

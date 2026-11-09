@@ -178,9 +178,7 @@ private val changelogEntries = listOf(
         date = "Nov 2026",
         changes = listOf(
             "A welcome screen on first launch to add sources, import a book or restore a backup",
-            "A guide to where every feature lives, from the welcome screen or Settings",
-            "One-time tips point out search, highlights, vocabulary, the codex, downloads, audio export and more",
-            "Settings \u2192 Reading \u2192 Show tips again"
+            "A guide to where every feature lives, from the welcome screen or Settings \u2192 Reading \u2192 Guide"
         )
     ),
     VersionEntry(

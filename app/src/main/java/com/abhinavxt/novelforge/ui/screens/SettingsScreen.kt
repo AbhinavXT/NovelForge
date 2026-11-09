@@ -1020,9 +1020,45 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            com.abhinavxt.novelforge.ui.components.TipAnchor(com.abhinavxt.novelforge.data.Tip.READING_STATS) {
+            Card(
+                onClick = onNavigateToReadingStats,
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Reading Stats",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Words read, time spent, streaks",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            if (com.abhinavxt.novelforge.AppConfig.ONLINE_SOURCES_ENABLED) {
+                Spacer(modifier = Modifier.height(12.dp))
+
                 Card(
-                    onClick = onNavigateToReadingStats,
+                    onClick = onNavigateToPlugins,
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
@@ -1035,19 +1071,19 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            Icons.Default.Info,
+                            Icons.Default.Extension,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Reading Stats",
+                                text = "Source plugins",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = "Words read, time spent, streaks",
+                                text = "Add sources from plugin repositories",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1056,53 +1092,7 @@ fun SettingsScreen(
                 }
             }
 
-            if (com.abhinavxt.novelforge.AppConfig.ONLINE_SOURCES_ENABLED) {
-                Spacer(modifier = Modifier.height(12.dp))
-
-                com.abhinavxt.novelforge.ui.components.TipAnchor(com.abhinavxt.novelforge.data.Tip.PLUGINS) {
-                    Card(
-                        onClick = onNavigateToPlugins,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.Extension,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Source plugins",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = "Add sources from plugin repositories",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Row {
-                TextButton(onClick = onNavigateToGuide) { Text("Guide") }
-                TextButton(onClick = {
-                    com.abhinavxt.novelforge.data.Onboarding.resetTips()
-                    android.widget.Toast.makeText(context, "Tips will show again", android.widget.Toast.LENGTH_SHORT).show()
-                }) { Text("Show tips again") }
-            }
+            TextButton(onClick = onNavigateToGuide) { Text("Guide") }
 
             Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider()

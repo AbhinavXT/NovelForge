@@ -1,6 +1,5 @@
 package com.abhinavxt.novelforge.ui.components
 
-import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,16 +14,11 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.RichTooltip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -33,75 +27,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.abhinavxt.novelforge.AppConfig
 import com.abhinavxt.novelforge.data.Onboarding
-import com.abhinavxt.novelforge.data.Tip
 import com.abhinavxt.novelforge.data.source.plugin.PluginManager
 import com.abhinavxt.novelforge.ui.viewmodel.PluginsViewModel
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
-
-/**
- * Wraps [content] and points a one-time tip at it. The tip waits until
- * the control is fully on screen and no other tip is up.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun TipAnchor(tip: Tip, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    val seen by Onboarding.seenTips.collectAsState()
-    val active by Onboarding.activeTip.collectAsState()
-    val state = rememberTooltipState(isPersistent = true)
-    var onScreen by remember { mutableStateOf(false) }
-    var gotIt by remember { mutableStateOf(false) }
-    val ready = onScreen && tip.name !in seen && (active == null || active == tip)
-
-    LaunchedEffect(ready) {
-        if (!ready) return@LaunchedEffect
-        delay(SETTLE_MS) // a control flashing past during a scroll gets no tip
-        if (!Onboarding.claim(tip)) return@LaunchedEffect
-        val shownAt = SystemClock.uptimeMillis()
-        // A persistent tip's show() never returns, so wait for it to be hidden instead.
-        val showing = launch(start = CoroutineStart.UNDISPATCHED) { state.show() }
-        try {
-            snapshotFlow { state.transition.targetState }.first { !it }
-        } finally {
-            showing.cancel()
-            // Gone before it could be read (scrolled away, left the screen): show it next time.
-            Onboarding.release(tip, seen = gotIt || SystemClock.uptimeMillis() - shownAt >= READ_MS)
-        }
-    }
-
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberRichTooltipPositionProvider(),
-        tooltip = {
-            RichTooltip(
-                title = { Text(tip.title) },
-                action = { TextButton(onClick = { gotIt = true; state.dismiss() }) { Text("Got it") } },
-            ) { Text(tip.text) }
-        },
-        state = state,
-        enableUserInput = false, // no long-press tooltip on the control itself
-        modifier = modifier.onGloballyPositioned {
-            // boundsInWindow is clipped by scrolling parents, so a partly hidden control reads short.
-            onScreen = it.size.height > 0 && it.boundsInWindow().height.toInt() == it.size.height
-        },
-        content = content,
-    )
-}
-
-private const val SETTLE_MS = 600L
-private const val READ_MS = 1_500L
 
 /** First-launch screen: pick sources to install, import a book, restore a backup, or skip. */
 @Composable

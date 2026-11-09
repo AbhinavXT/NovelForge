@@ -10,7 +10,7 @@ If you just want a quick summary, see the [README](../README.md).
 
 - [Features](#features)
   - [Table of contents](#table-of-contents)
-  - [First launch and tips](#first-launch-and-tips)
+  - [First launch and the guide](#first-launch-and-the-guide)
   - [The reader](#the-reader)
     - [Saving your position](#saving-your-position)
     - [Previously in…](#previously-in)
@@ -83,13 +83,11 @@ If you just want a quick summary, see the [README](../README.md).
 
 ---
 
-## First launch and tips
+## First launch and the guide
 
 A fresh install opens with a welcome screen. It lists the sources in the official plugin repository with checkboxes; the ones that used to come built in are ticked. **Install and start** installs the ticked ones and opens the app. **Import a book** and **Restore backup** take you to the Library or Settings with the file picker already open. **Skip** (or Back) goes straight in. Updating from an older version never shows it.
 
 **How it works** on the welcome screen (and **Settings → Reading → Guide** later) opens a one-page guide to where each feature lives. Back from it returns to the welcome screen.
-
-After that, a short tip appears once beside features that are easy to miss: searching your sources (Search tab), searching inside books, highlights and vocabulary (the Library's top bar), the character codex, downloads, audio export, reading stats, character voices and source plugins. Only one shows at a time, and only once the control has been still on screen for a moment, so scrolling past doesn't use it up. **Got it** closes it for good. **Settings → Reading → Show tips again** brings them all back.
 
 ---
 

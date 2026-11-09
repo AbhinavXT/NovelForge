@@ -169,13 +169,11 @@ fun NovelDetailScreen(
                 }
 
                 // Character Codex — who's who, spoiler-safe
-                com.abhinavxt.novelforge.ui.components.TipAnchor(com.abhinavxt.novelforge.data.Tip.CODEX) {
-                    IconButton(onClick = onCodexClick) {
-                        Icon(
-                            imageVector = Icons.Default.Groups,
-                            contentDescription = "Character codex"
-                        )
-                    }
+                IconButton(onClick = onCodexClick) {
+                    Icon(
+                        imageVector = Icons.Default.Groups,
+                        contentDescription = "Character codex"
+                    )
                 }
             }
         }
