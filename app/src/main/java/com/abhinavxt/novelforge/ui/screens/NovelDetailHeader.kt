@@ -26,7 +26,10 @@ import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -72,7 +75,8 @@ internal fun NovelHeader(
     estimatedTimeToFinish: String? = null,
     onToggleLibrary: () -> Unit,
     onStartReading: () -> Unit,
-    onDownloadAll: () -> Unit
+    onDownloadAll: () -> Unit,
+    onDownloadNext: (count: Int?) -> Unit
 ) {
     // Resolve cover URL vs local file path
     // Local copy: the model lives in :source-api, so no smart cast.
@@ -326,10 +330,12 @@ internal fun NovelHeader(
                 val totalCount = novel.chapters.size
                 val allDownloaded = downloadedCount == totalCount && totalCount > 0
 
+                var menuOpen by remember { mutableStateOf(false) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedButton(
                     onClick = onDownloadAll,
                     enabled = !isDownloading && !allDownloaded && novel.chapters.isNotEmpty(),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.weight(1f)
                 ) {
                     if (isDownloading) {
                         CircularProgressIndicator(
@@ -363,6 +369,33 @@ internal fun NovelHeader(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Download All ($totalCount)")
                     }
+                }
+
+                // How much to download: the next few unread chapters, or everything left
+                Box {
+                    IconButton(
+                        onClick = { menuOpen = true },
+                        enabled = !allDownloaded && novel.chapters.isNotEmpty()
+                    ) {
+                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Download options")
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        listOf<Pair<String, Int?>>(
+                            "Next 5 unread" to 5,
+                            "Next 10 unread" to 10,
+                            "Next 25 unread" to 25,
+                            "All remaining" to null
+                        ).forEach { (label, count) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    menuOpen = false
+                                    onDownloadNext(count)
+                                }
+                            )
+                        }
+                    }
+                }
                 }
             }
         }

@@ -51,6 +51,9 @@ class NovelDetailViewModel(
     // Store application context for M4B builder access
     private val appContext = context.applicationContext
 
+    // Declared before `init`: the init block starts collecting from it.
+    private val downloadManager = (appContext as NovelReaderApplication).downloadManager
+
     /** Live, so the badge clears when the reader restores the book. */
     val isArchived: StateFlow<Boolean> = repository.getArchivedNovelIds()
         .map { novelId in it }
@@ -66,10 +69,6 @@ class NovelDetailViewModel(
      */
     private val _estimatedTimeToFinish = MutableStateFlow<String?>(null)
     val estimatedTimeToFinish: StateFlow<String?> = _estimatedTimeToFinish.asStateFlow()
-
-    // Track chapters currently being downloaded
-    private val _downloadingChapters = MutableStateFlow<Set<String>>(emptySet())
-    val downloadingChapters: StateFlow<Set<String>> = _downloadingChapters.asStateFlow()
 
     // Check if this is a local novel (imported EPUB)
     private val isLocalNovel: Boolean = novelId.startsWith("local_")
@@ -135,6 +134,7 @@ class NovelDetailViewModel(
         loadReadingProgress()
         loadNewChapterCount()
         observeVoiceChanges()
+        observeDownloadedChapters()
     }
 
     private fun loadNovel() {
@@ -220,41 +220,9 @@ class NovelDetailViewModel(
     }
 
     /**
-     * Download a single chapter
-     */
-    fun downloadChapter(chapter: Chapter) {
-        if (!AppConfig.ONLINE_SOURCES_ENABLED) return
-        val currentState = _uiState.value
-        if (currentState !is NovelDetailUiState.Success) return
-        if (currentState.isLocalNovel) return
-        if (chapter.isDownloaded) return
-
-        viewModelScope.launch {
-            // Add to downloading set
-            _downloadingChapters.value = _downloadingChapters.value + chapter.id
-
-            try {
-                prepareForDownload()
-                val success = repository.downloadChapter(
-                    novelId = novelId,
-                    chapterId = chapter.id,
-                    chapterUrl = chapter.url
-                )
-
-                if (success) {
-                    // Update the chapter's download status in UI state
-                    updateChapterDownloadStatus(chapter.id, true)
-                }
-            } finally {
-                // Remove from downloading set
-                _downloadingChapters.value = _downloadingChapters.value - chapter.id
-            }
-        }
-    }
-
-    /**
-     * Call before downloading chapters: gives them somewhere to be saved,
-     * which adds the book to the library if it wasn't there yet.
+     * Makes the novel and its chapter rows exist, which saving downloaded text needs:
+     * the text is written with an UPDATE that silently does nothing without a row.
+     * Downloading a book therefore also adds it to the library.
      */
     suspend fun prepareForDownload() {
         val state = _uiState.value as? NovelDetailUiState.Success ?: return
@@ -266,29 +234,48 @@ class NovelDetailViewModel(
         }
     }
 
-    /**
-     * Update a chapter's download status in the UI state
-     */
-    private fun updateChapterDownloadStatus(chapterId: String, isDownloaded: Boolean) {
-        val currentState = _uiState.value
-        if (currentState !is NovelDetailUiState.Success) return
-
-        val updatedChapters = currentState.novel.chapters.map { chapter ->
-            if (chapter.id == chapterId) {
-                chapter.copy(isDownloaded = isDownloaded)
-            } else {
-                chapter
+    /** Queues [chapters] to download in the background; they keep downloading if the screen is left. */
+    fun enqueueDownload(chapters: List<Chapter>) {
+        if (!AppConfig.ONLINE_SOURCES_ENABLED) return
+        val state = _uiState.value as? NovelDetailUiState.Success ?: return
+        if (state.isLocalNovel) return
+        val title = state.novel.title
+        // Leaving the screen right after the tap must not stop the pair half way.
+        viewModelScope.launch {
+            withContext(kotlinx.coroutines.NonCancellable) {
+                prepareForDownload()
+                downloadManager.enqueue(novelId, title, chapters)
             }
         }
-
-        _uiState.value = currentState.copy(
-            novel = currentState.novel.copy(chapters = updatedChapters)
-        )
     }
 
-    /**
-     * Refresh download status for all chapters
-     */
+    /** Download a single chapter */
+    fun downloadChapter(chapter: Chapter) {
+        if (chapter.isDownloaded) return
+        enqueueDownload(listOf(chapter))
+    }
+
+    /** The next [count] undownloaded chapters after the reading position, or every one when [count] is null. */
+    fun downloadNextUnread(count: Int?) {
+        val state = _uiState.value as? NovelDetailUiState.Success ?: return
+        enqueueDownload(nextUnreadToDownload(state.novel.chapters, _currentReadingChapterId.value, count))
+    }
+
+    private fun observeDownloadedChapters() {
+        if (isLocalNovel) return
+        viewModelScope.launch {
+            downloadManager.downloadedChapterIds(novelId).collect { ids ->
+                val state = _uiState.value as? NovelDetailUiState.Success ?: return@collect
+                if (state.novel.chapters.none { (it.id in ids) != it.isDownloaded }) return@collect
+                _uiState.value = state.copy(
+                    novel = state.novel.copy(
+                        chapters = state.novel.chapters.map { it.copy(isDownloaded = it.id in ids) }
+                    )
+                )
+            }
+        }
+    }
+
     /** Picks up chapter titles that translating or restoring just changed. */
     fun refreshChapterTitles() {
         viewModelScope.launch {
@@ -297,25 +284,6 @@ class NovelDetailViewModel(
             if (stored.isEmpty()) return@launch
             val chapters = state.novel.chapters.map { c -> stored[c.id]?.let { c.copy(title = it) } ?: c }
             _uiState.value = state.copy(novel = state.novel.copy(chapters = chapters))
-        }
-    }
-
-    fun refreshDownloadStatus() {
-        viewModelScope.launch {
-            val currentState = _uiState.value
-            if (currentState !is NovelDetailUiState.Success) return@launch
-            if (currentState.isLocalNovel) return@launch
-
-            // Same one-query pattern as loadOnlineNovel — avoids N
-            // single-row lookups on every refresh.
-            val downloadedIds = repository.getDownloadedChapterIds(novelId)
-            val updatedChapters = currentState.novel.chapters.map { chapter ->
-                chapter.copy(isDownloaded = chapter.id in downloadedIds)
-            }
-
-            _uiState.value = currentState.copy(
-                novel = currentState.novel.copy(chapters = updatedChapters)
-            )
         }
     }
 
@@ -821,3 +789,16 @@ class NovelDetailViewModel(
 
 /** Average characters per word, spaces included, for estimating words from text length. */
 private const val CHARS_PER_WORD = 6L
+
+/**
+ * The chapters a "Download next N" press should queue: those after the reading position
+ * (from the first chapter when there isn't one) that aren't downloaded, in order.
+ * A null [count] means all of them.
+ */
+internal fun nextUnreadToDownload(chapters: List<Chapter>, currentChapterId: String?, count: Int?): List<Chapter> {
+    val after = chapters.firstOrNull { it.id == currentChapterId }?.number
+    val unread = chapters
+        .filter { !it.isDownloaded && (after == null || it.number > after) }
+        .sortedBy { it.number }
+    return if (count == null) unread else unread.take(count)
+}

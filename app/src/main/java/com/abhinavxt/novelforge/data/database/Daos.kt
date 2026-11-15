@@ -325,6 +325,10 @@ interface ChapterDao {
     @Query("SELECT id FROM chapters WHERE novelId = :novelId AND isDownloaded = 1")
     suspend fun getDownloadedChapterIds(novelId: String): List<String>
 
+    /** Live version, so ticks appear as a background download finishes each chapter. */
+    @Query("SELECT id FROM chapters WHERE novelId = :novelId AND isDownloaded = 1")
+    fun observeDownloadedChapterIds(novelId: String): Flow<List<String>>
+
     // ── One-query replacement for the load-everything-and-sum-in-Kotlin
     //    approach in getNovelsWithDownloads(). LENGTH(content) runs inside
     //    SQLite; no chapter text ever crosses into the app process. ──
@@ -986,3 +990,68 @@ interface TranslationDao {
 
 /** A stored chapter's id and text, to tell translated chapters from the rest. */
 data class StoredChapterRef(val id: String, val content: String)
+
+data class DownloadQueueCounts(
+    val queued: Int,
+    val downloading: Int,
+    val failed: Int
+)
+
+@Dao
+interface DownloadQueueDao {
+
+    @Query("SELECT * FROM download_queue ORDER BY addedAt, chapterNumber")
+    fun observeAll(): Flow<List<DownloadQueueEntity>>
+
+    @Query("SELECT * FROM download_queue WHERE novelId = :novelId ORDER BY addedAt, chapterNumber")
+    fun observeForNovel(novelId: String): Flow<List<DownloadQueueEntity>>
+
+    @Query(
+        """
+        SELECT COALESCE(SUM(status = 'QUEUED'), 0) AS queued,
+               COALESCE(SUM(status = 'DOWNLOADING'), 0) AS downloading,
+               COALESCE(SUM(status = 'FAILED'), 0) AS failed
+        FROM download_queue
+        """
+    )
+    fun observeCounts(): Flow<DownloadQueueCounts>
+
+    @Query("SELECT chapterId FROM download_queue")
+    suspend fun getQueuedIds(): List<String>
+
+    /** Rows already queued keep their place and attempts: IGNORE, not REPLACE. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(rows: List<DownloadQueueEntity>): List<Long>
+
+    /** The next chapter to fetch; rows that gave up are left alone. */
+    @Query("SELECT * FROM download_queue WHERE status = 'QUEUED' ORDER BY addedAt, chapterNumber LIMIT 1")
+    suspend fun nextQueued(): DownloadQueueEntity?
+
+    @Query("SELECT COUNT(*) FROM download_queue WHERE status = 'QUEUED' OR status = 'DOWNLOADING'")
+    suspend fun countPending(): Int
+
+    @Query("UPDATE download_queue SET status = 'DOWNLOADING' WHERE chapterId = :chapterId")
+    suspend fun markDownloading(chapterId: String)
+
+    /** A row left DOWNLOADING means the process died mid-fetch; try it again. */
+    @Query("UPDATE download_queue SET status = 'QUEUED' WHERE status = 'DOWNLOADING'")
+    suspend fun requeueInterrupted()
+
+    @Query("UPDATE download_queue SET status = 'QUEUED', attempts = :attempts, error = :error WHERE chapterId = :chapterId")
+    suspend fun markRetry(chapterId: String, attempts: Int, error: String?)
+
+    @Query("UPDATE download_queue SET status = 'FAILED', attempts = :attempts, error = :error WHERE chapterId = :chapterId")
+    suspend fun markFailed(chapterId: String, attempts: Int, error: String?)
+
+    @Query("UPDATE download_queue SET status = 'QUEUED', attempts = 0, error = NULL WHERE status = 'FAILED'")
+    suspend fun retryFailed()
+
+    @Query("DELETE FROM download_queue WHERE chapterId = :chapterId")
+    suspend fun delete(chapterId: String)
+
+    @Query("DELETE FROM download_queue WHERE novelId = :novelId")
+    suspend fun deleteForNovel(novelId: String)
+
+    @Query("DELETE FROM download_queue")
+    suspend fun deleteAll()
+}

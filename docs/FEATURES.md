@@ -458,9 +458,9 @@ The rest install from the same repository in **Settings → Source plugins → A
 
 ### Downloading chapters for offline
 
-From a novel's detail screen → "Downloads" tab → "Download all" or pick a range. Chapters are saved locally and read offline.
+From a novel's detail screen: **Download All** (or **Download Remaining**) takes everything, the arrow beside it offers **Next 5 / 10 / 25 unread** counted from where you are in the book, and **Range** above the chapter list takes any span of chapter numbers. A single chapter has its own download icon. Downloading from a book that isn't in your library adds it, because that is where the text is kept.
 
-You can also bulk-download from the Library → long-press novel → Downloads. The download manager runs in the background via WorkManager and survives app restarts. Network type can be restricted to wifi-only in Settings → Downloads.
+Downloads go into a queue that runs in the background: you can leave the screen or the app, and a notification shows "9 of 10" with **Pause** and **Cancel**. The queue is saved, so it carries on after the app is closed or the phone restarts. A chapter that fails is tried three times, then marked failed and skipped. **Settings → Downloads** shows the queue (pause, resume, cancel all, remove one chapter, retry the failed ones) above the space each book uses. **Settings → Download over Wi-Fi only** makes the queue wait for an unmetered connection.
 
 Downloading also feeds the rest of the app: downloaded chapters are what full-text search indexes and what the codex scans. More downloads, smarter app.
 

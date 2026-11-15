@@ -82,16 +82,15 @@ fun NovelDetailScreen(
         )
     }
     val estimatedTimeToFinish by viewModel.estimatedTimeToFinish.collectAsState()
-    val downloadState by downloadManager.novelDownloadState.collectAsState()
-    val downloadingChapters by viewModel.downloadingChapters.collectAsState()
+    val downloadState by remember(novelId) { downloadManager.novelDownloadState(novelId) }
+        .collectAsState(initial = null)
     val activeDownloads by downloadManager.activeDownloads.collectAsState()
 
-    // Merge: show spinner for chapters being downloaded individually OR via bulk
-    val allDownloadingChapters = remember(downloadingChapters, activeDownloads) {
-        val bulkDownloading = activeDownloads
+    // A spinner for the chapter being fetched right now
+    val allDownloadingChapters = remember(activeDownloads) {
+        activeDownloads
             .filter { it.value.status == DownloadStatus.DOWNLOADING }
             .keys
-        downloadingChapters + bulkDownloading
     }
     val bookmarks by viewModel.bookmarks.collectAsState()
     val bookmarkCount by viewModel.bookmarkCount.collectAsState()
@@ -259,28 +258,12 @@ fun NovelDetailScreen(
                         availableVoices = availableVoices,
                         currentVoice = currentVoice,
                         onVoiceSelected = { voice -> ttsManager.setVoice(voice) },
-                        onDownloadAll = {
-                            scope.launch {
-                                viewModel.prepareForDownload()
-                                downloadManager.downloadAllChapters(
-                                    novelId = novelId,
-                                    chapters = state.novel.chapters
-                                )
-                                viewModel.refreshDownloadStatus()
-                            }
-                        },
+                        onDownloadAll = { viewModel.enqueueDownload(state.novel.chapters) },
+                        onDownloadNext = { count -> viewModel.downloadNextUnread(count) },
                         onDownloadRange = { from, to ->
-                            scope.launch {
-                                val chaptersInRange = state.novel.chapters.filter {
-                                    it.number in from..to && !it.isDownloaded
-                                }
-                                viewModel.prepareForDownload()
-                                downloadManager.downloadAllChapters(
-                                    novelId = novelId,
-                                    chapters = chaptersInRange
-                                )
-                                viewModel.refreshDownloadStatus()
-                            }
+                            viewModel.enqueueDownload(
+                                state.novel.chapters.filter { it.number in from..to && !it.isDownloaded }
+                            )
                         },
                         onDeleteBookmark = { bookmarkId -> viewModel.deleteBookmark(bookmarkId) },
                         onUpdateBookmarkNote = { id, note -> viewModel.updateBookmarkNote(id, note) },

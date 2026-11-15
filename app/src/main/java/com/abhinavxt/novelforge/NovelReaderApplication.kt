@@ -103,7 +103,7 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
     }
 
     // Download manager - depends on database
-    val downloadManager by lazy { DownloadManager(database) }
+    val downloadManager by lazy { DownloadManager(this, database, appScope) }
 
     // TTS manager
     val ttsManager by lazy { TTSManager(this) }
@@ -230,6 +230,9 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
         com.abhinavxt.novelforge.worker.SourceHealthWorker.schedule(this, true)
 
         networkMonitor.start()
+
+        // A queue left over from before the app was killed carries on unless it was paused.
+        downloadManager.resumeIfPending()
 
         // ── Widget cache refresh on process start ───────────────
         // Handles the case where the app was killed, the user hadn't

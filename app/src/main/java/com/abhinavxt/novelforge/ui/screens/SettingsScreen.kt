@@ -31,6 +31,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
@@ -115,6 +116,7 @@ fun SettingsScreen(
     onNavigateToChangelog: () -> Unit = {},
     onNavigateToGuide: () -> Unit = {},
     onNavigateToPlugins: () -> Unit = {},
+    onNavigateToDownloads: () -> Unit = {},
     updateChecker: UpdateChecker,
     viewModel: SettingsViewModel = viewModel(
         factory = SettingsViewModel.Factory(backupManager, themePreferences)
@@ -1004,6 +1006,70 @@ fun SettingsScreen(
                     }
                 ) {
                     Text("Check Now")
+                }
+            }
+
+            // Download over Wi-Fi only
+            val downloadManager = (context.applicationContext as com.abhinavxt.novelforge.NovelReaderApplication).downloadManager
+            val wifiOnly by downloadManager.wifiOnly.collectAsState()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Download over Wi-Fi only",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Chapter downloads wait for an unmetered connection",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = wifiOnly,
+                    onCheckedChange = { downloadManager.setWifiOnly(it) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // The only way into the Downloads screen: the queue and what each book has stored.
+            Card(
+                onClick = onNavigateToDownloads,
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Download,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Downloads",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "The download queue and the space each book uses",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 

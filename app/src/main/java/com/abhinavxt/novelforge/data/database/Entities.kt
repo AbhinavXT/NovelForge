@@ -501,3 +501,32 @@ data class GlossaryTermEntity(
     val target: String,
     val note: String = ""
 )
+
+/** Where one queued chapter download stands; see [DownloadQueueEntity]. */
+object DownloadQueueStatus {
+    const val QUEUED = "QUEUED"
+    const val DOWNLOADING = "DOWNLOADING"
+    const val FAILED = "FAILED"
+}
+
+/**
+ * A chapter waiting to be downloaded in the background. The row is deleted once the
+ * chapter's text is saved, so the table only holds work that is left or has given up.
+ * The novel and chapter titles are copied here so the queue can be shown and notified
+ * without joining anything. NEW in v28.
+ */
+@Entity(tableName = "download_queue", indices = [Index("novelId")])
+data class DownloadQueueEntity(
+    @PrimaryKey
+    val chapterId: String,
+    val novelId: String,
+    val novelTitle: String,
+    val chapterNumber: Int,
+    val chapterTitle: String,
+    val chapterUrl: String,
+    /** One of [DownloadQueueStatus]. */
+    val status: String = DownloadQueueStatus.QUEUED,
+    val attempts: Int = 0,
+    val error: String? = null,
+    val addedAt: Long = System.currentTimeMillis()
+)

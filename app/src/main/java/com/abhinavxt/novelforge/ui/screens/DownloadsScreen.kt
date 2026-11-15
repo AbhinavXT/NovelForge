@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -17,12 +18,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +50,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.abhinavxt.novelforge.data.DownloadManager
 import com.abhinavxt.novelforge.data.NovelRepository
+import com.abhinavxt.novelforge.data.database.DownloadQueueStatus
+import com.abhinavxt.novelforge.ui.theme.LocalEinkMode
 import com.abhinavxt.novelforge.ui.components.OfflineBanner
 import com.abhinavxt.novelforge.ui.viewmodel.DownloadsViewModel
 import com.abhinavxt.novelforge.util.NetworkMonitor
@@ -109,6 +115,8 @@ fun DownloadsScreen(
                     .fillMaxSize()
                     .padding(16.dp)
             ) {
+                QueueSection(viewModel)
+
                 // Storage info
                 Card(
                     modifier = Modifier.fillMaxWidth()
@@ -225,6 +233,116 @@ fun DownloadsScreen(
                 }
             }
         )
+    }
+}
+
+// The chapters waiting to download, with the controls for the queue as a whole.
+// Shown only while there is something in it.
+@Composable
+private fun QueueSection(viewModel: DownloadsViewModel) {
+    val items by viewModel.queueItems.collectAsState()
+    val summary by viewModel.queueSummary.collectAsState()
+    if (items.isEmpty()) return
+    val eink = LocalEinkMode.current
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Queue", style = MaterialTheme.typography.titleMedium)
+            val parts = buildList {
+                if (summary.downloading > 0) add("${summary.downloading} downloading")
+                if (summary.queued > 0) add("${summary.queued} queued")
+                if (summary.failed > 0) add("${summary.failed} failed")
+            }
+            Text(
+                text = parts.joinToString(", ") + if (summary.paused) " (paused)" else "",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.outline
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (summary.paused) {
+                    OutlinedButton(onClick = { viewModel.resumeQueue() }) { Text("Resume") }
+                } else if (summary.pending > 0) {
+                    OutlinedButton(onClick = { viewModel.pauseQueue() }) { Text("Pause") }
+                }
+                OutlinedButton(onClick = { viewModel.cancelQueue() }) { Text("Cancel all") }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            // Capped so a queue of hundreds of chapters can't push the rest of the screen away.
+            val grouped = items.groupBy { it.novelId }
+            LazyColumn(modifier = Modifier.heightIn(max = 240.dp)) {
+                grouped.forEach { (novelId, rows) ->
+                    item(key = "novel_$novelId") {
+                        Text(
+                            text = "${rows.first().novelTitle} (${rows.size})",
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+                        )
+                    }
+                    items(rows, key = { it.chapterId }) { row ->
+                        QueueRow(
+                            row = row,
+                            eink = eink,
+                            onRemove = { viewModel.removeFromQueue(row.chapterId) },
+                            onRetry = { viewModel.retryFailed() }
+                        )
+                    }
+                }
+            }
+        }
+    }
+    Spacer(modifier = Modifier.height(16.dp))
+}
+
+@Composable
+private fun QueueRow(
+    row: com.abhinavxt.novelforge.data.database.DownloadQueueEntity,
+    eink: Boolean,
+    onRemove: () -> Unit,
+    onRetry: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = row.chapterTitle,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (row.status == DownloadQueueStatus.FAILED) {
+                Text(
+                    text = "Failed: ${row.error ?: "unknown error"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        when (row.status) {
+            DownloadQueueStatus.DOWNLOADING ->
+                // A spinning indicator is an animation; e-ink shows the word instead.
+                if (eink) {
+                    Text("Downloading", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                }
+            DownloadQueueStatus.FAILED ->
+                IconButton(onClick = onRetry) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Retry failed downloads")
+                }
+            else ->
+                IconButton(onClick = onRemove) {
+                    Icon(Icons.Default.Close, contentDescription = "Remove from queue")
+                }
+        }
     }
 }
 
