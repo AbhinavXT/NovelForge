@@ -1,5 +1,6 @@
 package com.abhinavxt.novelforge.ui.screens
 
+import com.abhinavxt.novelforge.ui.components.SkeletonNovelDetail
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -15,7 +16,6 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -200,16 +200,7 @@ fun NovelDetailScreen(
 
             when (val state = uiState) {
                 is NovelDetailUiState.Loading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),  // NOTE: no .padding(paddingValues)
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Loading novel details...")
-                        }
-                    }
+                    SkeletonNovelDetail()
                 }
 
                 is NovelDetailUiState.Error -> {

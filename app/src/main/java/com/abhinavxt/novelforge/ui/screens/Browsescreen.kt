@@ -1,5 +1,6 @@
 package com.abhinavxt.novelforge.ui.screens
 
+import com.abhinavxt.novelforge.ui.components.SkeletonCoverGrid
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -163,10 +164,7 @@ fun BrowseScreen(
 
             // ── Catalog grid ─────────────────────────────────────
             when {
-                catalog.isLoadingInitial -> Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) { CircularProgressIndicator() }
+                catalog.isLoadingInitial -> SkeletonCoverGrid()
 
                 catalog.error != null -> Box(
                     modifier = Modifier.fillMaxSize(),
