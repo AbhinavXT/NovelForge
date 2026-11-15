@@ -801,7 +801,10 @@ class NovelRepository(
             description = this.description,
             source = this.source,
             status = this.status,
-            totalChapters = this.chapters.size
+            totalChapters = this.chapters.size,
+            // A book just added has nothing new in it yet; without this the
+            // detail screen announces every chapter as a new one.
+            previousTotalChapters = this.chapters.size
         )
     }
 
