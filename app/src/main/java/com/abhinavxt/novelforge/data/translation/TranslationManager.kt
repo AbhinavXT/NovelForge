@@ -172,27 +172,14 @@ class TranslationManager(
                 OnDeviceTranslator(source, config.targetLanguage) to ENGINE_ON_DEVICE
             }
             TranslationEngine.AI -> {
-                if (config.model.isBlank()) throw UserFacingException("Choose a model in Settings → Translation.")
-                when (config.provider) {
-                    AiProvider.CLAUDE -> {
-                        if (config.apiKey.isBlank()) throw UserFacingException("Add your Claude API key in Settings → Translation.")
-                        // One client per chapter, closed once the chapter is done.
-                        val translator = ChapterTranslator { paragraphs, glossary ->
-                            ClaudeCompletion(config.apiKey, config.model).use { claude ->
-                                AiTranslator(config.targetLanguageName, claude::complete).translate(paragraphs, glossary)
-                            }
-                        }
-                        translator to ENGINE_AI
-                    }
-                    else -> {
-                        if (config.baseUrl.isBlank()) throw UserFacingException("Add the translator's address in Settings → Translation.")
-                        if (config.apiKey.isBlank() && config.provider != AiProvider.CUSTOM) {
-                            throw UserFacingException("Add your ${config.provider.label} API key in Settings → Translation.")
-                        }
-                        val api = OpenAiCompatibleCompletion(config.baseUrl, config.apiKey, config.model)
-                        AiTranslator(config.targetLanguageName, api::complete) to ENGINE_AI
+                AiCompletions.check(config)
+                // One client per chapter, closed once the chapter is done.
+                val translator = ChapterTranslator { paragraphs, glossary ->
+                    AiCompletions.use(config) { complete ->
+                        AiTranslator(config.targetLanguageName, complete).translate(paragraphs, glossary)
                     }
                 }
+                translator to ENGINE_AI
             }
         }
     }

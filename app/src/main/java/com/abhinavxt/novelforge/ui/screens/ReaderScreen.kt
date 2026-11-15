@@ -389,6 +389,9 @@ fun ReaderScreen(
             com.abhinavxt.novelforge.ui.components.RecapSheet(
                 recap = r,
                 title = loaded.chapter.novelTitle,
+                novelId = novelId,
+                assistant = app?.readerAssistant?.takeIf { it.isAvailable },
+                position = { r.chapterNumber to null },
                 onDismiss = viewModel::dismissRecap
             )
         }

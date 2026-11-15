@@ -32,6 +32,7 @@ If you just want a quick summary, see the [README](../README.md).
   - [Bookmarks and highlights](#bookmarks-and-highlights)
     - [Bookmarks](#bookmarks)
     - [Highlights](#highlights)
+  - [The story so far](#the-story-so-far)
   - [Search](#search)
     - [Full-text library search](#full-text-library-search)
     - [In-book find](#in-book-find)
@@ -42,6 +43,7 @@ If you just want a quick summary, see the [README](../README.md).
     - [Scanning](#scanning)
     - [Honest limitations](#honest-limitations)
   - [Library](#library)
+  - [Loading screens](#loading-screens)
   - [Sources and downloads](#sources-and-downloads)
     - [Currently supported sources](#currently-supported-sources)
     - [Downloading chapters for offline](#downloading-chapters-for-offline)
@@ -331,6 +333,12 @@ Highlights are included in backup/restore. To take them elsewhere, Library → l
 
 ---
 
+## The story so far
+
+An optional written summary of the book up to your place, for when you come back to it. It needs an AI engine with your own key (Settings → Translation); the on-device translator doesn't count, and without one the button isn't shown.
+
+Open it from the notes icon at the top of a library book's page, or from the recap sheet that greets you after a week away. Nothing is sent until you tap **The story so far**. The app then sends your provider the text of the chapters you've read, most recent first up to about 24,000 characters and never anything past your reading position, and shows a few bullet points and a "Where you left off" line. It reads from chapters stored on the phone, so a book with nothing downloaded has nothing to summarise.
+
 ## Search
 
 Two ranges: your whole library, or the chapter in front of you.
@@ -365,6 +373,8 @@ For the whole book at once, use library search - in-book find is deliberately cl
 ## The codex
 
 The feature for the question every long-series reader asks: _"wait - who is this again?"_
+
+**Ask about a character** (optional). If you've set up an AI engine with your own key under Settings → Translation, a character's entry gets an **Ask about <name>** box with three ready questions. The answer is written by your AI provider from the passages that mention the name in chapters you've already read, and nothing past your place in the book is sent. Without an AI engine set up, the box isn't there and nothing leaves the phone.
 
 **Open it:** novel detail screen → the codex icon in the top bar.
 
@@ -444,6 +454,10 @@ The library is your collection of novels you've added. Find it in the bottom nav
 
 
 ---
+
+## Loading screens
+
+Lists and book pages that are still loading show grey blocks shaped like what's coming instead of a spinner, with a moving sheen. In e-ink mode the blocks are still and outlined.
 
 ## Sources and downloads
 

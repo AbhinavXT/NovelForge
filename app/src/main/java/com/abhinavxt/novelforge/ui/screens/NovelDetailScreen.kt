@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -86,6 +87,20 @@ fun NovelDetailScreen(
             config = config,
             onChanged = { viewModel.refreshChapterTitles() },
             onDismiss = { showTranslation = false }
+        )
+    }
+    // "The story so far", for a library book once an AI engine is set up.
+    var showStory by remember { mutableStateOf(false) }
+    val aiConfig by (app?.translationSettings?.config ?: remember { kotlinx.coroutines.flow.MutableStateFlow(com.abhinavxt.novelforge.data.translation.TranslationConfig()) }).collectAsState()
+    val storyAvailable = app != null && com.abhinavxt.novelforge.data.ai.ReaderAssistant.isAvailable(aiConfig)
+    if (showStory && storyAvailable && app != null) {
+        com.abhinavxt.novelforge.ui.components.RecapSheet(
+            recap = null,
+            title = (uiState as? NovelDetailUiState.Success)?.novel?.title.orEmpty(),
+            novelId = novelId,
+            assistant = app.readerAssistant,
+            position = { repository.getReadingProgress(novelId)?.let { it.currentChapterNumber to it.paragraphIndex } },
+            onDismiss = { showStory = false }
         )
     }
     val estimatedTimeToFinish by viewModel.estimatedTimeToFinish.collectAsState()
@@ -171,6 +186,15 @@ fun NovelDetailScreen(
                         Icon(
                             imageVector = Icons.Default.Translate,
                             contentDescription = "Translation"
+                        )
+                    }
+                }
+
+                if (storyAvailable && (uiState as? NovelDetailUiState.Success)?.isInLibrary == true) {
+                    IconButton(onClick = { showStory = true }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Notes,
+                            contentDescription = "The story so far"
                         )
                     }
                 }

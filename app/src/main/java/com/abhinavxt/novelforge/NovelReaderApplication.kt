@@ -133,6 +133,11 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
         com.abhinavxt.novelforge.data.translation.TranslationManager(database.translationDao(), translationSettings)
     }
 
+    // Optional AI helpers (story so far, ask about a character) on the same engine and key
+    val readerAssistant by lazy {
+        com.abhinavxt.novelforge.data.ai.ReaderAssistant(translationSettings, database.chapterDao(), repository)
+    }
+
     // Reading stats tracker
     val readingStatsTracker by lazy {
         ReadingStatsTracker(database.readingStatDao()).also {
