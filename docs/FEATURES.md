@@ -741,6 +741,8 @@ The stats screen shows:
 
 Tap the share icon in the top right of the stats screen. Generates a 1080×1920 PNG (story-shaped) showing total words read, WPM, current streak, total chapters, and a 14-day activity grid. Pinned to a calm slate-blue accent regardless of which reader theme you have active.
 
+**Year in review.** A card on the stats screen sums up a calendar year: time read, words and chapters, with arrows to step through the years you have reading in. **View** opens the full page: a bar for each month, your three most-read books, days read, longest streak inside that year, and your busiest month and day. The share icon there makes a 1080×1920 picture of it. Books finished in the year aren't counted, because the app doesn't record when a book was finished.
+
 The card is rendered with a fixed density so it looks identical on every device. No watermarks beyond a small "NOVELFORGE" wordmark at the bottom. Save to gallery or share via the system share sheet.
 
 ### Privacy

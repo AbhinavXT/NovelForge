@@ -679,6 +679,10 @@ interface ReadingStatDao {
     @Query("SELECT * FROM reading_stats WHERE completedAt >= :sinceMs ORDER BY completedAt ASC")
     suspend fun getEventsSince(sinceMs: Long): List<ReadingStatEvent>
 
+    // One calendar year of events for the year-in-review (bounds are local midnights)
+    @Query("SELECT * FROM reading_stats WHERE completedAt >= :startMs AND completedAt < :endMs ORDER BY completedAt ASC")
+    suspend fun getEventsBetween(startMs: Long, endMs: Long): List<ReadingStatEvent>
+
     // Recent sessions — latest N sessions for the activity feed
     @Query("SELECT * FROM reading_stats ORDER BY completedAt DESC LIMIT :limit")
     suspend fun getRecentEvents(limit: Int = 20): List<ReadingStatEvent>

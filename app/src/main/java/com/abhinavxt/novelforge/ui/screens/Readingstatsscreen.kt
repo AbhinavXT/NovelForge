@@ -91,6 +91,8 @@ fun ReadingStatsScreen(
     )
 ) {
     val state by viewModel.uiState.collectAsState()
+    val yearState by viewModel.yearState.collectAsState()
+    var showYearReview by remember { mutableStateOf(false) }
     val themePrefs = (LocalContext.current.applicationContext as? com.abhinavxt.novelforge.NovelReaderApplication)?.themePreferences
     val goalMinutes by (themePrefs?.dailyGoalMinutes ?: kotlinx.coroutines.flow.MutableStateFlow(0)).collectAsState()
     var showGoalDialog by remember { mutableStateOf(false) }
@@ -145,6 +147,17 @@ fun ReadingStatsScreen(
 
         isSharing = false
         shareRequested = false
+    }
+
+    // The review replaces the screen instead of opening a dialog, so there
+    // is no window animation on e-ink.
+    if (showYearReview && yearState.review != null) {
+        com.abhinavxt.novelforge.ui.components.YearInReviewPage(
+            state = yearState,
+            onSelectYear = viewModel::selectYear,
+            onBack = { showYearReview = false }
+        )
+        return
     }
 
     Scaffold(
@@ -204,6 +217,14 @@ fun ReadingStatsScreen(
 
                 // 1. Weekly summary hero
                 WeeklyHero(state)
+
+                if (yearState.review != null) {
+                    com.abhinavxt.novelforge.ui.components.YearInReviewCard(
+                        state = yearState,
+                        onSelectYear = viewModel::selectYear,
+                        onView = { showYearReview = true }
+                    )
+                }
 
                 // 2. Today's progress
                 SectionLabel("Today")
