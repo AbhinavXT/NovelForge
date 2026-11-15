@@ -420,6 +420,8 @@ Mentions, snippets, and the graph's bonds aren't stored - they're served live by
 
 The library is your collection of novels you've added. Find it in the bottom navigation bar.
 
+**How it looks:** the icon at the top right switches between a list and a grid of covers. In the grid, **Covers: Small / Medium / Large** sets how many fit across (4, 3 or 2 on a typical phone). Every book you've opened shows how far you are: a bar along the bottom of its cover in the grid, a bar with "12 / 340" in the list, and a check once you've finished it.
+
 **Adding a novel:** browse a source (Search tab → pick a source → search/browse), tap a novel, tap "Add to Library". Or import an EPUB (see below).
 
 **Sorting:** sort by last read, title, chapters, or recently added. The control is in the library top bar.

@@ -338,6 +338,11 @@ class NovelRepository(
         return progressDao.getMostRecentProgress()
     }
 
+    /** novelId to chapter total, in one query; the Library's progress denominator. */
+    fun getChapterTotals(): Flow<Map<String, Int>> {
+        return chapterDao.getChapterCounts().map { rows -> rows.associate { it.novelId to it.total } }
+    }
+
     fun getAllReadingProgress(): Flow<List<ReadingProgressEntity>> {
         return progressDao.getAllProgress()
     }

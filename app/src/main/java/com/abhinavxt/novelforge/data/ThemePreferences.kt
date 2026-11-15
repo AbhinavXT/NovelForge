@@ -94,6 +94,18 @@ enum class LibraryViewMode(val label: String) {
     GRID("Grid")
 }
 
+/**
+ * How wide the Library grid draws covers: the minimum cell width, so a
+ * larger size fits fewer columns. Persisted like [LibraryViewMode].
+ */
+enum class LibraryCoverSize(val label: String, val minCellWidthDp: Int) {
+    // On a typical phone (about 380dp of usable width) these give 4, 3
+    // and 2 columns; with 90 and 120, Medium and Large both gave 2.
+    SMALL("Small", 80),
+    MEDIUM("Medium", 108),
+    LARGE("Large", 160)
+}
+
 enum class DictionaryLanguage(val code: String, val label: String) {
     ENGLISH("en", "English"),
     HINDI("hi", "Hindi"),
@@ -143,6 +155,9 @@ class ThemePreferences(context: Context) {
 
     private val _libraryViewMode = MutableStateFlow(loadLibraryViewMode())
     val libraryViewMode: StateFlow<LibraryViewMode> = _libraryViewMode.asStateFlow()
+
+    private val _libraryCoverSize = MutableStateFlow(loadLibraryCoverSize())
+    val libraryCoverSize: StateFlow<LibraryCoverSize> = _libraryCoverSize.asStateFlow()
 
     fun setThemeMode(mode: ThemeMode) {
         prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
@@ -233,6 +248,11 @@ class ThemePreferences(context: Context) {
         _libraryViewMode.value = mode
     }
 
+    fun setLibraryCoverSize(size: LibraryCoverSize) {
+        prefs.edit().putString(KEY_LIBRARY_COVER_SIZE, size.name).apply()
+        _libraryCoverSize.value = size
+    }
+
     private fun loadThemeMode(): ThemeMode {
         val name = prefs.getString(KEY_THEME_MODE, ThemeMode.SYSTEM.name)
         return try {
@@ -283,6 +303,15 @@ class ThemePreferences(context: Context) {
         return prefs.getLong(KEY_CUSTOM_PRIMARY, DEFAULT_CUSTOM_PRIMARY)
     }
 
+    private fun loadLibraryCoverSize(): LibraryCoverSize {
+        val name = prefs.getString(KEY_LIBRARY_COVER_SIZE, LibraryCoverSize.MEDIUM.name)
+        return try {
+            LibraryCoverSize.valueOf(name ?: LibraryCoverSize.MEDIUM.name)
+        } catch (_: IllegalArgumentException) {
+            LibraryCoverSize.MEDIUM
+        }
+    }
+
     private fun loadLibraryViewMode(): LibraryViewMode {
         val name = prefs.getString(KEY_LIBRARY_VIEW_MODE, LibraryViewMode.LIST.name)
         return try {
@@ -307,6 +336,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_COLOR_SCHEME = "color_scheme"
         private const val KEY_DICTIONARY_LANGUAGE = "dictionary_language"
         private const val KEY_LIBRARY_VIEW_MODE = "library_view_mode"
+        private const val KEY_LIBRARY_COVER_SIZE = "library_cover_size"
         private const val KEY_DAILY_GOAL_MINUTES = "daily_goal_minutes"
         private const val KEY_APP_LOCK = "app_lock"
         private const val KEY_EINK_MODE = "eink_mode"

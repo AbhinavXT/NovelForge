@@ -238,6 +238,12 @@ data class NovelDownloadAggregate(
     val sizeChars: Long
 )
 
+/** How many chapters a book has, from one grouped query over all books. */
+data class NovelChapterCount(
+    val novelId: String,
+    val total: Int
+)
+
 /** Downloaded chapters and their total text length, for reading-time estimates. */
 data class ChapterLengths(
     val chapters: Int,
@@ -332,6 +338,11 @@ interface ChapterDao {
         HAVING downloadedChapters > 0
     """)
     suspend fun getDownloadAggregates(): List<NovelDownloadAggregate>
+
+    // Chapter totals for every book in one query, so the Library can show
+    // progress without a query per book. Counts rows, as Home does.
+    @Query("SELECT novelId, COUNT(*) AS total FROM chapters GROUP BY novelId")
+    fun getChapterCounts(): Flow<List<NovelChapterCount>>
 
     @Delete
     suspend fun deleteChapter(chapter: ChapterEntity)
