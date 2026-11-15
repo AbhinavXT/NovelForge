@@ -1044,6 +1044,32 @@ fun SettingsScreen(
                 )
             }
 
+            // Delete chapters after reading
+            val deleteAfterReading by downloadManager.deleteAfterReading.collectAsState()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Delete chapters after reading",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Frees space as you go. Keeps chapters you highlighted, bookmarked or translated.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = deleteAfterReading,
+                    onCheckedChange = { downloadManager.setDeleteAfterReading(it) }
+                )
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
 
             // The only way into the Downloads screen: the queue and what each book has stored.

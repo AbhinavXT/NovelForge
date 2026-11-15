@@ -274,6 +274,10 @@ interface ChapterDao {
     @Query("SELECT * FROM chapters WHERE id = :chapterId")
     suspend fun getChapterById(chapterId: String): ChapterEntity?
 
+    /** Whether the chapter holds stored text; null when it has no row. Cheaper than loading the text to ask. */
+    @Query("SELECT isDownloaded FROM chapters WHERE id = :chapterId")
+    suspend fun isDownloaded(chapterId: String): Boolean?
+
     @Query("SELECT COUNT(*) FROM chapters WHERE novelId = :novelId")
     suspend fun getChapterCount(novelId: String): Int
 
@@ -558,6 +562,9 @@ interface BookmarkDao {
     @Query("SELECT * FROM bookmarks WHERE novelId = :novelId ORDER BY createdAt DESC")
     fun getBookmarksForNovel(novelId: String): Flow<List<BookmarkEntity>>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM bookmarks WHERE chapterId = :chapterId)")
+    suspend fun hasBookmarks(chapterId: String): Boolean
+
     @Query("SELECT * FROM bookmarks WHERE chapterId = :chapterId ORDER BY paragraphIndex ASC")
     fun getBookmarksForChapter(chapterId: String): Flow<List<BookmarkEntity>>
 
@@ -714,6 +721,9 @@ interface ReadingStatDao {
 interface HighlightDao {
 
     // Get all highlights for a chapter — used by reader to render overlays
+    @Query("SELECT EXISTS(SELECT 1 FROM highlights WHERE chapterId = :chapterId)")
+    suspend fun hasHighlights(chapterId: String): Boolean
+
     @Query("SELECT * FROM highlights WHERE chapterId = :chapterId ORDER BY paragraphIndex ASC, startOffset ASC")
     fun getHighlightsForChapter(chapterId: String): Flow<List<HighlightEntity>>
 
@@ -933,6 +943,9 @@ interface TranslationDao {
 
     @Query("UPDATE novels SET translate = :on WHERE id = :novelId")
     suspend fun setTranslate(novelId: String, on: Boolean)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM chapter_originals WHERE chapterId = :chapterId)")
+    suspend fun hasOriginal(chapterId: String): Boolean
 
     @Query("SELECT * FROM chapter_originals WHERE chapterId = :chapterId")
     suspend fun getOriginal(chapterId: String): ChapterOriginalEntity?

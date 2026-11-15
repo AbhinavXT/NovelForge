@@ -72,7 +72,8 @@ fun ReaderScreen(
                 ?.bookArchive,
             offlineDictionaries = (LocalContext.current.applicationContext as? NovelReaderApplication)
                 ?.offlineDictionaries,
-            translations = (LocalContext.current.applicationContext as? NovelReaderApplication)?.translations
+            translations = (LocalContext.current.applicationContext as? NovelReaderApplication)?.translations,
+            downloadManager = (LocalContext.current.applicationContext as? NovelReaderApplication)?.downloadManager
         )
     )
 ) {

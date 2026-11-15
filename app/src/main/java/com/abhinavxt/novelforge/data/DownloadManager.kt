@@ -13,6 +13,7 @@ import com.abhinavxt.novelforge.data.database.DownloadQueueDao
 import com.abhinavxt.novelforge.data.database.DownloadQueueEntity
 import com.abhinavxt.novelforge.data.database.DownloadQueueStatus
 import com.abhinavxt.novelforge.data.model.Chapter
+import com.abhinavxt.novelforge.util.Logger
 import com.abhinavxt.novelforge.worker.ChapterDownloadWorker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -166,6 +167,43 @@ class DownloadQueue(
 }
 
 /**
+ * Whether a chapter the reader has moved past should lose its stored text. Each rule protects text
+ * that cannot simply be fetched again: local books have no other copy, a translation cost the
+ * reader something, and highlights and bookmarks point into the text by offset.
+ */
+fun shouldDeleteAfterReading(
+    enabled: Boolean,
+    isLocalBook: Boolean,
+    isDownloaded: Boolean,
+    hasTranslationOriginal: Boolean,
+    hasHighlightOrBookmark: Boolean,
+    isBeingRead: Boolean
+): Boolean = enabled && !isLocalBook && isDownloaded && !hasTranslationOriginal &&
+    !hasHighlightOrBookmark && !isBeingRead
+
+/** Applies [shouldDeleteAfterReading] to a chapter in the database. */
+class ReadChapterCleanup(private val database: AppDatabase) {
+
+    /** Clears [chapterId]'s stored text if the rule allows; true when it did. */
+    suspend fun clean(novelId: String, chapterId: String, readingChapterId: String, enabled: Boolean): Boolean {
+        // The setting is checked first, so with it off nothing else is queried.
+        if (!enabled) return false
+        val chapters = database.chapterDao()
+        val delete = shouldDeleteAfterReading(
+            enabled = enabled,
+            isLocalBook = novelId.startsWith("local_"),
+            isDownloaded = chapters.isDownloaded(chapterId) == true,
+            hasTranslationOriginal = database.translationDao().hasOriginal(chapterId),
+            hasHighlightOrBookmark = database.highlightDao().hasHighlights(chapterId) ||
+                database.bookmarkDao().hasBookmarks(chapterId),
+            isBeingRead = chapterId == readingChapterId
+        )
+        if (delete) chapters.deleteDownload(chapterId)
+        return delete
+    }
+}
+
+/**
  * The single entry point for downloading chapters. The work is a table of rows
  * drained by [ChapterDownloadWorker], so it outlives any screen and the process.
  */
@@ -176,6 +214,7 @@ class DownloadManager(
 ) {
 
     private val chapterDao = database.chapterDao()
+    private val cleanup = ReadChapterCleanup(database)
     private val queueDao = database.downloadQueueDao()
     val queue = DownloadQueue(queueDao, chapterDao)
 
@@ -184,6 +223,9 @@ class DownloadManager(
     private val _paused = MutableStateFlow(prefs.getBoolean(PREF_PAUSED, false))
     val paused: StateFlow<Boolean> = _paused.asStateFlow()
     val isPaused: Boolean get() = _paused.value
+
+    private val _deleteAfterReading = MutableStateFlow(prefs.getBoolean(PREF_DELETE_AFTER_READING, false))
+    val deleteAfterReading: StateFlow<Boolean> = _deleteAfterReading.asStateFlow()
 
     private val _wifiOnly = MutableStateFlow(prefs.getBoolean(PREF_WIFI_ONLY, false))
     val wifiOnly: StateFlow<Boolean> = _wifiOnly.asStateFlow()
@@ -303,6 +345,30 @@ class DownloadManager(
         }
     }
 
+    fun setDeleteAfterReading(enabled: Boolean) {
+        if (_deleteAfterReading.value == enabled) return
+        prefs.edit().putBoolean(PREF_DELETE_AFTER_READING, enabled).apply()
+        _deleteAfterReading.value = enabled
+    }
+
+    /**
+     * The reader moved forward and [chapterId], one behind the chapter just finished, may now go.
+     * One behind rather than the finished chapter itself, so a step back still works offline.
+     * Runs on the app's scope so it outlives the reader, and never throws into it.
+     */
+    fun onChapterFinished(novelId: String, chapterId: String, readingChapterId: String) {
+        if (!_deleteAfterReading.value) return
+        scope.launch(Dispatchers.IO) {
+            try {
+                cleanup.clean(novelId, chapterId, readingChapterId, _deleteAfterReading.value)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.e("Could not delete a read chapter", e)
+            }
+        }
+    }
+
     /** Starts the worker if rows are waiting and the user hasn't paused; used at launch and on resume. */
     fun resumeIfPending() {
         scope.launch(Dispatchers.IO) {
@@ -367,5 +433,6 @@ class DownloadManager(
         const val PREFS_NAME = "chapter_downloads"
         const val PREF_PAUSED = "paused"
         const val PREF_WIFI_ONLY = "wifi_only"
+        const val PREF_DELETE_AFTER_READING = "delete_after_reading"
     }
 }

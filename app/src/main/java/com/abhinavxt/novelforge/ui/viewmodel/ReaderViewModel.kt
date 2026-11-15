@@ -128,7 +128,8 @@ class ReaderViewModel(
     targetParagraph: Int = -1,
     private val bookArchive: LocalBookArchive? = null,
     private val offlineDictionaries: StarDictManager? = null,
-    private val translations: com.abhinavxt.novelforge.data.translation.TranslationManager? = null
+    private val translations: com.abhinavxt.novelforge.data.translation.TranslationManager? = null,
+    private val downloadManager: com.abhinavxt.novelforge.data.DownloadManager? = null
 ) : ViewModel() {
 
     /** Why a chapter is showing untranslated, once per failure. */
@@ -767,6 +768,18 @@ class ReaderViewModel(
         }
     }
 
+    /**
+     * Moving from [fromId] to the chapter right after it finishes [fromId], which makes the chapter
+     * before it eligible for the delete-after-reading rule. Any other move (a jump from the chapter
+     * list or contents, or going back) leaves everything alone.
+     */
+    private fun onMovedTo(fromId: String, toId: String) {
+        val manager = downloadManager ?: return
+        val from = chapterList.indexOfFirst { it.id == fromId }
+        if (from < 1 || chapterList.getOrNull(from + 1)?.id != toId) return
+        manager.onChapterFinished(novelId, chapterList[from - 1].id, readingChapterId = toId)
+    }
+
     fun goToPreviousChapter() {
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
@@ -794,6 +807,7 @@ class ReaderViewModel(
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
             currentState.chapter.nextChapter?.let { next ->
+                onMovedTo(currentChapterId, next.id)
                 viewModelScope.launch { statsTracker?.endSession() }
                 shouldRestorePosition = false
                 autoRetryEnabled = withAutoRetry
@@ -1136,6 +1150,7 @@ class ReaderViewModel(
             }
         }
 
+        onMovedTo(currentChapterId, nav.id)
         currentChapterId = nav.id
         currentChapterUrl = nav.url
         activeChapterNumber = nav.number
@@ -1203,6 +1218,7 @@ class ReaderViewModel(
         val idx = chapterList.indexOfFirst { it.id == currentChapterId }
         if (idx < 0) return
         val target = chapterList.getOrNull(idx + delta) ?: return
+        if (delta > 0) onMovedTo(currentChapterId, target.id)
         viewModelScope.launch { statsTracker?.endSession() }
         shouldRestorePosition = false
         autoRetryEnabled = withAutoRetry
@@ -1255,12 +1271,13 @@ class ReaderViewModel(
             targetParagraph: Int = -1,
             bookArchive: LocalBookArchive? = null,
             offlineDictionaries: StarDictManager? = null,
-            translations: com.abhinavxt.novelforge.data.translation.TranslationManager? = null
+            translations: com.abhinavxt.novelforge.data.translation.TranslationManager? = null,
+            downloadManager: com.abhinavxt.novelforge.data.DownloadManager? = null
         ): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences, statsTracker, prefetcher, targetParagraph, bookArchive, offlineDictionaries, translations) as T
+                    return ReaderViewModel(novelId, chapterId, chapterUrl, novelUrl, repository, themePreferences, statsTracker, prefetcher, targetParagraph, bookArchive, offlineDictionaries, translations, downloadManager) as T
                 }
             }
         }

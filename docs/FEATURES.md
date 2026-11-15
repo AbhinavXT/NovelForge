@@ -468,6 +468,8 @@ From a novel's detail screen: **Download All** (or **Download Remaining**) takes
 
 Downloads go into a queue that runs in the background: you can leave the screen or the app, and a notification shows "9 of 10" with **Pause** and **Cancel**. The queue is saved, so it carries on after the app is closed or the phone restarts. A chapter that fails is tried three times, then marked failed and skipped. **Settings → Downloads** shows the queue (pause, resume, cancel all, remove one chapter, retry the failed ones) above the space each book uses. **Settings → Download over Wi-Fi only** makes the queue wait for an unmetered connection.
 
+**Delete chapters after reading** (Settings, off by default) frees space as you go: when you move on to the next chapter, the downloaded text of the chapter before the one you just finished is cleared, so going back one chapter still works offline. Chapters you highlighted, bookmarked or translated are kept, imported books are never touched, and jumping around from the chapter list deletes nothing.
+
 Downloading also feeds the rest of the app: downloaded chapters are what full-text search indexes and what the codex scans. More downloads, smarter app.
 
 ### Update checking
