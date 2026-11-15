@@ -275,6 +275,10 @@ interface ChapterDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertChapters(chapters: List<ChapterEntity>)
 
+    /** Adds only the chapters that have no row yet; existing rows keep their downloaded text. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertChaptersIfAbsent(chapters: List<ChapterEntity>)
+
     @Query("UPDATE chapters SET isDownloaded = 1, content = :content, downloadedAt = :downloadedAt WHERE id = :chapterId")
     suspend fun markChapterDownloaded(chapterId: String, content: String, downloadedAt: Long)
 

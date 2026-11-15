@@ -261,6 +261,7 @@ fun NovelDetailScreen(
                         onVoiceSelected = { voice -> ttsManager.setVoice(voice) },
                         onDownloadAll = {
                             scope.launch {
+                                viewModel.prepareForDownload()
                                 downloadManager.downloadAllChapters(
                                     novelId = novelId,
                                     chapters = state.novel.chapters
@@ -273,6 +274,7 @@ fun NovelDetailScreen(
                                 val chaptersInRange = state.novel.chapters.filter {
                                     it.number in from..to && !it.isDownloaded
                                 }
+                                viewModel.prepareForDownload()
                                 downloadManager.downloadAllChapters(
                                     novelId = novelId,
                                     chapters = chaptersInRange

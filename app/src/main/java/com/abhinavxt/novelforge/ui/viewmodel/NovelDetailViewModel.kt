@@ -178,7 +178,18 @@ class NovelDetailViewModel(
 
     private suspend fun loadOnlineNovel() {
         val isInLibrary = repository.isInLibrary(novelId)
-        val novel = repository.fetchNovelDetails(novelId, novelUrl)
+        // Offline or with the source down, a library book still opens from
+        // its saved chapter list, so its downloaded chapters stay readable.
+        val fetched = try {
+            repository.fetchNovelDetails(novelId, novelUrl)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w("NovelDetailVM", "Fetching novel details failed: ${e.message}")
+            null
+        }
+        val novel = fetched
+            ?: if (isInLibrary) repository.getSavedNovelWithChapters(novelId)?.takeIf { it.chapters.isNotEmpty() } else null
 
         if (novel != null) {
             // One query for all downloaded ids instead of one query per
@@ -223,6 +234,7 @@ class NovelDetailViewModel(
             _downloadingChapters.value = _downloadingChapters.value + chapter.id
 
             try {
+                prepareForDownload()
                 val success = repository.downloadChapter(
                     novelId = novelId,
                     chapterId = chapter.id,
@@ -236,6 +248,20 @@ class NovelDetailViewModel(
             } finally {
                 // Remove from downloading set
                 _downloadingChapters.value = _downloadingChapters.value - chapter.id
+            }
+        }
+    }
+
+    /**
+     * Call before downloading chapters: gives them somewhere to be saved,
+     * which adds the book to the library if it wasn't there yet.
+     */
+    suspend fun prepareForDownload() {
+        val state = _uiState.value as? NovelDetailUiState.Success ?: return
+        if (state.isLocalNovel) return
+        if (repository.prepareForDownload(state.novel)) {
+            (_uiState.value as? NovelDetailUiState.Success)?.let {
+                _uiState.value = it.copy(isInLibrary = true)
             }
         }
     }
