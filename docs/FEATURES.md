@@ -320,6 +320,8 @@ Highlights are included in backup/restore. To take them elsewhere, Library → l
 
 **All highlights.** The quote icon at the top of the Library opens every highlight in your library, newest first, with chips to narrow it to one book. Tap one to open the reader at it. On the home screen, **From Your Highlights** shows one past highlight a day, a different one each day.
 
+**Quote cards.** The share icon on a highlight in that list turns it into a picture: the line, the book and its author, in one of three looks (Paper, Night, or Accent, which takes the highlight's own colour). **Share** hands a 1080-pixel-wide PNG to any app. Long highlights get smaller type, and past about 600 characters the line is cut at a word with an ellipsis.
+
 
 ---
 

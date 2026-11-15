@@ -198,7 +198,9 @@ data class NovelStatusRow(val id: String, val readingStatus: String)
 data class HighlightWithBook(
     @androidx.room.Embedded val highlight: HighlightEntity,
     val novelTitle: String,
-    val chapterUrl: String?
+    val chapterUrl: String?,
+    // For the quote card's byline; defaulted so other constructors are unaffected.
+    val novelAuthor: String = ""
 )
 
 /**
@@ -741,7 +743,7 @@ interface HighlightDao {
 
     // Every highlight across the library, newest first, for the highlights screen and the daily card.
     @Query("""
-        SELECT h.*, n.title AS novelTitle, c.url AS chapterUrl FROM highlights h
+        SELECT h.*, n.title AS novelTitle, n.author AS novelAuthor, c.url AS chapterUrl FROM highlights h
         JOIN novels n ON n.id = h.novelId
         LEFT JOIN chapters c ON c.id = h.chapterId
         ORDER BY h.createdAt DESC

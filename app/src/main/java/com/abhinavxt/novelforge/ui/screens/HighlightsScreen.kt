@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Share
+import com.abhinavxt.novelforge.ui.components.QuoteCardSheet
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -58,6 +60,7 @@ fun HighlightsScreen(
 ) {
     val all by remember { repository.getAllHighlightsWithBook() }.collectAsState(initial = null)
     var book by rememberSaveable { mutableStateOf<String?>(null) }
+    var sharing by remember { mutableStateOf<HighlightWithBook?>(null) }
 
     Scaffold(
         topBar = {
@@ -104,16 +107,31 @@ fun HighlightsScreen(
                             }
                         }
                     }
-                    items(shown, key = { it.highlight.id }) { HighlightCard(it, onOpen) }
+                    items(shown, key = { it.highlight.id }) { HighlightCard(it, onOpen, onShare = { sharing = it }) }
                 }
             }
         }
+    }
+
+    sharing?.let { item ->
+        QuoteCardSheet(
+            quote = item.highlight.selectedText,
+            bookTitle = item.novelTitle,
+            author = item.novelAuthor,
+            highlightColor = item.highlight.color,
+            onDismiss = { sharing = null }
+        )
     }
 }
 
 /** One highlight: its colour, the quote, the note, and where it is. Tapping opens the reader there. */
 @Composable
-fun HighlightCard(item: HighlightWithBook, onOpen: OpenHighlight, modifier: Modifier = Modifier) {
+fun HighlightCard(
+    item: HighlightWithBook,
+    onOpen: OpenHighlight,
+    modifier: Modifier = Modifier,
+    onShare: ((HighlightWithBook) -> Unit)? = null
+) {
     val h = item.highlight
     val url = item.chapterUrl
     Card(
@@ -123,7 +141,7 @@ fun HighlightCard(item: HighlightWithBook, onOpen: OpenHighlight, modifier: Modi
     ) {
         Row(Modifier.height(IntrinsicSize.Min)) {
             Spacer(Modifier.width(4.dp).fillMaxHeight().background(getHighlightColor(h.color).copy(alpha = 1f)))
-            Column(Modifier.padding(14.dp)) {
+            Column(Modifier.weight(1f).padding(14.dp)) {
                 Text("“${h.selectedText}”", style = MaterialTheme.typography.bodyLarge, fontStyle = FontStyle.Italic)
                 if (!h.note.isNullOrBlank()) {
                     Spacer(Modifier.height(6.dp))
@@ -137,6 +155,11 @@ fun HighlightCard(item: HighlightWithBook, onOpen: OpenHighlight, modifier: Modi
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+            if (onShare != null) {
+                IconButton(onClick = { onShare(item) }) {
+                    Icon(Icons.Default.Share, contentDescription = "Share as image")
+                }
             }
         }
     }
