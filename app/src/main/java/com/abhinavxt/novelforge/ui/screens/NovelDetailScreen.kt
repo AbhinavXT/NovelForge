@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -32,6 +34,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -42,6 +46,9 @@ import com.abhinavxt.novelforge.ui.components.OfflineBanner
 import com.abhinavxt.novelforge.data.NovelRepository
 import com.abhinavxt.novelforge.ui.viewmodel.NovelDetailUiState
 import com.abhinavxt.novelforge.ui.viewmodel.NovelDetailViewModel
+import com.abhinavxt.novelforge.ui.theme.LocalEinkMode
+import com.abhinavxt.novelforge.util.CoverAccent
+import com.abhinavxt.novelforge.util.CoverPalette
 import com.abhinavxt.novelforge.util.NetworkMonitor
 import kotlinx.coroutines.launch
 
@@ -123,6 +130,7 @@ fun NovelDetailScreen(
         }
     }
 
+    CoverTheme(coverUrl = (uiState as? NovelDetailUiState.Success)?.novel?.coverUrl) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -285,6 +293,7 @@ fun NovelDetailScreen(
             }
         }
     }
+    }
 
     // Model download dialog — shown at top level so it overlays everything
     if (showModelDownloadDialog) {
@@ -298,3 +307,50 @@ fun NovelDetailScreen(
     }
 }
 
+
+/**
+ * Re-themes [content] with an accent taken from the book's cover: primary
+ * and its container colours are swapped, everything else (surfaces, text)
+ * stays as is so legibility doesn't depend on the cover. Does nothing in
+ * E-ink mode, when the setting is off, or for covers without a vivid colour.
+ */
+@Composable
+private fun CoverTheme(coverUrl: String?, content: @Composable () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val eink = LocalEinkMode.current
+    val enabled by (context.applicationContext as com.abhinavxt.novelforge.NovelReaderApplication)
+        .themePreferences.coverAccent.collectAsState()
+    val base = MaterialTheme.colorScheme
+
+    val active = enabled && !eink && !coverUrl.isNullOrEmpty()
+    // Seed from the cache so a book opened before doesn't flash the plain theme.
+    var accent by remember(coverUrl, active) {
+        mutableStateOf(if (active) CoverAccent.cached(coverUrl!!)?.color else null)
+    }
+    LaunchedEffect(coverUrl, active) {
+        if (active && accent == null) accent = CoverAccent.load(context, coverUrl!!).color
+    }
+
+    val current = accent
+    if (!active || current == null) {
+        content()
+        return
+    }
+
+    val primary = CoverPalette.accentOn(current, base.surface.toArgb())
+    val container = CoverPalette.blend(base.surface.toArgb(), primary, 0.28f)
+    val spec = tween<Color>(durationMillis = 300)
+    MaterialTheme(
+        colorScheme = base.copy(
+            primary = animateColorAsState(Color(primary), spec, label = "coverPrimary").value,
+            onPrimary = animateColorAsState(Color(CoverPalette.onAccent(primary)), spec, label = "coverOnPrimary").value,
+            primaryContainer = animateColorAsState(Color(container), spec, label = "coverContainer").value,
+            onPrimaryContainer = animateColorAsState(Color(CoverPalette.onAccent(container)), spec, label = "coverOnContainer").value,
+            inversePrimary = Color(primary),
+            surfaceTint = Color(primary)
+        ),
+        typography = MaterialTheme.typography,
+        shapes = MaterialTheme.shapes,
+        content = content
+    )
+}

@@ -268,6 +268,14 @@ fun SettingsScreen(
                 }
             )
 
+            val coverAccentOn by themePreferences.coverAccent.collectAsState()
+            PrivacySwitchRow(
+                title = "Colour book pages from their cover",
+                summary = "Tints a book's page with a colour from its cover. Off in E-ink mode.",
+                checked = coverAccentOn,
+                onCheckedChange = themePreferences::setCoverAccent
+            )
+
             if (showThemeSheet) {
                 ThemePickerSheet(
                     currentTheme = currentAppTheme,

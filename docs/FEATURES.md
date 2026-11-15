@@ -220,6 +220,8 @@ Auto-scroll is not available in paged mode (the button is hidden when paged is a
 
 **Drop cap.** A toggle in Quick Settings draws the first letter of each chapter's opening paragraph large, in scroll and paged modes. An opening quote mark stays its normal size, a chapter's own title line at the top of the text is passed over, and a paragraph that doesn't start with a letter gets none.
 
+**Cover colours.** A book's page in the app takes its accent colour from the cover: the Read button, tabs, links and download ticks. The colour is adjusted until it reads clearly on the current theme, and a grey or blank cover keeps the theme's own colour. Off in e-ink mode, and switchable in Settings → Appearance → **Colour book pages from their cover**.
+
 ### Themes
 
 Four light:

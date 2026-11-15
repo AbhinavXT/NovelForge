@@ -236,6 +236,15 @@ class ThemePreferences(context: Context) {
         _einkMode.value = on
     }
 
+    /** Tint a book's detail page with a colour taken from its cover. */
+    private val _coverAccent = MutableStateFlow(prefs.getBoolean(KEY_COVER_ACCENT, true))
+    val coverAccent: StateFlow<Boolean> = _coverAccent.asStateFlow()
+
+    fun setCoverAccent(on: Boolean) {
+        prefs.edit().putBoolean(KEY_COVER_ACCENT, on).apply()
+        _coverAccent.value = on
+    }
+
     /** The look E-ink mode replaced, encoded by [EinkLook.encode]; null when none is saved. */
     var preEinkLook: String?
         get() = prefs.getString(KEY_PRE_EINK_LOOK, null)
@@ -342,6 +351,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_EINK_MODE = "eink_mode"
         private const val KEY_PRE_EINK_LOOK = "pre_eink_look"
         private const val KEY_INCOGNITO = "incognito"
+        private const val KEY_COVER_ACCENT = "cover_accent"
         private const val KEY_APP_FONT = "app_font"
         private const val KEY_APP_THEME = "app_theme"
         private const val KEY_CUSTOM_PRIMARY = "custom_primary_color"
