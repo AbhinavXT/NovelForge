@@ -216,6 +216,10 @@ Auto-scroll is not available in paged mode (the button is hidden when paged is a
 
 12 themes, 8 fonts plus your own, all switchable from Quick Settings. Changes apply immediately and are saved per-app, not per-novel.
 
+**Looks.** The row at the top of Quick Settings sets several things in one tap: **Paper** (the Paper theme, Literata at 18, justified and hyphenated, with a drop cap), **Night** (the dark theme, looser lines, left-aligned), **Focus** (wide margins, larger type, generous spacing) and **Compact** (narrow margins, small type, tight spacing, for more text per screen). A look only changes how the page looks, never the reading mode, tap zones or TTS, and every setting it touched can still be changed after. The chip stays lit while your settings match it.
+
+**Drop cap.** A toggle in Quick Settings draws the first letter of each chapter's opening paragraph large, in scroll and paged modes. An opening quote mark stays its normal size, a chapter's own title line at the top of the text is passed over, and a paragraph that doesn't start with a letter gets none.
+
 ### Themes
 
 Four light:

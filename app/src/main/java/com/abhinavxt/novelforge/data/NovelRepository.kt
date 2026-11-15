@@ -551,6 +551,7 @@ class NovelRepository(
             customFont = settings.customFont,
             hyphenation = settings.hyphenation,
             paragraphSpacing = settings.paragraphSpacing,
+            dropCap = settings.dropCap,
         )
         settingsDao.saveSettings(entity)
     }
@@ -876,6 +877,7 @@ class NovelRepository(
             customFont = this.customFont?.takeIf { java.io.File(it).isFile },
             hyphenation = this.hyphenation,
             paragraphSpacing = this.paragraphSpacing.coerceIn(0, 32),
+            dropCap = this.dropCap,
         )
     }
 

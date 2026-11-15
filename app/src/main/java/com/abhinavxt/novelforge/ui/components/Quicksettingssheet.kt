@@ -75,6 +75,7 @@ import com.abhinavxt.novelforge.NovelReaderApplication
 import com.abhinavxt.novelforge.data.ReaderFontException
 import com.abhinavxt.novelforge.data.model.PageTransition
 import com.abhinavxt.novelforge.data.model.ReaderFont
+import com.abhinavxt.novelforge.data.model.ReaderPreset
 import com.abhinavxt.novelforge.data.model.ReaderSettings
 import com.abhinavxt.novelforge.data.model.ReaderTheme
 import com.abhinavxt.novelforge.data.model.ReadingMode
@@ -122,6 +123,15 @@ fun QuickSettingsSheet(
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp)
         ) {
+            // ── Section 0: Looks ────────────────────────────────
+            // Goes through onSettingsChanged like every control below, so a
+            // look lands on the book's own settings when "this book only" is on.
+            item {
+                SectionHeader(title = "Looks")
+                LooksRow(settings = settings, onSettingsChanged = onSettingsChanged)
+                SectionDivider()
+            }
+
             // ── Section 1: Reading Mode Toggle ──────────────────
             item {
                 SectionHeader(title = "Reading Mode")
@@ -219,6 +229,13 @@ fun QuickSettingsSheet(
                 if (settings.hyphenation && bookLookOn != null) {
                     BookLanguageRow(settings.bookLanguage) { onSettingsChanged(settings.copy(bookLanguage = it)) }
                 }
+                SettingToggleRow(
+                    label = "Drop cap",
+                    checked = settings.dropCap,
+                    onCheckedChange = { checked ->
+                        onSettingsChanged(settings.copy(dropCap = checked))
+                    }
+                )
                 SettingToggleRow(
                     label = "Paragraph indent",
                     checked = settings.paragraphIndent,
@@ -878,6 +895,38 @@ private fun PageTransitionPicker(
  * of the selected layout underneath, so the zone geometry is
  * self-explanatory without a diagram.
  */
+/** One chip per [ReaderPreset]; the one the current settings match is highlighted. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LooksRow(settings: ReaderSettings, onSettingsChanged: (ReaderSettings) -> Unit) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        maxItemsInEachRow = 4
+    ) {
+        ReaderPreset.entries.forEach { preset ->
+            val isSelected = preset.matches(settings)
+            Surface(
+                onClick = { onSettingsChanged(preset.applyTo(settings)) },
+                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = preset.displayName,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    textAlign = TextAlign.Center,
+                    color = if (isSelected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TapZonePicker(

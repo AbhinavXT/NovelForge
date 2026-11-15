@@ -165,6 +165,9 @@ data class ReaderSettingsEntity(
     val customFont: String? = null,
     val hyphenation: Boolean = false,
     val paragraphSpacing: Int = 16,
+
+    // ── Drop cap (v28) ──────────────────────────────────────────
+    val dropCap: Boolean = false,
 )
 
 @Entity(
