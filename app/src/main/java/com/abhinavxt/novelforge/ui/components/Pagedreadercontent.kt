@@ -144,7 +144,7 @@ fun PagedReaderContent(
     // ── Pagination: split paragraphs into pages ─────────────────
     // Recalculates when any display parameter changes.
     val pages = remember(
-        paragraphs, formatting, textStyle, dropCapIndex, settings.horizontalMargin,
+        paragraphs, formatting, textStyle, dropCapIndex, settings.bionicReading, settings.horizontalMargin,
         settings.paragraphSpacing, contentHeightPx, contentWidthPx
     ) {
         paginateParagraphs(
@@ -157,6 +157,7 @@ fun PagedReaderContent(
                     text = buildAnnotatedString {
                         append(paragraphs[index])
                         addBookFormatting(format, noteColor, null)
+                        if (settings.bionicReading) with(BionicReading) { add(ranges(paragraphs[index])) }
                         if (index == dropCapIndex) with(DropCap) { add(paragraphs[index], dropCapColor) }
                     },
                     style = textStyle.forBlock(format?.block),
@@ -386,9 +387,13 @@ fun PagedReaderContent(
                                 // marks on top; the active match gets
                                 // inverted emphasis only on the paragraph
                                 // that actually holds it.
+                                val bionicRanges = remember(paragraph, settings.bionicReading) {
+                                    if (settings.bionicReading) BionicReading.ranges(paragraph) else emptyList()
+                                }
                                 val annotated = buildAnnotatedString {
                                     append(paragraph)
                                     addBookFormatting(format, noteColor, onFootnoteClick)
+                                    if (settings.bionicReading) with(BionicReading) { add(bionicRanges) }
                                     if (index == dropCapIndex) with(DropCap) { add(paragraph, dropCapColor) }
                                     if (searchQuery.length >= MatchHighlight.MIN_QUERY_LENGTH) {
                                         with(MatchHighlight) {

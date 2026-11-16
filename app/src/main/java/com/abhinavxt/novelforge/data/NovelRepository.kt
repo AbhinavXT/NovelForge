@@ -552,6 +552,7 @@ class NovelRepository(
             hyphenation = settings.hyphenation,
             paragraphSpacing = settings.paragraphSpacing,
             dropCap = settings.dropCap,
+            bionicReading = settings.bionicReading,
         )
         settingsDao.saveSettings(entity)
     }
@@ -878,6 +879,7 @@ class NovelRepository(
             hyphenation = this.hyphenation,
             paragraphSpacing = this.paragraphSpacing.coerceIn(0, 32),
             dropCap = this.dropCap,
+            bionicReading = this.bionicReading,
         )
     }
 

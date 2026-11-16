@@ -222,6 +222,8 @@ Auto-scroll is not available in paged mode (the button is hidden when paged is a
 
 **Drop cap.** A toggle in Quick Settings draws the first letter of each chapter's opening paragraph large, in scroll and paged modes. An opening quote mark stays its normal size, a chapter's own title line at the top of the text is passed over, and a paragraph that doesn't start with a letter gets none.
 
+**Bionic reading.** A toggle in Quick Settings, under Drop cap, draws the first part of every word bold to guide the eye, in scroll and paged modes. It only styles the text, so search, highlights, bookmarks and read-aloud are unaffected, and it combines with drop cap and book formatting. Chinese, Japanese, Korean and Thai text is left as is.
+
 **Cover colours.** A book's page in the app takes its accent colour from the cover: the Read button, tabs, links and download ticks. The colour is adjusted until it reads clearly on the current theme, and a grey or blank cover keeps the theme's own colour. Off in e-ink mode, and switchable in Settings → Appearance → **Colour book pages from their cover**.
 
 ### Themes

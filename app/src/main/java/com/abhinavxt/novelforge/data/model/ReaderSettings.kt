@@ -184,6 +184,7 @@ data class ReaderSettings(
 
     // ── Drop cap (v28) ──────────────────────────────────────────
     val dropCap: Boolean = false,                 // Large initial on a chapter's first paragraph
+    val bionicReading: Boolean = false,           // First part of every word drawn bold
 
     // The open book's language (BCP 47) for hyphenation. Not an app setting:
     // it lives on the novel row and is filled in by the reader; never saved here.
@@ -224,6 +225,7 @@ data class BookLook(
     val paragraphSpacing: Int,
     // Books saved before the drop cap existed read this back as false.
     val dropCap: Boolean = false,
+    val bionicReading: Boolean = false,
 ) {
     fun applyTo(s: ReaderSettings) = s.copy(
         fontSize = fontSize, theme = theme, font = font, lineSpacing = lineSpacing,
@@ -231,13 +233,14 @@ data class BookLook(
         paragraphIndent = paragraphIndent, customBackgroundColor = customBackgroundColor,
         customTextColor = customTextColor, customFont = customFont,
         hyphenation = hyphenation, paragraphSpacing = paragraphSpacing, dropCap = dropCap,
+        bionicReading = bionicReading,
     )
 
     companion object {
         fun of(s: ReaderSettings) = BookLook(
             s.fontSize, s.theme, s.font, s.lineSpacing, s.horizontalMargin, s.justifyText,
             s.paragraphIndent, s.customBackgroundColor, s.customTextColor, s.customFont,
-            s.hyphenation, s.paragraphSpacing, s.dropCap,
+            s.hyphenation, s.paragraphSpacing, s.dropCap, s.bionicReading,
         )
     }
 }
