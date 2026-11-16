@@ -28,26 +28,29 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.abhinavxt.novelforge.data.tts.Speaker
+import com.abhinavxt.novelforge.data.tts.CastVoice
+import com.abhinavxt.novelforge.data.tts.CastVoices
 import com.abhinavxt.novelforge.data.tts.Speakers
 import com.abhinavxt.novelforge.data.tts.VoiceCast
 import com.abhinavxt.novelforge.data.tts.VoiceCasting
 
 /**
- * Who reads what in this book, for the loaded multi-speaker voice: the narrator, each character
- * from the codex, and anyone the app can't tell. Saved as it changes; used from the next play.
+ * Who reads what in this book, with the voices of the active engine (a multi-speaker model's speakers,
+ * other downloaded Piper voices, or installed system voices): the narrator, each character from the
+ * codex, and anyone the app can't tell. Saved as it changes; used from the next play.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CharacterVoicesSheet(
     novelId: String,
-    modelId: String,
-    speakerCount: Int,
+    voices: CastVoices,
     casting: VoiceCasting,
     onDismiss: () -> Unit
 ) {
-    val speakers = remember(modelId, speakerCount) { Speakers.forModel(modelId, speakerCount) }
-    var cast by remember(novelId, modelId) { mutableStateOf(casting.load(novelId, modelId)) }
+    val speakers = voices.voices
+    var cast by remember(novelId, voices.key) { mutableStateOf(casting.load(novelId, voices.key)) }
+    // For engines whose narrator is just the chosen voice, that voice is the narrator in the cast.
+    val narrator = if (voices.narratorPickable) cast.narrator else voices.narrator
     var characters by remember { mutableStateOf<List<String>?>(null) }
     var genders by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
     LaunchedEffect(novelId) {
@@ -56,7 +59,7 @@ fun CharacterVoicesSheet(
     }
     fun update(new: VoiceCast) {
         cast = new
-        casting.save(novelId, modelId, new)
+        casting.save(novelId, voices.key, new)
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -67,8 +70,18 @@ fun CharacterVoicesSheet(
             item {
                 Text("Character voices", style = MaterialTheme.typography.titleLarge)
             }
-            item {
-                VoiceRow("Narrator", speakers, cast.narrator, allowNone = false) { update(cast.copy(narrator = it ?: 0)) }
+            if (voices.narratorPickable) {
+                item {
+                    VoiceRow("Narrator", speakers, cast.narrator, allowNone = false) { update(cast.copy(narrator = it ?: "0")) }
+                }
+            } else {
+                item {
+                    Text(
+                        "The narrator keeps the voice you chose for reading; pick the voices of characters below.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -102,7 +115,7 @@ fun CharacterVoicesSheet(
                         item {
                             OutlinedButton(
                                 onClick = {
-                                    update(cast.copy(characters = Speakers.autoCast(list, genders, speakers, cast.narrator)))
+                                    update(cast.copy(characters = Speakers.autoCastVoices(list, genders, speakers, narrator)))
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) { Text("Cast everyone automatically") }
@@ -127,13 +140,13 @@ fun CharacterVoicesSheet(
 }
 
 @Composable
-private fun VoiceRow(label: String, speakers: List<Speaker>, current: Int?, allowNone: Boolean, onPick: (Int?) -> Unit) {
+private fun VoiceRow(label: String, speakers: List<CastVoice>, current: String?, allowNone: Boolean, onPick: (String?) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         Box {
             TextButton(onClick = { open = true }) {
-                Text(current?.let { speakers.getOrNull(it)?.label } ?: "Narrator's voice", maxLines = 1)
+                Text(com.abhinavxt.novelforge.data.tts.Speakers.pickLabel(speakers, current), maxLines = 1)
             }
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 if (allowNone) DropdownMenuItem(text = { Text("Narrator's voice") }, onClick = { open = false; onPick(null) })

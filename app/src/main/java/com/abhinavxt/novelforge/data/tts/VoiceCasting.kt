@@ -7,21 +7,62 @@ import com.abhinavxt.novelforge.data.database.TranslationDao
 import com.google.gson.Gson
 
 /** One speaker of a multi-speaker voice model. [female] is null when the model doesn't say. */
-data class Speaker(val id: Int, val label: String, val female: Boolean?, val accent: Char? = null)
+data class Speaker(val id: Int, val label: String, val female: Boolean?, val accent: Char? = null) {
+    fun toCastVoice() = CastVoice(id.toString(), label, female, accent)
+}
+
+/** A voice a character can be given: [id] is a Sherpa speaker number, a Piper model folder or a system voice name. */
+data class CastVoice(val id: String, val label: String, val female: Boolean? = null, val accent: Char? = null)
+
+/** Which kind of voice a cast hands out; decides how the engine switches to it. */
+enum class CastKind { SHERPA_SPEAKER, PIPER_MODEL, GOOGLE_VOICE }
+
+/**
+ * The voices the active engine can give characters, and where the book's cast for them is stored.
+ * [narrator] is the voice the narrator already reads in; [narratorPickable] is true only when it is
+ * one of the voices (a multi-speaker model), false when it is simply the voice the reader chose.
+ */
+data class CastVoices(
+    val kind: CastKind,
+    val key: String,
+    val voices: List<CastVoice>,
+    val narrator: String,
+    val narratorPickable: Boolean
+) {
+    /** Characters can only be cast with someone else to give them. */
+    val usable: Boolean get() = voices.size >= MIN_VOICES
+
+    companion object {
+        const val MIN_VOICES = 2
+    }
+}
 
 /**
  * Who reads what in one book, for one voice model (speaker numbers mean different voices in each).
  * Narration gets [narrator]; a quote gets its character's voice, else [otherDialogue], else the narrator's.
+ *
+ * Voices are strings so one shape serves every engine. A cast saved by older versions stored speaker
+ * numbers (`"narrator":2`), which read back as "2" and mean the same thing.
  */
 data class VoiceCast(
     val enabled: Boolean = false,
-    val narrator: Int = 0,
-    val otherDialogue: Int? = null,
-    val characters: Map<String, Int> = emptyMap()
+    val narrator: String = "0",
+    val otherDialogue: String? = null,
+    val characters: Map<String, String> = emptyMap()
 ) {
-    fun voiceFor(piece: Dialogue.Piece): Int =
+    fun voiceFor(piece: Dialogue.Piece): String =
         if (!enabled || !piece.quoted) narrator
         else piece.speaker?.let { characters[it] } ?: otherDialogue ?: narrator
+
+    /**
+     * This cast for an engine whose narrator is [narratorId] and whose voices are [available]:
+     * a voice that is no longer there (an uninstalled system voice, a deleted model) reads as the narrator.
+     */
+    fun restrictedTo(available: Set<String>, narratorId: String): VoiceCast = copy(
+        narrator = narratorId,
+        otherDialogue = otherDialogue?.takeIf { it in available },
+        characters = characters.filterValues { it in available }
+    )
 }
 
 object Speakers {
@@ -43,13 +84,35 @@ object Speakers {
                 .split(" ").joinToString(" ") { "zm_$it" })
     ).mapValues { it.value.split(" ") }
 
+    private const val LIBRITTS_PICKABLE = 100
+
     private val ACCENTS = mapOf(
         'a' to "American", 'b' to "British", 'e' to "Spanish", 'f' to "French", 'h' to "Hindi",
         'i' to "Italian", 'j' to "Japanese", 'p' to "Portuguese", 'z' to "Chinese"
     )
 
+    /**
+     * What a picker shows for the voice [current] of [voices]: its label, "Speaker N" for a speaker number
+     * beyond the listed ones, and "Narrator's voice" when nothing is chosen or it can't be named.
+     */
+    fun pickLabel(voices: List<CastVoice>, current: String?): String {
+        if (current == null) return NARRATOR_LABEL
+        voices.firstOrNull { it.id == current }?.let { return it.label }
+        return current.toIntOrNull()?.takeIf { it >= 0 }?.let { "Speaker ${it + 1}" } ?: NARRATOR_LABEL
+    }
+
+    const val NARRATOR_LABEL = "Narrator's voice"
+
+    /** The speaker [id] of [modelId] when it is outside the (capped) list [forModel] returns. */
+    fun labelFor(modelId: String?, id: Int): Speaker =
+        forModel(modelId, id + 1).getOrNull(id) ?: Speaker(id, "Speaker ${id + 1}", null)
+
     /** [count] speakers of [modelId]; named when the model is one we know, numbered otherwise. */
     fun forModel(modelId: String?, count: Int): List<Speaker> {
+        // LibriTTS-R has ~900 anonymous speakers: number them, and offer a manageable first set.
+        if (modelId?.contains("libritts", ignoreCase = true) == true) {
+            return (0 until minOf(count, LIBRITTS_PICKABLE)).map { Speaker(it, "Speaker ${it + 1}", null) }
+        }
         val known = modelId?.let { id -> KOKORO.entries.firstOrNull { id.startsWith(it.key) }?.value }
         return (0 until count).map { i ->
             val code = known?.getOrNull(i) ?: return@map Speaker(i, "Voice ${i + 1}", null)
@@ -65,10 +128,15 @@ object Speakers {
      * Gives each character a voice: one of their gender when it's known, in the narrator's accent when
      * the model has accents, and as few repeats as the model allows. The narrator's voice is kept for narration.
      */
-    fun autoCast(characters: List<String>, genders: Map<String, Boolean>, speakers: List<Speaker>, narrator: Int): Map<String, Int> {
-        val accent = speakers.getOrNull(narrator)?.accent
-        val pool = speakers.filter { it.id != narrator && (accent == null || it.accent == accent) }
-            .ifEmpty { speakers.filter { it.id != narrator } }
+    fun autoCast(characters: List<String>, genders: Map<String, Boolean>, speakers: List<Speaker>, narrator: Int): Map<String, Int> =
+        autoCastVoices(characters, genders, speakers.map { it.toCastVoice() }, narrator.toString())
+            .mapValues { it.value.toInt() }
+
+    /** [autoCast] for any kind of voice; an empty map when nobody but the narrator is available. */
+    fun autoCastVoices(characters: List<String>, genders: Map<String, Boolean>, voices: List<CastVoice>, narrator: String): Map<String, String> {
+        val accent = voices.firstOrNull { it.id == narrator }?.accent
+        val pool = voices.filter { it.id != narrator && (accent == null || it.accent == accent) }
+            .ifEmpty { voices.filter { it.id != narrator } }
             .ifEmpty { return emptyMap() }
         val next = mutableMapOf<Boolean?, Int>()
         return characters.associateWith { name ->
@@ -93,15 +161,28 @@ object Speakers {
 class VoiceCasting(context: Context, private val codexDao: CodexDao, private val translationDao: TranslationDao) {
 
     private val prefs = context.getSharedPreferences("character_voices", Context.MODE_PRIVATE)
-    private val gson = Gson()
 
-    fun load(novelId: String, modelId: String): VoiceCast =
-        prefs.getString("$novelId|$modelId", null)
-            ?.let { runCatching { gson.fromJson(it, VoiceCast::class.java) }.getOrNull() }
-            ?: VoiceCast()
+    companion object {
+        private val gson = Gson()
 
-    fun save(novelId: String, modelId: String, cast: VoiceCast) {
-        prefs.edit().putString("$novelId|$modelId", gson.toJson(cast)).apply()
+        /** A stored cast, empty when there is none or it can't be read. */
+        fun parse(json: String?): VoiceCast =
+            json?.let { runCatching { gson.fromJson(it, VoiceCast::class.java) }.getOrNull() } ?: VoiceCast()
+
+        fun toJson(cast: VoiceCast): String = gson.toJson(cast)
+
+        fun googleKey(language: String) = "google_tts:$language"
+        fun piperKey(modelId: String) = "piper:$modelId"
+    }
+
+    /**
+     * [key] names what the cast is for: a multi-speaker model's id (as it always was), `piper:<model>`
+     * for casting other downloaded Piper voices, `google_tts:<language>` for system voices.
+     */
+    fun load(novelId: String, key: String): VoiceCast = parse(prefs.getString("$novelId|$key", null))
+
+    fun save(novelId: String, key: String, cast: VoiceCast) {
+        prefs.edit().putString("$novelId|$key", toJson(cast)).apply()
     }
 
     /** The book's people from the codex, most mentioned first. */

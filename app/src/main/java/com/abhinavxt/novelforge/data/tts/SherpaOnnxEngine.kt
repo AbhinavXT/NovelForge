@@ -47,7 +47,11 @@ class SherpaOnnxEngine(
     companion object {
         const val ENGINE_ID = "sherpa_onnx"
         private const val TAG = "SherpaOnnxEngine"
+        const val MAX_EXTRA_MODELS = 2
     }
+
+    /** One line to synthesize: a speaker of the loaded model, or (Piper) another downloaded model. */
+    data class Line(val text: String, val speaker: Int = 0, val model: String? = null)
 
     override val displayName: String = "On-Device Neural TTS"
     override val engineId: String = ENGINE_ID
@@ -58,6 +62,27 @@ class SherpaOnnxEngine(
 
     private var currentModelId: String? = null
     private var currentSpeakerId: Int = 0
+
+    /** Piper voice (model folder) for the next line when a character is cast in another model; null = the loaded one. */
+    private var currentCastModel: String? = null
+
+    /** Extra models loaded for character voices, besides the narrator's; the least recently used is released. */
+    private val extraModels = ModelLru<SherpaOnnxWrapper>(MAX_EXTRA_MODELS) { id, wrapper ->
+        Logger.d(TAG, "Releasing extra model: $id")
+        wrapper.release()
+    }
+    /** Extra models that failed to load; the narrator reads their lines until the narrator model changes. */
+    private val failedExtras = FailedLoads()
+
+    /** Never cancelled: releases native handles once no generate call can be using them. */
+    private val releaseScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private fun releaseWhenIdle(handles: List<SherpaOnnxWrapper>) {
+        if (handles.isEmpty()) return
+        releaseScope.launch {
+            generateMutex.withLock { handles.forEach { it.release() } }
+        }
+    }
     private var sampleRate: Int = 22050
 
     // Audio playback
@@ -106,17 +131,18 @@ class SherpaOnnxEngine(
      * (JNI not thread-safe) but runs on a background coroutine.
      */
     fun pregenerateBatchAsync(
-        sentences: List<Pair<String, Int>>,
+        sentences: List<Line>,
         speed: Float = 1.0f
     ) {
         if (sentences.isEmpty() || ttsWrapper == null) return
 
         pregenerateJob?.cancel()
         pregenerateJob = scope.launch {
-            for ((text, speakerId) in sentences) {
+            for (line in sentences) {
+                val text = line.text
                 if (!isActive || isStopped) break
 
-                val cacheKey = buildCacheKey(text, speakerId, speed)
+                val cacheKey = buildCacheKey(text, line.speaker, line.model, speed)
                 if (audioCache.containsKey(cacheKey)) continue  // already cached
 
                 // tryLock: yield to speak() if it needs the mutex
@@ -125,11 +151,11 @@ class SherpaOnnxEngine(
                     // Wait briefly then retry — speak() hold is short
                     generateMutex.withLock {
                         // Got the lock now, generate
-                        generateOne(text, cacheKey, speakerId, speed)
+                        generateOne(line, cacheKey, speed)
                     }
                 } else {
                     try {
-                        generateOne(text, cacheKey, speakerId, speed)
+                        generateOne(line, cacheKey, speed)
                     } finally {
                         generateMutex.unlock()
                     }
@@ -139,14 +165,14 @@ class SherpaOnnxEngine(
     }
 
     private suspend fun generateOne(
-        text: String,
+        line: Line,
         cacheKey: String,
-        speakerId: Int,
         speed: Float
     ) {
+        val text = line.text
         try {
             Logger.d(TAG, "Pre-generating: ${text.take(40)}...")
-            val audio = ttsWrapper?.generate(text, speakerId, speed)
+            val audio = synthesizeLocked(line, speed)
             if (audio != null && audio.samples.isNotEmpty()) {
                 // Eviction is automatic (removeEldestEntry) and correctly
                 // drops the eldest entry, never the imminent one.
@@ -170,9 +196,45 @@ class SherpaOnnxEngine(
         audioCache.clear()
     }
 
-    private fun buildCacheKey(text: String, speakerId: Int, speed: Float): String {
-        return "${speakerId}_${speed}_${text.hashCode()}"
+    private fun buildCacheKey(text: String, speakerId: Int, model: String?, speed: Float): String {
+        return "${model ?: ""}_${speakerId}_${speed}_${text.hashCode()}"
     }
+
+    /**
+     * Generate [line] with the right model. A cast model is loaded on first use (this runs off the main
+     * thread) and kept in a small LRU; if it can't be loaded the narrator's model reads the line.
+     * The caller must hold [generateMutex]: the native engines are not thread-safe.
+     */
+    private fun synthesizeLocked(line: Line, speed: Float): GeneratedAudioData? {
+        val main = ttsWrapper ?: return null
+        val model = line.model?.takeIf { it != currentModelId }
+        val extra = model?.let { extraModel(it) }
+        return if (extra != null) extra.generate(line.text, 0, speed)
+        else main.generate(line.text, line.speaker, speed)
+    }
+
+    private fun extraModel(modelId: String): SherpaOnnxWrapper? {
+        extraModels.get(modelId)?.let { return it }
+        if (failedExtras.hasFailed(modelId)) return null
+        return try {
+            val dir = File(modelsDir, modelId)
+            val config = dir.takeIf { it.exists() }?.let { detectModelConfig(it) }
+            val created = config?.let { SherpaOnnxWrapper.create(it) }
+            if (created == null) failedExtras.markFailed(modelId)
+            created?.also {
+                extraModels.put(modelId, it)
+                Logger.d(TAG, "Loaded extra model: $modelId (sampleRate=${it.sampleRate})")
+            }
+        } catch (e: Exception) {
+            Logger.w(TAG, "Could not load extra model $modelId: ${e.message}")
+            failedExtras.markFailed(modelId)
+            null
+        }
+    }
+
+    /** Synthesize [line] for an export (waits for any playback generation to finish). */
+    suspend fun synthesize(line: Line, speed: Float): GeneratedAudioData? =
+        generateMutex.withLock { synthesizeLocked(line, speed) }
 
     // ── Lifecycle ────────────────────────────────────────────────
 
@@ -202,6 +264,7 @@ class SherpaOnnxEngine(
         }
 
         clearCache()
+        val oldMain = ttsWrapper
 
         try {
             val modelConfig = detectModelConfig(modelDir)
@@ -210,7 +273,11 @@ class SherpaOnnxEngine(
                 return
             }
 
-            ttsWrapper = SherpaOnnxWrapper.create(modelConfig)
+            val created = SherpaOnnxWrapper.create(modelConfig)
+            // Old handles may be mid-generate; release them only once the mutex is free.
+            ttsWrapper = created
+            failedExtras.clear()
+            releaseWhenIdle(extraModels.takeAll() + listOfNotNull(oldMain?.takeIf { it !== created }))
             if (ttsWrapper == null) {
                 onError("Failed to create Sherpa-ONNX TTS instance for: ${modelDir.name}")
                 return
@@ -251,9 +318,10 @@ class SherpaOnnxEngine(
 
         isStopped = false
 
+        val line = Line(text, currentSpeakerId, currentCastModel)
         synthesisJob = scope.launch {
             try {
-                val cacheKey = buildCacheKey(text, currentSpeakerId, speed)
+                val cacheKey = buildCacheKey(text, line.speaker, line.model, speed)
                 val cached = audioCache.remove(cacheKey)
 
                 val audio = if (cached != null) {
@@ -263,11 +331,7 @@ class SherpaOnnxEngine(
                     Logger.d(TAG, "Generating audio for: ${text.take(50)}...")
                     // Wait for mutex — pregenerate will yield since it uses tryLock
                     generateMutex.withLock {
-                        ttsWrapper!!.generate(
-                            text = text,
-                            speakerId = currentSpeakerId,
-                            speed = speed
-                        )
+                        synthesizeLocked(line, speed)
                     }
                 }
 
@@ -338,9 +402,10 @@ class SherpaOnnxEngine(
     override fun shutdown() {
         stop()
         scope.cancel()
-        ttsWrapper?.release()
+        val handles = extraModels.takeAll() + listOfNotNull(ttsWrapper)
         ttsWrapper = null
         isReady = false
+        releaseWhenIdle(handles)
     }
 
     // ── Voice / model management ─────────────────────────────────
@@ -362,6 +427,23 @@ class SherpaOnnxEngine(
     }
 
     fun getCurrentSpeakerIdValue(): Int = currentSpeakerId
+
+    /** Read the next lines in another downloaded Piper model ([modelId]), or the loaded one when null. */
+    fun setCastModel(modelId: String?) {
+        currentCastModel = modelId
+    }
+
+    /**
+     * Downloaded Piper voices that can be given to characters while the loaded model narrates: those of
+     * its language, itself included. Empty unless a single-speaker Piper model is loaded.
+     */
+    fun castableModels(): List<VoiceInfo> {
+        val narrator = currentModelId ?: return emptyList()
+        if (PiperVoices.isMultiSpeaker(narrator)) return emptyList()
+        val downloaded = getDownloadedModels().associateBy { it.id }
+        return PiperVoices.sameLanguage(narrator, downloaded.keys.toList())
+            .mapNotNull { downloaded[it] }
+    }
 
     /** How many speakers the loaded model has; 1 for most Piper voices, 11+ for Kokoro. */
     fun speakerCount(): Int = ttsWrapper?.numSpeakers() ?: 0
