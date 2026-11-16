@@ -174,6 +174,24 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.10.0",
+        date = "Nov 2026",
+        changes = listOf(
+            "Chapter downloads run in the background with a notification, pause and cancel, a Wi-Fi only option, and Next 5 / 10 / 25 unread or All remaining",
+            "Library covers in three sizes, with reading progress on every opened book",
+            "Reader looks (Paper, Night, Focus, Compact) set the whole page in one tap, and a drop cap opens each chapter",
+            "A book's page takes its colour from the cover",
+            "Share a highlight as a quote card in three looks",
+            "A year in review on the stats screen, shareable as a picture",
+            "With an AI engine set up: a summary of the story so far, and questions about a character from the codex",
+            "An option to delete chapters after reading; highlighted, bookmarked and translated chapters are kept",
+            "Lists and pages show placeholders shaped like the content while they load",
+            "Range downloads now save for novels outside the library and for newly published chapters",
+            "A library novel's page opens offline from the saved chapter list",
+            "A newly added novel no longer announces every chapter as new"
+        )
+    ),
+    VersionEntry(
         version = "v2.9.3",
         date = "Nov 2026",
         changes = listOf(
