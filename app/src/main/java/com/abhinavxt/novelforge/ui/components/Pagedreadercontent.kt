@@ -15,6 +15,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+import com.abhinavxt.novelforge.ui.theme.LocalEinkMode
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -83,6 +85,8 @@ fun PagedReaderContent(
     paragraphs: List<String>,
     /** The book's own formatting; null shows plain text. */
     formatting: ReaderFormatting? = null,
+    /** For the drop cap: a first line repeating the title is not the body. */
+    chapterTitle: String = "",
     onFootnoteClick: ((Footnote) -> Unit)? = null,
     settings: ReaderSettings,
     colors: ThemeColors,
@@ -128,13 +132,19 @@ fun PagedReaderContent(
     // Build the text style used for measurement — must match rendering exactly
     val textStyle = remember(settings) { settings.textStyle() }
     val noteColor = MaterialTheme.colorScheme.primary
+    // Measured and drawn from the same helper, so the big initial's taller
+    // first line is already counted when pages are filled.
+    val dropCapIndex = remember(paragraphs, formatting, chapterTitle, settings.dropCap) {
+        if (settings.dropCap) DropCap.paragraphIndex(paragraphs, chapterTitle) { formatting?.get(it)?.block } else null
+    }
+    val dropCapColor = if (LocalEinkMode.current) Color.Black else colors.text
     val quoteIndentPx = with(density) { QUOTE_INDENT_DP.dp.toPx() }
     val imageSpacingPx = with(density) { IMAGE_SPACING.toPx() }
 
     // ── Pagination: split paragraphs into pages ─────────────────
     // Recalculates when any display parameter changes.
     val pages = remember(
-        paragraphs, formatting, textStyle, settings.horizontalMargin,
+        paragraphs, formatting, textStyle, dropCapIndex, settings.horizontalMargin,
         settings.paragraphSpacing, contentHeightPx, contentWidthPx
     ) {
         paginateParagraphs(
@@ -147,6 +157,7 @@ fun PagedReaderContent(
                     text = buildAnnotatedString {
                         append(paragraphs[index])
                         addBookFormatting(format, noteColor, null)
+                        if (index == dropCapIndex) with(DropCap) { add(paragraphs[index], dropCapColor) }
                     },
                     style = textStyle.forBlock(format?.block),
                     constraints = Constraints(
@@ -378,6 +389,7 @@ fun PagedReaderContent(
                                 val annotated = buildAnnotatedString {
                                     append(paragraph)
                                     addBookFormatting(format, noteColor, onFootnoteClick)
+                                    if (index == dropCapIndex) with(DropCap) { add(paragraph, dropCapColor) }
                                     if (searchQuery.length >= MatchHighlight.MIN_QUERY_LENGTH) {
                                         with(MatchHighlight) {
                                             addSearchSpans(

@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -82,6 +83,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -98,15 +100,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.abhinavxt.novelforge.data.LibraryCoverSize
 import com.abhinavxt.novelforge.data.LibraryViewMode
 import com.abhinavxt.novelforge.data.database.CategoryEntity
 import com.abhinavxt.novelforge.data.NovelRepository
 import com.abhinavxt.novelforge.data.ThemePreferences
 import com.abhinavxt.novelforge.data.model.Novel
+import com.abhinavxt.novelforge.ui.components.BookProgressBar
+import com.abhinavxt.novelforge.ui.components.CoverProgressBar
+import com.abhinavxt.novelforge.ui.components.FinishedBadge
 import com.abhinavxt.novelforge.ui.components.NovelCover
 import com.abhinavxt.novelforge.ui.components.novelCoverShared
 import com.abhinavxt.novelforge.ui.components.OfflineBanner
 import com.abhinavxt.novelforge.ui.components.ArchiveProblemDialog
+import com.abhinavxt.novelforge.ui.viewmodel.BookProgress
 import com.abhinavxt.novelforge.ui.viewmodel.ImportState
 import com.abhinavxt.novelforge.ui.viewmodel.LibraryFilter
 import com.abhinavxt.novelforge.ui.viewmodel.LibrarySort
@@ -140,6 +147,8 @@ fun LibraryScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val viewMode by themePreferences.libraryViewMode.collectAsState()
+    val coverSize by themePreferences.libraryCoverSize.collectAsState()
+    val bookProgress by viewModel.bookProgress.collectAsState()
     val categories by viewModel.categories.collectAsState()
     val selectedCategoryId by viewModel.selectedCategoryId.collectAsState()
     val novelCategoryMap by viewModel.novelCategoryMap.collectAsState()
@@ -784,6 +793,37 @@ fun LibraryScreen(
                         }
                     }
 
+                    // Cover size: only meaningful for the grid, so it is hidden in list mode
+                    if (viewMode == LibraryViewMode.GRID) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Covers:",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            LibraryCoverSize.entries.forEach { size ->
+                                FilterChip(
+                                    selected = coverSize == size,
+                                    onClick = { themePreferences.setLibraryCoverSize(size) },
+                                    label = {
+                                        Text(
+                                            size.label,
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    },
+                                    modifier = Modifier.height(28.dp)
+                                )
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
 
                     if (novels.isEmpty()) {
@@ -839,7 +879,7 @@ fun LibraryScreen(
                         // long-press a cover to remove (confirm dialog in
                         // LibraryGridItem).
                         LazyVerticalGrid(
-                            columns = GridCells.Adaptive(minSize = 100.dp),
+                            columns = GridCells.Adaptive(minSize = coverSize.minCellWidthDp.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalArrangement = Arrangement.spacedBy(14.dp),
                             contentPadding = PaddingValues(vertical = 8.dp),
@@ -851,6 +891,8 @@ fun LibraryScreen(
                             ) { novel ->
                                 LibraryGridItem(
                                     novel = novel,
+                                    progress = bookProgress[novel.id],
+                                    compactTitle = coverSize == LibraryCoverSize.SMALL,
                                     hasUpdate = novel.id in novelsWithUpdates,
                                     isArchived = novel.id in archivedIds,
                                     onClick = {
@@ -878,6 +920,7 @@ fun LibraryScreen(
                             ) { novel ->
                                 LibraryNovelItem(
                                     novel = novel,
+                                    progress = bookProgress[novel.id],
                                     hasUpdate = novel.id in novelsWithUpdates,
                                     isArchived = novel.id in archivedIds,
                                     onClick = {
@@ -1023,6 +1066,8 @@ private fun EmptyFilterState(
 @Composable
 private fun LibraryGridItem(
     novel: Novel,
+    progress: BookProgress?,
+    compactTitle: Boolean = false,
     hasUpdate: Boolean,
     isArchived: Boolean = false,
     onClick: () -> Unit,
@@ -1035,13 +1080,29 @@ private fun LibraryGridItem(
         ),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box {
+        // The cover fills the cell so the chosen size actually changes how
+        // big it is; 5:7 matches the old 100 x 140 cover.
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            val coverWidth = maxWidth
             NovelCover(
                 coverUrl = novel.coverUrl,
                 modifier = Modifier.novelCoverShared(novel.id),
-                width = 100.dp,
-                height = 140.dp
+                width = coverWidth,
+                height = coverWidth * 1.4f
             )
+            if (progress != null && !progress.finished) {
+                CoverProgressBar(
+                    fraction = progress.fraction,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+            }
+            if (progress?.finished == true) {
+                FinishedBadge(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(4.dp)
+                )
+            }
             if (hasUpdate) {
                 Box(
                     modifier = Modifier
@@ -1054,17 +1115,20 @@ private fun LibraryGridItem(
                 )
             }
             if (isArchived) {
+                // Lifted clear of the progress bar along the bottom edge
                 ArchivedBadge(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(4.dp)
+                        .padding(start = 4.dp, end = 4.dp, bottom = if (progress != null) 8.dp else 4.dp)
                 )
             }
         }
         Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = novel.title,
-            style = MaterialTheme.typography.bodySmall,
+            // Smaller covers get smaller type so two lines still fit the width
+            style = if (compactTitle) MaterialTheme.typography.labelSmall
+            else MaterialTheme.typography.bodySmall,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth()
@@ -1076,6 +1140,7 @@ private fun LibraryGridItem(
 @Composable
 private fun LibraryNovelItem(
     novel: Novel,
+    progress: BookProgress? = null,
     hasUpdate: Boolean = false,
     isArchived: Boolean = false,
     onClick: () -> Unit,
@@ -1192,6 +1257,35 @@ private fun LibraryNovelItem(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.outline
                         )
+                    }
+                }
+
+                if (progress != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (progress.finished) {
+                            FinishedBadge(size = 14.dp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Finished",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        } else {
+                            BookProgressBar(
+                                fraction = progress.fraction,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(MaterialTheme.shapes.extraSmall)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "${progress.currentChapter} / ${progress.totalChapters}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
             }

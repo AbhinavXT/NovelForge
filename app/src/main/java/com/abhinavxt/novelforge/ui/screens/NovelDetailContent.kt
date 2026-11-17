@@ -105,6 +105,7 @@ internal fun NovelDetailContent(
     currentVoice: com.abhinavxt.novelforge.data.tts.VoiceInfo?,
     onVoiceSelected: (com.abhinavxt.novelforge.data.tts.VoiceInfo) -> Unit,
     onDownloadAll: () -> Unit,
+    onDownloadNext: (count: Int?) -> Unit,
     onDownloadRange: (fromChapter: Int, toChapter: Int) -> Unit,
     onDeleteBookmark: (Long) -> Unit,
     onUpdateBookmarkNote: (Long, String?) -> Unit,
@@ -214,7 +215,8 @@ internal fun NovelDetailContent(
                         onChapterClick(chapter.id, chapter.url)
                     }
                 },
-                onDownloadAll = onDownloadAll
+                onDownloadAll = onDownloadAll,
+                onDownloadNext = onDownloadNext
             )
         }
 

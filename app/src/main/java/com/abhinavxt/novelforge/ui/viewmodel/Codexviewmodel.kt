@@ -7,7 +7,10 @@ import com.abhinavxt.novelforge.data.NovelRepository
 import com.abhinavxt.novelforge.data.codex.CodexEngine
 import com.abhinavxt.novelforge.data.codex.NameExtractor
 import com.abhinavxt.novelforge.data.codex.NameExtractor.CodexType
+import com.abhinavxt.novelforge.data.ai.ReaderAssistant
 import com.abhinavxt.novelforge.data.database.CodexMention
+import com.abhinavxt.novelforge.ui.components.AiReply
+import com.abhinavxt.novelforge.ui.components.toReply
 import com.abhinavxt.novelforge.data.database.CodexNameEntity
 import com.abhinavxt.novelforge.data.database.HighlightEntity
 import com.abhinavxt.novelforge.util.Logger
@@ -155,7 +158,39 @@ class CodexViewModel(
         }
     }
 
+    // ── Ask about a character (optional AI) ─────────────────────
+    private val _answer = MutableStateFlow<AiReply?>(null)
+    val answer: StateFlow<AiReply?> = _answer.asStateFlow()
+
+    private var askJob: Job? = null
+
+    /**
+     * Sends [question] about the open entry with the passages that mention it. The limit is always
+     * the reader's real position, whether or not the list's spoiler guard is switched off.
+     */
+    fun ask(assistant: ReaderAssistant, question: String) {
+        val name = _detail.value?.name ?: return
+        if (question.isBlank()) return
+        askJob?.cancel()
+        _answer.value = AiReply.Loading
+        askJob = viewModelScope.launch {
+            val progress = repository.getReadingProgress(novelId)
+            val result = assistant.askAboutCharacter(
+                novelId, name, question, progress?.currentChapterNumber ?: 0, progress?.paragraphIndex
+            )
+            if (_detail.value?.name == name) _answer.value = result.toReply(
+                "None of the chapters you've read that mention $name are saved on this device."
+            )
+        }
+    }
+
+    private fun clearAnswer() {
+        askJob?.cancel()
+        _answer.value = null
+    }
+
     fun selectName(entry: CodexNameEntity) {
+        clearAnswer()
         _detail.value = DetailState(name = entry.name, entry = entry, loading = true)
         viewModelScope.launch {
             val mentions = repository.getCodexMentions(
@@ -179,7 +214,10 @@ class CodexViewModel(
         }
     }
 
-    fun dismissDetail() { _detail.value = null }
+    fun dismissDetail() {
+        clearAnswer()
+        _detail.value = null
+    }
 
     /**
      * Mention tap → paragraph index for the reader's deep-jump, using

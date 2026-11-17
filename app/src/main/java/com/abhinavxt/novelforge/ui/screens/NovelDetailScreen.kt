@@ -1,5 +1,6 @@
 package com.abhinavxt.novelforge.ui.screens
 
+import com.abhinavxt.novelforge.ui.components.SkeletonNovelDetail
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -12,8 +13,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,6 +35,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -42,6 +47,9 @@ import com.abhinavxt.novelforge.ui.components.OfflineBanner
 import com.abhinavxt.novelforge.data.NovelRepository
 import com.abhinavxt.novelforge.ui.viewmodel.NovelDetailUiState
 import com.abhinavxt.novelforge.ui.viewmodel.NovelDetailViewModel
+import com.abhinavxt.novelforge.ui.theme.LocalEinkMode
+import com.abhinavxt.novelforge.util.CoverAccent
+import com.abhinavxt.novelforge.util.CoverPalette
 import com.abhinavxt.novelforge.util.NetworkMonitor
 import kotlinx.coroutines.launch
 
@@ -81,17 +89,30 @@ fun NovelDetailScreen(
             onDismiss = { showTranslation = false }
         )
     }
+    // "The story so far", for a library book once an AI engine is set up.
+    var showStory by remember { mutableStateOf(false) }
+    val aiConfig by (app?.translationSettings?.config ?: remember { kotlinx.coroutines.flow.MutableStateFlow(com.abhinavxt.novelforge.data.translation.TranslationConfig()) }).collectAsState()
+    val storyAvailable = app != null && com.abhinavxt.novelforge.data.ai.ReaderAssistant.isAvailable(aiConfig)
+    if (showStory && storyAvailable && app != null) {
+        com.abhinavxt.novelforge.ui.components.RecapSheet(
+            recap = null,
+            title = (uiState as? NovelDetailUiState.Success)?.novel?.title.orEmpty(),
+            novelId = novelId,
+            assistant = app.readerAssistant,
+            position = { repository.getReadingProgress(novelId)?.let { it.currentChapterNumber to it.paragraphIndex } },
+            onDismiss = { showStory = false }
+        )
+    }
     val estimatedTimeToFinish by viewModel.estimatedTimeToFinish.collectAsState()
-    val downloadState by downloadManager.novelDownloadState.collectAsState()
-    val downloadingChapters by viewModel.downloadingChapters.collectAsState()
+    val downloadState by remember(novelId) { downloadManager.novelDownloadState(novelId) }
+        .collectAsState(initial = null)
     val activeDownloads by downloadManager.activeDownloads.collectAsState()
 
-    // Merge: show spinner for chapters being downloaded individually OR via bulk
-    val allDownloadingChapters = remember(downloadingChapters, activeDownloads) {
-        val bulkDownloading = activeDownloads
+    // A spinner for the chapter being fetched right now
+    val allDownloadingChapters = remember(activeDownloads) {
+        activeDownloads
             .filter { it.value.status == DownloadStatus.DOWNLOADING }
             .keys
-        downloadingChapters + bulkDownloading
     }
     val bookmarks by viewModel.bookmarks.collectAsState()
     val bookmarkCount by viewModel.bookmarkCount.collectAsState()
@@ -124,6 +145,7 @@ fun NovelDetailScreen(
         }
     }
 
+    CoverTheme(coverUrl = (uiState as? NovelDetailUiState.Success)?.novel?.coverUrl) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -168,6 +190,15 @@ fun NovelDetailScreen(
                     }
                 }
 
+                if (storyAvailable && (uiState as? NovelDetailUiState.Success)?.isInLibrary == true) {
+                    IconButton(onClick = { showStory = true }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Notes,
+                            contentDescription = "The story so far"
+                        )
+                    }
+                }
+
                 // Character Codex — who's who, spoiler-safe
                 IconButton(onClick = onCodexClick) {
                     Icon(
@@ -193,16 +224,7 @@ fun NovelDetailScreen(
 
             when (val state = uiState) {
                 is NovelDetailUiState.Loading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),  // NOTE: no .padding(paddingValues)
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Loading novel details...")
-                        }
-                    }
+                    SkeletonNovelDetail()
                 }
 
                 is NovelDetailUiState.Error -> {
@@ -259,26 +281,12 @@ fun NovelDetailScreen(
                         availableVoices = availableVoices,
                         currentVoice = currentVoice,
                         onVoiceSelected = { voice -> ttsManager.setVoice(voice) },
-                        onDownloadAll = {
-                            scope.launch {
-                                downloadManager.downloadAllChapters(
-                                    novelId = novelId,
-                                    chapters = state.novel.chapters
-                                )
-                                viewModel.refreshDownloadStatus()
-                            }
-                        },
+                        onDownloadAll = { viewModel.enqueueDownload(state.novel.chapters) },
+                        onDownloadNext = { count -> viewModel.downloadNextUnread(count) },
                         onDownloadRange = { from, to ->
-                            scope.launch {
-                                val chaptersInRange = state.novel.chapters.filter {
-                                    it.number in from..to && !it.isDownloaded
-                                }
-                                downloadManager.downloadAllChapters(
-                                    novelId = novelId,
-                                    chapters = chaptersInRange
-                                )
-                                viewModel.refreshDownloadStatus()
-                            }
+                            viewModel.enqueueDownload(
+                                state.novel.chapters.filter { it.number in from..to && !it.isDownloaded }
+                            )
                         },
                         onDeleteBookmark = { bookmarkId -> viewModel.deleteBookmark(bookmarkId) },
                         onUpdateBookmarkNote = { id, note -> viewModel.updateBookmarkNote(id, note) },
@@ -300,6 +308,7 @@ fun NovelDetailScreen(
             }
         }
     }
+    }
 
     // Model download dialog — shown at top level so it overlays everything
     if (showModelDownloadDialog) {
@@ -313,3 +322,50 @@ fun NovelDetailScreen(
     }
 }
 
+
+/**
+ * Re-themes [content] with an accent taken from the book's cover: primary
+ * and its container colours are swapped, everything else (surfaces, text)
+ * stays as is so legibility doesn't depend on the cover. Does nothing in
+ * E-ink mode, when the setting is off, or for covers without a vivid colour.
+ */
+@Composable
+private fun CoverTheme(coverUrl: String?, content: @Composable () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val eink = LocalEinkMode.current
+    val enabled by (context.applicationContext as com.abhinavxt.novelforge.NovelReaderApplication)
+        .themePreferences.coverAccent.collectAsState()
+    val base = MaterialTheme.colorScheme
+
+    val active = enabled && !eink && !coverUrl.isNullOrEmpty()
+    // Seed from the cache so a book opened before doesn't flash the plain theme.
+    var accent by remember(coverUrl, active) {
+        mutableStateOf(if (active) CoverAccent.cached(coverUrl!!)?.color else null)
+    }
+    LaunchedEffect(coverUrl, active) {
+        if (active && accent == null) accent = CoverAccent.load(context, coverUrl!!).color
+    }
+
+    val current = accent
+    if (!active || current == null) {
+        content()
+        return
+    }
+
+    val primary = CoverPalette.accentOn(current, base.surface.toArgb())
+    val container = CoverPalette.blend(base.surface.toArgb(), primary, 0.28f)
+    val spec = tween<Color>(durationMillis = 300)
+    MaterialTheme(
+        colorScheme = base.copy(
+            primary = animateColorAsState(Color(primary), spec, label = "coverPrimary").value,
+            onPrimary = animateColorAsState(Color(CoverPalette.onAccent(primary)), spec, label = "coverOnPrimary").value,
+            primaryContainer = animateColorAsState(Color(container), spec, label = "coverContainer").value,
+            onPrimaryContainer = animateColorAsState(Color(CoverPalette.onAccent(container)), spec, label = "coverOnContainer").value,
+            inversePrimary = Color(primary),
+            surfaceTint = Color(primary)
+        ),
+        typography = MaterialTheme.typography,
+        shapes = MaterialTheme.shapes,
+        content = content
+    )
+}

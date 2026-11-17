@@ -2,6 +2,16 @@ package com.abhinavxt.novelforge.ui.screens
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.ui.text.input.ImeAction
+import com.abhinavxt.novelforge.ui.components.AiReply
+import com.abhinavxt.novelforge.ui.components.AiReplyView
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -95,6 +105,11 @@ fun CodexScreen(
     val filter by viewModel.filter.collectAsState()
     val detail by viewModel.detail.collectAsState()
     val maxChapter by viewModel.maxChapterNumber.collectAsState()
+    val answer by viewModel.answer.collectAsState()
+    // The question box only exists once an AI engine is set up; otherwise there's no trace of it.
+    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.abhinavxt.novelforge.NovelReaderApplication
+    val aiConfig by (app?.translationSettings?.config ?: remember { kotlinx.coroutines.flow.MutableStateFlow(com.abhinavxt.novelforge.data.translation.TranslationConfig()) }).collectAsState()
+    val assistant = app?.readerAssistant?.takeIf { com.abhinavxt.novelforge.data.ai.ReaderAssistant.isAvailable(aiConfig) }
     val scope = rememberCoroutineScope()
 
     var openNamePending by rememberSaveable { mutableStateOf(openName != null) }
@@ -308,6 +323,8 @@ fun CodexScreen(
             CodexDetailContent(
                 detail = d,
                 maxChapterNumber = if (spoilerGuard) minOf(ceiling, maxChapter) else maxChapter,
+                answer = answer,
+                onAsk = assistant?.let { a -> { question: String -> viewModel.ask(a, question) } },
                 onMentionClick = { mention ->
                     scope.launch {
                         val paragraph = viewModel.resolveParagraphIndex(mention.chapterId, d.name)
@@ -403,6 +420,8 @@ private fun CodexSectionHeader(label: String, count: Int) {
 private fun CodexDetailContent(
     detail: CodexViewModel.DetailState,
     maxChapterNumber: Int,
+    answer: AiReply?,
+    onAsk: ((String) -> Unit)?,
     onMentionClick: (CodexMention) -> Unit
 ) {
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -418,6 +437,11 @@ private fun CodexDetailContent(
             )
         }
         Spacer(modifier = Modifier.height(12.dp))
+
+        if (onAsk != null) {
+            AskAboutCharacter(name = detail.name, answer = answer, onAsk = onAsk)
+            Spacer(modifier = Modifier.height(12.dp))
+        }
 
         if (detail.loading) {
             Box(
@@ -491,6 +515,38 @@ private fun CodexDetailContent(
                 CodexMentionRow(mention = mention, onClick = { onMentionClick(mention) })
             }
         }
+    }
+}
+
+/** A question field, three starter questions, and the answer below. Nothing is sent until Send. */
+@Composable
+private fun AskAboutCharacter(name: String, answer: AiReply?, onAsk: (String) -> Unit) {
+    var question by remember(name) { mutableStateOf("") }
+    OutlinedTextField(
+        value = question,
+        onValueChange = { question = it },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Ask about $name") },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+        keyboardActions = KeyboardActions(onSend = { onAsk(question) }),
+        trailingIcon = {
+            IconButton(onClick = { onAsk(question) }, enabled = question.isNotBlank() && answer != AiReply.Loading) {
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Ask")
+            }
+        }
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        listOf("Who is this?", "What have they done so far?", "How do they relate to the others?").forEach { s ->
+            SuggestionChip(onClick = { question = s }, label = { Text(s) })
+        }
+    }
+    if (answer != null) {
+        Spacer(modifier = Modifier.height(8.dp))
+        AiReplyView(answer, onRetry = { onAsk(question) })
     }
 }
 

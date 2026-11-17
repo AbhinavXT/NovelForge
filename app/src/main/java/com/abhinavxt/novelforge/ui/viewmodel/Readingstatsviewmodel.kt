@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.abhinavxt.novelforge.data.NovelRepository
 import com.abhinavxt.novelforge.data.ReadingStatsTracker
+import com.abhinavxt.novelforge.data.YearInReview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -82,6 +83,22 @@ data class StatsUiState(
     val avgChapterTimeMs: Long = 0
 )
 
+/** A top book of the year with what the library knows about it; a removed book keeps a fallback title. */
+data class YearBook(
+    val novelId: String,
+    val title: String,
+    val coverUrl: String?,
+    val timeMs: Long,
+    val chapters: Int
+)
+
+/** The year-in-review card and page. [years] is newest first and holds only years with data. */
+data class YearReviewUiState(
+    val years: List<Int> = emptyList(),
+    val review: YearInReview? = null,
+    val books: List<YearBook> = emptyList()
+)
+
 class ReadingStatsViewModel(
     private val tracker: ReadingStatsTracker,
     private val repository: NovelRepository
@@ -90,8 +107,42 @@ class ReadingStatsViewModel(
     private val _uiState = MutableStateFlow(StatsUiState())
     val uiState: StateFlow<StatsUiState> = _uiState.asStateFlow()
 
+    private val _yearState = MutableStateFlow(YearReviewUiState())
+    val yearState: StateFlow<YearReviewUiState> = _yearState.asStateFlow()
+
     init {
         loadStats()
+    }
+
+    /** Opens on the current year when it has data, otherwise the newest year that does. */
+    private suspend fun loadYears() {
+        val years = tracker.getReviewYears()
+        if (years.isEmpty()) {
+            _yearState.value = YearReviewUiState()
+            return
+        }
+        val thisYear = java.time.LocalDate.now().year
+        val keep = _yearState.value.review?.year?.takeIf { it in years }
+        selectYear(keep ?: years.firstOrNull { it == thisYear } ?: years.first(), years)
+    }
+
+    fun selectYear(year: Int) {
+        viewModelScope.launch { selectYear(year, _yearState.value.years) }
+    }
+
+    private suspend fun selectYear(year: Int, years: List<Int>) {
+        val review = tracker.getYearInReview(year)
+        val books = review.topBooks.map { top ->
+            val novel = repository.getNovelById(top.novelId)
+            YearBook(
+                novelId = top.novelId,
+                title = novel?.title ?: fallbackNameFromId(top.novelId),
+                coverUrl = novel?.coverUrl,
+                timeMs = top.timeMs,
+                chapters = top.chapters
+            )
+        }
+        _yearState.value = YearReviewUiState(years, review, books)
     }
 
     fun loadStats() {
@@ -107,6 +158,7 @@ class ReadingStatsViewModel(
             val records = tracker.getPersonalRecords()
             val weekly = tracker.getWeeklyComparison()
             val heatmap = tracker.getHeatmapData(12)
+            loadYears()
 
             val booksEq = overall.totalWordsRead / 80_000f
             val avgChapter = if (overall.totalChapters > 0) {

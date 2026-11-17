@@ -1,5 +1,6 @@
 package com.abhinavxt.novelforge.ui.screens
 
+import com.abhinavxt.novelforge.ui.components.SkeletonOpdsList
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -301,7 +302,7 @@ private fun FeedPage(
         }
 
         when {
-            page.loading -> Message("Loading…", spinner = true)
+            page.loading -> SkeletonOpdsList()
             page.error != null && page.entries.isEmpty() -> Message(page.error, action = "Retry" to onRetry)
             page.entries.isEmpty() -> Message(if (page.query != null) "Nothing found." else "This section is empty.")
             else -> {

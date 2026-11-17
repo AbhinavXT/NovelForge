@@ -32,6 +32,7 @@ If you just want a quick summary, see the [README](../README.md).
   - [Bookmarks and highlights](#bookmarks-and-highlights)
     - [Bookmarks](#bookmarks)
     - [Highlights](#highlights)
+  - [The story so far](#the-story-so-far)
   - [Search](#search)
     - [Full-text library search](#full-text-library-search)
     - [In-book find](#in-book-find)
@@ -42,6 +43,7 @@ If you just want a quick summary, see the [README](../README.md).
     - [Scanning](#scanning)
     - [Honest limitations](#honest-limitations)
   - [Library](#library)
+  - [Loading screens](#loading-screens)
   - [Sources and downloads](#sources-and-downloads)
     - [Currently supported sources](#currently-supported-sources)
     - [Downloading chapters for offline](#downloading-chapters-for-offline)
@@ -216,6 +218,12 @@ Auto-scroll is not available in paged mode (the button is hidden when paged is a
 
 12 themes, 8 fonts plus your own, all switchable from Quick Settings. Changes apply immediately and are saved per-app, not per-novel.
 
+**Looks.** The row at the top of Quick Settings sets several things in one tap: **Paper** (the Paper theme, Literata at 18, justified and hyphenated, with a drop cap), **Night** (the dark theme, looser lines, left-aligned), **Focus** (wide margins, larger type, generous spacing) and **Compact** (narrow margins, small type, tight spacing, for more text per screen). A look only changes how the page looks, never the reading mode, tap zones or TTS, and every setting it touched can still be changed after. The chip stays lit while your settings match it.
+
+**Drop cap.** A toggle in Quick Settings draws the first letter of each chapter's opening paragraph large, in scroll and paged modes. An opening quote mark stays its normal size, a chapter's own title line at the top of the text is passed over, and a paragraph that doesn't start with a letter gets none.
+
+**Cover colours.** A book's page in the app takes its accent colour from the cover: the Read button, tabs, links and download ticks. The colour is adjusted until it reads clearly on the current theme, and a grey or blank cover keeps the theme's own colour. Off in e-ink mode, and switchable in Settings → Appearance → **Colour book pages from their cover**.
+
 ### Themes
 
 Four light:
@@ -320,8 +328,16 @@ Highlights are included in backup/restore. To take them elsewhere, Library → l
 
 **All highlights.** The quote icon at the top of the Library opens every highlight in your library, newest first, with chips to narrow it to one book. Tap one to open the reader at it. On the home screen, **From Your Highlights** shows one past highlight a day, a different one each day.
 
+**Quote cards.** The share icon on a highlight in that list turns it into a picture: the line, the book and its author, in one of three looks (Paper, Night, or Accent, which takes the highlight's own colour). **Share** hands a 1080-pixel-wide PNG to any app. Long highlights get smaller type, and past about 600 characters the line is cut at a word with an ellipsis.
+
 
 ---
+
+## The story so far
+
+An optional written summary of the book up to your place, for when you come back to it. It needs an AI engine with your own key (Settings → Translation); the on-device translator doesn't count, and without one the button isn't shown.
+
+Open it from the notes icon at the top of a library book's page, or from the recap sheet that greets you after a week away. Nothing is sent until you tap **The story so far**. The app then sends your provider the text of the chapters you've read, most recent first up to about 24,000 characters and never anything past your reading position, and shows a few bullet points and a "Where you left off" line. It reads from chapters stored on the phone, so a book with nothing downloaded has nothing to summarise.
 
 ## Search
 
@@ -357,6 +373,8 @@ For the whole book at once, use library search - in-book find is deliberately cl
 ## The codex
 
 The feature for the question every long-series reader asks: _"wait - who is this again?"_
+
+**Ask about a character** (optional). If you've set up an AI engine with your own key under Settings → Translation, a character's entry gets an **Ask about <name>** box with three ready questions. The answer is written by your AI provider from the passages that mention the name in chapters you've already read, and nothing past your place in the book is sent. Without an AI engine set up, the box isn't there and nothing leaves the phone.
 
 **Open it:** novel detail screen → the codex icon in the top bar.
 
@@ -418,6 +436,8 @@ Mentions, snippets, and the graph's bonds aren't stored - they're served live by
 
 The library is your collection of novels you've added. Find it in the bottom navigation bar.
 
+**How it looks:** the icon at the top right switches between a list and a grid of covers. In the grid, **Covers: Small / Medium / Large** sets how many fit across (4, 3 or 2 on a typical phone). Every book you've opened shows how far you are: a bar along the bottom of its cover in the grid, a bar with "12 / 340" in the list, and a check once you've finished it.
+
 **Adding a novel:** browse a source (Search tab → pick a source → search/browse), tap a novel, tap "Add to Library". Or import an EPUB (see below).
 
 **Sorting:** sort by last read, title, chapters, or recently added. The control is in the library top bar.
@@ -434,6 +454,10 @@ The library is your collection of novels you've added. Find it in the bottom nav
 
 
 ---
+
+## Loading screens
+
+Lists and book pages that are still loading show grey blocks shaped like what's coming instead of a spinner, with a moving sheen. In e-ink mode the blocks are still and outlined.
 
 ## Sources and downloads
 
@@ -454,9 +478,11 @@ The rest install from the same repository in **Settings → Source plugins → A
 
 ### Downloading chapters for offline
 
-From a novel's detail screen → "Downloads" tab → "Download all" or pick a range. Chapters are saved locally and read offline.
+From a novel's detail screen: **Download All** (or **Download Remaining**) takes everything, the arrow beside it offers **Next 5 / 10 / 25 unread** counted from where you are in the book, and **Range** above the chapter list takes any span of chapter numbers. A single chapter has its own download icon. Downloading from a book that isn't in your library adds it, because that is where the text is kept.
 
-You can also bulk-download from the Library → long-press novel → Downloads. The download manager runs in the background via WorkManager and survives app restarts. Network type can be restricted to wifi-only in Settings → Downloads.
+Downloads go into a queue that runs in the background: you can leave the screen or the app, and a notification shows "9 of 10" with **Pause** and **Cancel**. The queue is saved, so it carries on after the app is closed or the phone restarts. A chapter that fails is tried three times, then marked failed and skipped. **Settings → Downloads** shows the queue (pause, resume, cancel all, remove one chapter, retry the failed ones) above the space each book uses. **Settings → Download over Wi-Fi only** makes the queue wait for an unmetered connection.
+
+**Delete chapters after reading** (Settings, off by default) frees space as you go: when you move on to the next chapter, the downloaded text of the chapter before the one you just finished is cleared, so going back one chapter still works offline. Chapters you highlighted, bookmarked or translated are kept, imported books are never touched, and jumping around from the chapter list deletes nothing.
 
 Downloading also feeds the rest of the app: downloaded chapters are what full-text search indexes and what the codex scans. More downloads, smarter app.
 
@@ -736,6 +762,8 @@ The stats screen shows:
 ### Share card
 
 Tap the share icon in the top right of the stats screen. Generates a 1080×1920 PNG (story-shaped) showing total words read, WPM, current streak, total chapters, and a 14-day activity grid. Pinned to a calm slate-blue accent regardless of which reader theme you have active.
+
+**Year in review.** A card on the stats screen sums up a calendar year: time read, words and chapters, with arrows to step through the years you have reading in. **View** opens the full page: a bar for each month, your three most-read books, days read, longest streak inside that year, and your busiest month and day. The share icon there makes a 1080×1920 picture of it. Books finished in the year aren't counted, because the app doesn't record when a book was finished.
 
 The card is rendered with a fixed density so it looks identical on every device. No watermarks beyond a small "NOVELFORGE" wordmark at the bottom. Save to gallery or share via the system share sheet.
 

@@ -182,6 +182,9 @@ data class ReaderSettings(
     val hyphenation: Boolean = false,
     val paragraphSpacing: Int = 16,               // dp — gap between paragraphs (0–32)
 
+    // ── Drop cap (v28) ──────────────────────────────────────────
+    val dropCap: Boolean = false,                 // Large initial on a chapter's first paragraph
+
     // The open book's language (BCP 47) for hyphenation. Not an app setting:
     // it lives on the novel row and is filled in by the reader; never saved here.
     val bookLanguage: String? = null,
@@ -219,20 +222,22 @@ data class BookLook(
     val customFont: String?,
     val hyphenation: Boolean,
     val paragraphSpacing: Int,
+    // Books saved before the drop cap existed read this back as false.
+    val dropCap: Boolean = false,
 ) {
     fun applyTo(s: ReaderSettings) = s.copy(
         fontSize = fontSize, theme = theme, font = font, lineSpacing = lineSpacing,
         horizontalMargin = horizontalMargin, justifyText = justifyText,
         paragraphIndent = paragraphIndent, customBackgroundColor = customBackgroundColor,
         customTextColor = customTextColor, customFont = customFont,
-        hyphenation = hyphenation, paragraphSpacing = paragraphSpacing,
+        hyphenation = hyphenation, paragraphSpacing = paragraphSpacing, dropCap = dropCap,
     )
 
     companion object {
         fun of(s: ReaderSettings) = BookLook(
             s.fontSize, s.theme, s.font, s.lineSpacing, s.horizontalMargin, s.justifyText,
             s.paragraphIndent, s.customBackgroundColor, s.customTextColor, s.customFont,
-            s.hyphenation, s.paragraphSpacing,
+            s.hyphenation, s.paragraphSpacing, s.dropCap,
         )
     }
 }

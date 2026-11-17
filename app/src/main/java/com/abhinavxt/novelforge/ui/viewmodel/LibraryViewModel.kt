@@ -26,6 +26,38 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/**
+ * How far a reader is through one book, for the Library's cover bar.
+ * Uses the same numbers as Home's Continue Reading (current chapter number
+ * over the stored chapter count) so the two screens agree.
+ */
+data class BookProgress(
+    val currentChapter: Int,
+    val totalChapters: Int,
+    val finished: Boolean
+) {
+    /** 0..1; a finished book reads as full. */
+    val fraction: Float
+        get() = if (finished) 1f
+        else if (totalChapters > 0) (currentChapter.toFloat() / totalChapters).coerceIn(0f, 1f)
+        else 0f
+}
+
+/**
+ * Null when there is nothing to show: a book never opened (no progress, or
+ * chapter 0) or one with no chapters yet. A book marked Completed counts as
+ * finished even if its progress is missing, since the reader said so.
+ */
+fun bookProgress(currentChapter: Int?, totalChapters: Int, status: ReadingStatus?): BookProgress? {
+    val current = currentChapter ?: 0
+    val atEnd = totalChapters > 0 && current >= totalChapters
+    if (status == ReadingStatus.COMPLETED || atEnd) {
+        return BookProgress(current, totalChapters, finished = true)
+    }
+    if (current <= 0 || totalChapters <= 0) return null
+    return BookProgress(current, totalChapters, finished = false)
+}
+
 sealed interface ImportState {
     object Idle : ImportState
     object Importing : ImportState
@@ -137,6 +169,13 @@ class LibraryViewModel(
     private val _novelsBeingRead = MutableStateFlow<Set<String>>(emptySet())
     private val _readingProgressMap = MutableStateFlow<Map<String, ReadingProgressEntity>>(emptyMap())
 
+    // novelId → chapter total, from one grouped query rather than one per book
+    private val _chapterTotals = MutableStateFlow<Map<String, Int>>(emptyMap())
+
+    // novelId → progress for the cover bar; books with nothing to show are absent
+    private val _bookProgress = MutableStateFlow<Map<String, BookProgress>>(emptyMap())
+    val bookProgress: StateFlow<Map<String, BookProgress>> = _bookProgress.asStateFlow()
+
     // novelId → the status the reader set (or the app set on starting / finishing a book)
     private val _readingStatuses = MutableStateFlow<Map<String, ReadingStatus>>(emptyMap())
     val readingStatuses: StateFlow<Map<String, ReadingStatus>> = _readingStatuses.asStateFlow()
@@ -181,9 +220,26 @@ class LibraryViewModel(
         viewModelScope.launch {
             repository.getReadingStatuses().collect {
                 _readingStatuses.value = it
+                updateBookProgress()
                 applyFilterAndSort()
             }
         }
+        viewModelScope.launch {
+            repository.getChapterTotals().collect {
+                _chapterTotals.value = it
+                updateBookProgress()
+            }
+        }
+    }
+
+    private fun updateBookProgress() {
+        val progress = _readingProgressMap.value
+        val totals = _chapterTotals.value
+        val statuses = _readingStatuses.value
+        _bookProgress.value = (progress.keys + statuses.keys).mapNotNull { id ->
+            bookProgress(progress[id]?.currentChapterNumber, totals[id] ?: 0, statuses[id])
+                ?.let { id to it }
+        }.toMap()
     }
 
     fun setReadingStatus(novelId: String, status: ReadingStatus?) {
@@ -340,6 +396,7 @@ class LibraryViewModel(
             repository.getAllReadingProgress().collect { progressList ->
                 _novelsBeingRead.value = progressList.map { it.novelId }.toSet()
                 _readingProgressMap.value = progressList.associateBy { it.novelId }
+                updateBookProgress()
                 applyFilterAndSort()
             }
         }

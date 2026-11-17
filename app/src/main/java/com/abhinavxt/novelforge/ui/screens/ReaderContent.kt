@@ -80,6 +80,7 @@ import androidx.compose.ui.platform.TextToolbarStatus
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -103,6 +104,7 @@ import com.abhinavxt.novelforge.ui.components.ParagraphFormat
 import com.abhinavxt.novelforge.ui.components.QUOTE_INDENT_DP
 import com.abhinavxt.novelforge.ui.components.ReaderFormatting
 import com.abhinavxt.novelforge.ui.components.IMAGE_SPACING
+import com.abhinavxt.novelforge.ui.components.DropCap
 import com.abhinavxt.novelforge.ui.components.addBookFormatting
 import com.abhinavxt.novelforge.ui.components.TextReplacementDialog
 import com.abhinavxt.novelforge.ui.components.TextReplacementsSheet
@@ -793,6 +795,7 @@ internal fun ReaderContent(
                 PagedReaderContent(
                     paragraphs = segments.first().paragraphs,
                     formatting = segments.first().formatting,
+                    chapterTitle = segments.first().title,
                     onFootnoteClick = showNote,
                     settings = settings,
                     colors = colors,
@@ -937,6 +940,10 @@ internal fun ReaderContent(
                         .padding(horizontal = settings.horizontalMargin.dp, vertical = 8.dp)
                 ) {
                     segments.forEachIndexed { segIdx, seg ->
+                        // Each chapter, stitched ones too, opens with its own initial.
+                        val dropCapAt = if (settings.dropCap) {
+                            DropCap.paragraphIndex(seg.paragraphs, seg.title) { seg.formatting?.get(it)?.block }
+                        } else null
                         // Divider before every stitched chapter
                         if (segIdx > 0) {
                             item(key = "divider_${seg.chapterId}") {
@@ -966,6 +973,7 @@ internal fun ReaderContent(
                                 paragraph = paragraph,
                                 index = index,
                                 format = seg.formatting?.get(index),
+                                dropCap = index == dropCapAt,
                                 shown = seg.shown?.getOrNull(index),
                                 onNoteClick = showNote,
                                 selectionKey = selectionKey,
@@ -1217,6 +1225,8 @@ private fun BookmarkableParagraph(
     paragraph: String,
     index: Int,
     format: ParagraphFormat? = null,
+    /** This paragraph opens its chapter with a drop cap. */
+    dropCap: Boolean = false,
     /** How [paragraph] (as shown) maps to the stored text; null when unchanged. */
     shown: TextReplacements.Mapped? = null,
     onNoteClick: ((Footnote) -> Unit)? = null,
@@ -1237,6 +1247,7 @@ private fun BookmarkableParagraph(
     onReplace: (String) -> Unit = {}
 ) {
     val view = LocalView.current
+    val eink = com.abhinavxt.novelforge.ui.theme.LocalEinkMode.current
 
     val textToolbar = remember(view, index, isInLibrary) {
         ReaderTextToolbar(
@@ -1281,9 +1292,11 @@ private fun BookmarkableParagraph(
                     // then search matches, so a find match stays visible
                     // inside a highlight. The text itself is never changed.
                     val noteColor = MaterialTheme.colorScheme.primary
+                    val dropCapColor = if (eink) Color.Black else colors.text
                     val annotatedText = buildAnnotatedString {
                         append(paragraph)
                         addBookFormatting(format, noteColor, onNoteClick)
+                        if (dropCap) with(DropCap) { add(paragraph, dropCapColor) }
                         // TTS sentences and highlights point into the
                         // stored text; move them onto what's shown.
                         val stored = shown?.original ?: paragraph

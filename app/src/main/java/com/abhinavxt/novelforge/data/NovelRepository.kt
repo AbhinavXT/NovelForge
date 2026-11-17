@@ -207,6 +207,34 @@ class NovelRepository(
         return chapterDao.getChaptersForNovelOnce(novelId).map { it.toDomainModel() }
     }
 
+    /**
+     * Downloaded text is saved onto a chapter's row, so a download for a
+     * chapter with no row saves nothing. This gives the book and every
+     * chapter in [novel] a row first: a book not yet in the library is
+     * added to it, and a library book gains rows for chapters the source
+     * published since. Returns true if the book was added to the library.
+     */
+    suspend fun prepareForDownload(novel: Novel): Boolean {
+        if (!novelDao.isNovelInLibrary(novel.id)) {
+            addToLibrary(novel)
+            return true
+        }
+        chapterDao.insertChaptersIfAbsent(novel.chapters.map { chapter ->
+            ChapterEntity(
+                id = chapter.id,
+                novelId = novel.id,
+                number = chapter.number,
+                title = chapter.title,
+                url = chapter.url
+            )
+        })
+        return false
+    }
+
+    /** A library book and its chapter list as stored, for when the source can't be reached. */
+    suspend fun getSavedNovelWithChapters(novelId: String): Novel? =
+        getNovelById(novelId)?.copy(chapters = getChaptersOnce(novelId))
+
     suspend fun downloadChapter(novelId: String, chapterId: String, chapterUrl: String): Boolean {
         return try {
             val content = fetchChapterContent(novelId, chapterUrl)
@@ -308,6 +336,11 @@ class NovelRepository(
 
     suspend fun getMostRecentProgress(): ReadingProgressEntity? {
         return progressDao.getMostRecentProgress()
+    }
+
+    /** novelId to chapter total, in one query; the Library's progress denominator. */
+    fun getChapterTotals(): Flow<Map<String, Int>> {
+        return chapterDao.getChapterCounts().map { rows -> rows.associate { it.novelId to it.total } }
     }
 
     fun getAllReadingProgress(): Flow<List<ReadingProgressEntity>> {
@@ -518,6 +551,7 @@ class NovelRepository(
             customFont = settings.customFont,
             hyphenation = settings.hyphenation,
             paragraphSpacing = settings.paragraphSpacing,
+            dropCap = settings.dropCap,
         )
         settingsDao.saveSettings(entity)
     }
@@ -773,7 +807,10 @@ class NovelRepository(
             description = this.description,
             source = this.source,
             status = this.status,
-            totalChapters = this.chapters.size
+            totalChapters = this.chapters.size,
+            // A book just added has nothing new in it yet; without this the
+            // detail screen announces every chapter as a new one.
+            previousTotalChapters = this.chapters.size
         )
     }
 
@@ -840,6 +877,7 @@ class NovelRepository(
             customFont = this.customFont?.takeIf { java.io.File(it).isFile },
             hyphenation = this.hyphenation,
             paragraphSpacing = this.paragraphSpacing.coerceIn(0, 32),
+            dropCap = this.dropCap,
         )
     }
 

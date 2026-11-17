@@ -198,7 +198,9 @@ data class NovelStatusRow(val id: String, val readingStatus: String)
 data class HighlightWithBook(
     @androidx.room.Embedded val highlight: HighlightEntity,
     val novelTitle: String,
-    val chapterUrl: String?
+    val chapterUrl: String?,
+    // For the quote card's byline; defaulted so other constructors are unaffected.
+    val novelAuthor: String = ""
 )
 
 /**
@@ -236,6 +238,12 @@ data class NovelDownloadAggregate(
     val sizeChars: Long
 )
 
+/** How many chapters a book has, from one grouped query over all books. */
+data class NovelChapterCount(
+    val novelId: String,
+    val total: Int
+)
+
 /** Downloaded chapters and their total text length, for reading-time estimates. */
 data class ChapterLengths(
     val chapters: Int,
@@ -266,6 +274,10 @@ interface ChapterDao {
     @Query("SELECT * FROM chapters WHERE id = :chapterId")
     suspend fun getChapterById(chapterId: String): ChapterEntity?
 
+    /** Whether the chapter holds stored text; null when it has no row. Cheaper than loading the text to ask. */
+    @Query("SELECT isDownloaded FROM chapters WHERE id = :chapterId")
+    suspend fun isDownloaded(chapterId: String): Boolean?
+
     @Query("SELECT COUNT(*) FROM chapters WHERE novelId = :novelId")
     suspend fun getChapterCount(novelId: String): Int
 
@@ -274,6 +286,10 @@ interface ChapterDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertChapters(chapters: List<ChapterEntity>)
+
+    /** Adds only the chapters that have no row yet; existing rows keep their downloaded text. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertChaptersIfAbsent(chapters: List<ChapterEntity>)
 
     @Query("UPDATE chapters SET isDownloaded = 1, content = :content, downloadedAt = :downloadedAt WHERE id = :chapterId")
     suspend fun markChapterDownloaded(chapterId: String, content: String, downloadedAt: Long)
@@ -313,6 +329,10 @@ interface ChapterDao {
     @Query("SELECT id FROM chapters WHERE novelId = :novelId AND isDownloaded = 1")
     suspend fun getDownloadedChapterIds(novelId: String): List<String>
 
+    /** Live version, so ticks appear as a background download finishes each chapter. */
+    @Query("SELECT id FROM chapters WHERE novelId = :novelId AND isDownloaded = 1")
+    fun observeDownloadedChapterIds(novelId: String): Flow<List<String>>
+
     // ── One-query replacement for the load-everything-and-sum-in-Kotlin
     //    approach in getNovelsWithDownloads(). LENGTH(content) runs inside
     //    SQLite; no chapter text ever crosses into the app process. ──
@@ -326,6 +346,11 @@ interface ChapterDao {
         HAVING downloadedChapters > 0
     """)
     suspend fun getDownloadAggregates(): List<NovelDownloadAggregate>
+
+    // Chapter totals for every book in one query, so the Library can show
+    // progress without a query per book. Counts rows, as Home does.
+    @Query("SELECT novelId, COUNT(*) AS total FROM chapters GROUP BY novelId")
+    fun getChapterCounts(): Flow<List<NovelChapterCount>>
 
     @Delete
     suspend fun deleteChapter(chapter: ChapterEntity)
@@ -537,6 +562,9 @@ interface BookmarkDao {
     @Query("SELECT * FROM bookmarks WHERE novelId = :novelId ORDER BY createdAt DESC")
     fun getBookmarksForNovel(novelId: String): Flow<List<BookmarkEntity>>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM bookmarks WHERE chapterId = :chapterId)")
+    suspend fun hasBookmarks(chapterId: String): Boolean
+
     @Query("SELECT * FROM bookmarks WHERE chapterId = :chapterId ORDER BY paragraphIndex ASC")
     fun getBookmarksForChapter(chapterId: String): Flow<List<BookmarkEntity>>
 
@@ -658,6 +686,10 @@ interface ReadingStatDao {
     @Query("SELECT * FROM reading_stats WHERE completedAt >= :sinceMs ORDER BY completedAt ASC")
     suspend fun getEventsSince(sinceMs: Long): List<ReadingStatEvent>
 
+    // One calendar year of events for the year-in-review (bounds are local midnights)
+    @Query("SELECT * FROM reading_stats WHERE completedAt >= :startMs AND completedAt < :endMs ORDER BY completedAt ASC")
+    suspend fun getEventsBetween(startMs: Long, endMs: Long): List<ReadingStatEvent>
+
     // Recent sessions — latest N sessions for the activity feed
     @Query("SELECT * FROM reading_stats ORDER BY completedAt DESC LIMIT :limit")
     suspend fun getRecentEvents(limit: Int = 20): List<ReadingStatEvent>
@@ -689,6 +721,9 @@ interface ReadingStatDao {
 interface HighlightDao {
 
     // Get all highlights for a chapter — used by reader to render overlays
+    @Query("SELECT EXISTS(SELECT 1 FROM highlights WHERE chapterId = :chapterId)")
+    suspend fun hasHighlights(chapterId: String): Boolean
+
     @Query("SELECT * FROM highlights WHERE chapterId = :chapterId ORDER BY paragraphIndex ASC, startOffset ASC")
     fun getHighlightsForChapter(chapterId: String): Flow<List<HighlightEntity>>
 
@@ -737,7 +772,7 @@ interface HighlightDao {
 
     // Every highlight across the library, newest first, for the highlights screen and the daily card.
     @Query("""
-        SELECT h.*, n.title AS novelTitle, c.url AS chapterUrl FROM highlights h
+        SELECT h.*, n.title AS novelTitle, n.author AS novelAuthor, c.url AS chapterUrl FROM highlights h
         JOIN novels n ON n.id = h.novelId
         LEFT JOIN chapters c ON c.id = h.chapterId
         ORDER BY h.createdAt DESC
@@ -909,6 +944,9 @@ interface TranslationDao {
     @Query("UPDATE novels SET translate = :on WHERE id = :novelId")
     suspend fun setTranslate(novelId: String, on: Boolean)
 
+    @Query("SELECT EXISTS(SELECT 1 FROM chapter_originals WHERE chapterId = :chapterId)")
+    suspend fun hasOriginal(chapterId: String): Boolean
+
     @Query("SELECT * FROM chapter_originals WHERE chapterId = :chapterId")
     suspend fun getOriginal(chapterId: String): ChapterOriginalEntity?
 
@@ -969,3 +1007,68 @@ interface TranslationDao {
 
 /** A stored chapter's id and text, to tell translated chapters from the rest. */
 data class StoredChapterRef(val id: String, val content: String)
+
+data class DownloadQueueCounts(
+    val queued: Int,
+    val downloading: Int,
+    val failed: Int
+)
+
+@Dao
+interface DownloadQueueDao {
+
+    @Query("SELECT * FROM download_queue ORDER BY addedAt, chapterNumber")
+    fun observeAll(): Flow<List<DownloadQueueEntity>>
+
+    @Query("SELECT * FROM download_queue WHERE novelId = :novelId ORDER BY addedAt, chapterNumber")
+    fun observeForNovel(novelId: String): Flow<List<DownloadQueueEntity>>
+
+    @Query(
+        """
+        SELECT COALESCE(SUM(status = 'QUEUED'), 0) AS queued,
+               COALESCE(SUM(status = 'DOWNLOADING'), 0) AS downloading,
+               COALESCE(SUM(status = 'FAILED'), 0) AS failed
+        FROM download_queue
+        """
+    )
+    fun observeCounts(): Flow<DownloadQueueCounts>
+
+    @Query("SELECT chapterId FROM download_queue")
+    suspend fun getQueuedIds(): List<String>
+
+    /** Rows already queued keep their place and attempts: IGNORE, not REPLACE. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(rows: List<DownloadQueueEntity>): List<Long>
+
+    /** The next chapter to fetch; rows that gave up are left alone. */
+    @Query("SELECT * FROM download_queue WHERE status = 'QUEUED' ORDER BY addedAt, chapterNumber LIMIT 1")
+    suspend fun nextQueued(): DownloadQueueEntity?
+
+    @Query("SELECT COUNT(*) FROM download_queue WHERE status = 'QUEUED' OR status = 'DOWNLOADING'")
+    suspend fun countPending(): Int
+
+    @Query("UPDATE download_queue SET status = 'DOWNLOADING' WHERE chapterId = :chapterId")
+    suspend fun markDownloading(chapterId: String)
+
+    /** A row left DOWNLOADING means the process died mid-fetch; try it again. */
+    @Query("UPDATE download_queue SET status = 'QUEUED' WHERE status = 'DOWNLOADING'")
+    suspend fun requeueInterrupted()
+
+    @Query("UPDATE download_queue SET status = 'QUEUED', attempts = :attempts, error = :error WHERE chapterId = :chapterId")
+    suspend fun markRetry(chapterId: String, attempts: Int, error: String?)
+
+    @Query("UPDATE download_queue SET status = 'FAILED', attempts = :attempts, error = :error WHERE chapterId = :chapterId")
+    suspend fun markFailed(chapterId: String, attempts: Int, error: String?)
+
+    @Query("UPDATE download_queue SET status = 'QUEUED', attempts = 0, error = NULL WHERE status = 'FAILED'")
+    suspend fun retryFailed()
+
+    @Query("DELETE FROM download_queue WHERE chapterId = :chapterId")
+    suspend fun delete(chapterId: String)
+
+    @Query("DELETE FROM download_queue WHERE novelId = :novelId")
+    suspend fun deleteForNovel(novelId: String)
+
+    @Query("DELETE FROM download_queue")
+    suspend fun deleteAll()
+}

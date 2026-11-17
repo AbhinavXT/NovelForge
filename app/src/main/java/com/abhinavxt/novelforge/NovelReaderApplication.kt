@@ -103,7 +103,7 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
     }
 
     // Download manager - depends on database
-    val downloadManager by lazy { DownloadManager(database) }
+    val downloadManager by lazy { DownloadManager(this, database, appScope) }
 
     // TTS manager
     val ttsManager by lazy { TTSManager(this) }
@@ -131,6 +131,11 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
     val translationSettings by lazy { com.abhinavxt.novelforge.data.translation.TranslationSettings(this) }
     val translations by lazy {
         com.abhinavxt.novelforge.data.translation.TranslationManager(database.translationDao(), translationSettings)
+    }
+
+    // Optional AI helpers (story so far, ask about a character) on the same engine and key
+    val readerAssistant by lazy {
+        com.abhinavxt.novelforge.data.ai.ReaderAssistant(translationSettings, database.chapterDao(), repository)
     }
 
     // Reading stats tracker
@@ -230,6 +235,9 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
         com.abhinavxt.novelforge.worker.SourceHealthWorker.schedule(this, true)
 
         networkMonitor.start()
+
+        // A queue left over from before the app was killed carries on unless it was paused.
+        downloadManager.resumeIfPending()
 
         // ── Widget cache refresh on process start ───────────────
         // Handles the case where the app was killed, the user hadn't

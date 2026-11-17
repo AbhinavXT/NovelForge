@@ -508,6 +508,9 @@ fun NavigationHost(
                         onNavigateToPlugins = {
                             navController.navigate(Screen.Plugins.route)
                         },
+                        onNavigateToDownloads = {
+                            navController.navigate(Screen.Downloads.route)
+                        },
                         updateChecker = updateChecker,
                     )
                 }

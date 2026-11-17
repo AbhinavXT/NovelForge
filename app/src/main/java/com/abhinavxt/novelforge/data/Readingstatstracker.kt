@@ -339,6 +339,18 @@ class ReadingStatsTracker(private val dao: ReadingStatDao) {
         return start to (start + 86_400_000L)
     }
 
+    /** Years with at least one reading row, newest first. */
+    suspend fun getReviewYears(): List<Int> = withContext(Dispatchers.IO) {
+        YearInReview.yearsWithData(dao.getAllCompletedTimestamps())
+    }
+
+    suspend fun getYearInReview(year: Int): YearInReview = withContext(Dispatchers.IO) {
+        val zone = java.time.ZoneId.systemDefault()
+        val start = java.time.LocalDate.of(year, 1, 1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val end = java.time.LocalDate.of(year + 1, 1, 1).atStartOfDay(zone).toInstant().toEpochMilli()
+        YearInReview.compute(dao.getEventsBetween(start, end), year, zone)
+    }
+
     // Backup/restore
     suspend fun getAllForBackup(): List<ReadingStatEvent> {
         return withContext(Dispatchers.IO) { dao.getAllEventsOnce() }
