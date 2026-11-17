@@ -226,6 +226,70 @@ class GoogleTTSEngine(private val context: Context) : TTSEngine, TextToSpeech.On
 
     override fun getCurrentVoiceId(): String? = currentVoice?.name
 
+    // ── Character voices ─────────────────────────────────────────
+
+    /** Language the narrator reads in ("en"), the one character voices are chosen from. */
+    fun narratorLanguage(): String =
+        (currentVoice ?: runCatching { tts?.voice }.getOrNull())?.locale?.language?.ifBlank { null } ?: "en"
+
+    /** Installed system voices in the narrator's language, offline ones first (the narrator's own included). */
+    fun castableVoices(): List<CastVoice> {
+        val all = runCatching { tts?.voices }.getOrNull().orEmpty()
+        val byName = all.associateBy { it.name }
+        val lite = all.map {
+            SystemVoice(
+                name = it.name,
+                language = it.locale.language,
+                installed = !it.features.orEmpty().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED),
+                needsNetwork = it.isNetworkConnectionRequired
+            )
+        }
+        return SystemVoices.castable(lite, narratorLanguage()).mapNotNull { v ->
+            val voice = byName[v.name] ?: return@mapNotNull null
+            CastVoice(v.name, getVoiceDisplayName(voice), genderOfVoiceName(v.name))
+        }
+    }
+
+    /** True while a character's voice is applied over the narrator's. */
+    private var castVoiceApplied = false
+
+    /** The voice the engine had before the first character switch, the fallback when [currentVoice] is unknown. */
+    private var voiceBeforeCast: Voice? = null
+
+    /**
+     * Read the next utterance in the system voice [name]. With null, the narrator's voice is put back,
+     * but only if a character's voice was applied: ordinary narration never touches the engine's voice.
+     */
+    fun useVoiceForNextUtterance(name: String?) {
+        val engine = tts ?: return
+        if (name == null) {
+            if (!castVoiceApplied) return
+            val narrator = currentVoice ?: voiceBeforeCast ?: runCatching { engine.defaultVoice }.getOrNull()
+            castVoiceApplied = false
+            if (narrator != null) engine.voice = narrator
+            return
+        }
+        val target = runCatching { engine.voices }.getOrNull()?.firstOrNull { it.name == name } ?: run {
+            // Not installed: the narrator reads it.
+            useVoiceForNextUtterance(null)
+            return
+        }
+        if (!castVoiceApplied) voiceBeforeCast = runCatching { engine.voice }.getOrNull()
+        if (runCatching { engine.voice?.name }.getOrNull() != target.name) engine.voice = target
+        castVoiceApplied = true
+    }
+
+    private fun genderOfVoiceName(name: String): Boolean? {
+        val code = extractVariantCode(name)
+        return when {
+            name.contains("female", true) || name.contains("-f-", true) -> true
+            name.contains("male", true) || name.contains("-m-", true) -> false
+            code in FEMALE_VARIANTS -> true
+            code in MALE_VARIANTS -> false
+            else -> null
+        }
+    }
+
     /**
      * Return the raw Android [Voice] list for callers that need it
      * (e.g. the existing voice picker in TTSControls).

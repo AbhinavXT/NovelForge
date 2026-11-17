@@ -237,6 +237,14 @@ fun QuickSettingsSheet(
                     }
                 )
                 SettingToggleRow(
+                    label = "Bionic reading",
+                    checked = settings.bionicReading,
+                    onCheckedChange = { checked ->
+                        onSettingsChanged(settings.copy(bionicReading = checked))
+                    },
+                    description = "Bold word starts to guide the eye"
+                )
+                SettingToggleRow(
                     label = "Paragraph indent",
                     checked = settings.paragraphIndent,
                     onCheckedChange = { checked ->
@@ -1123,14 +1131,24 @@ private fun BookLanguageRow(language: String?, onPick: (String?) -> Unit) {
 private fun SettingToggleRow(
     label: String,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    description: String? = null
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, style = MaterialTheme.typography.bodySmall)
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodySmall)
+            if (description != null) {
+                Text(
+                    description,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

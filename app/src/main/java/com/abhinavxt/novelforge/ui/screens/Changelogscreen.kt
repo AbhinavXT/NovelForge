@@ -174,6 +174,16 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.11.0",
+        date = "Nov 2026",
+        changes = listOf(
+            "Sync between your devices through your own WebDAV folder (Nextcloud, a NAS): library, reading positions, bookmarks, highlights, categories and stats. No account, and no NovelForge server",
+            "Bionic reading: the start of every word in bold, from Quick Settings",
+            "Character voices now work with the Google voices on your phone and with Piper voices, not only multi-speaker models",
+            "Removing many books at once on one device asks before removing them on the others"
+        )
+    ),
+    VersionEntry(
         version = "v2.10.0",
         date = "Nov 2026",
         changes = listOf(

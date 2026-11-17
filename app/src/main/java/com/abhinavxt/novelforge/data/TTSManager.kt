@@ -4,7 +4,14 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.Voice
+import com.abhinavxt.novelforge.data.tts.CastKind
+import com.abhinavxt.novelforge.data.tts.CastVoice
+import com.abhinavxt.novelforge.data.tts.CastVoices
 import com.abhinavxt.novelforge.data.tts.GoogleTTSEngine
+import com.abhinavxt.novelforge.data.tts.PiperVoices
+import com.abhinavxt.novelforge.data.tts.Speakers
+import com.abhinavxt.novelforge.data.tts.VoiceCast
+import com.abhinavxt.novelforge.data.tts.VoiceCasting
 import com.abhinavxt.novelforge.data.tts.SherpaOnnxEngine
 import com.abhinavxt.novelforge.data.tts.TTSEngine
 import com.abhinavxt.novelforge.data.tts.TTSModelManager
@@ -70,8 +77,8 @@ private data class TextSegment(
     val paragraphIndex: Int,
     val sentenceIndexInParagraph: Int,
     val isParagraphEnd: Boolean = false,
-    /** Speaker of a multi-speaker voice model; 0 = the model's first. */
-    val voice: Int = 0
+    /** Who reads it: a speaker number, a Piper model or a system voice name (see CastKind); blank = the narrator. */
+    val voice: String = ""
 )
 
 /**
@@ -95,12 +102,62 @@ class TTSManager(private val context: Context) {
     /** Each book's character voices; null leaves every line in the narrator's voice. */
     var voiceCasting: com.abhinavxt.novelforge.data.tts.VoiceCasting? = null
 
-    /** The book's cast for the loaded multi-speaker voice, or null when the voice has one speaker. */
-    fun castFor(novelId: String): com.abhinavxt.novelforge.data.tts.VoiceCast? {
-        val sherpa = activeEngine as? SherpaOnnxEngine ?: return null
-        val model = sherpa.getCurrentVoiceId() ?: return null
-        if (sherpa.speakerCount() < 2) return null
-        return voiceCasting?.load(novelId, model)
+    /**
+     * The voices characters can be given with the active engine, or null when there is nobody to give them:
+     * a multi-speaker neural model's speakers, the other downloaded Piper voices of a single-speaker Piper
+     * model's language, or the installed system voices of the narrator's language. Needs at least two.
+     */
+    fun castVoices(): com.abhinavxt.novelforge.data.tts.CastVoices? {
+        val found = when (val engine = activeEngine) {
+            is SherpaOnnxEngine -> {
+                val model = engine.getCurrentVoiceId() ?: return null
+                val count = engine.speakerCount()
+                if (count >= 2) {
+                    CastVoices(
+                        CastKind.SHERPA_SPEAKER, model,
+                        Speakers.forModel(model, count).map { it.toCastVoice() }, narrator = "0", narratorPickable = true
+                    )
+                } else {
+                    val catalogue = TTSModelManager.AVAILABLE_MODELS.associateBy { it.id }
+                    val voices = engine.castableModels().map {
+                        val name = catalogue[it.id]?.displayName
+                        CastVoice(it.id, name ?: it.displayName, PiperVoices.genderOf(name))
+                    }
+                    CastVoices(CastKind.PIPER_MODEL, VoiceCasting.piperKey(model), voices, narrator = model, narratorPickable = false)
+                }
+            }
+            is GoogleTTSEngine -> CastVoices(
+                CastKind.GOOGLE_VOICE, VoiceCasting.googleKey(engine.narratorLanguage()),
+                engine.castableVoices(), narrator = engine.getCurrentVoiceId().orEmpty(), narratorPickable = false
+            )
+            else -> return null
+        }
+        return found.takeIf { it.usable }
+    }
+
+    /** The book's cast for the active voices, or null when there are no voices to cast with. */
+    fun castFor(novelId: String, voices: CastVoices? = castVoices()): VoiceCast? {
+        voices ?: return null
+        val stored = voiceCasting?.load(novelId, voices.key) ?: return null
+        return if (voices.narratorPickable) stored
+        else stored.restrictedTo(voices.voices.map { it.id }.toSet(), voices.narrator)
+    }
+
+    /** What the current chapter's segment voices mean (speaker numbers, models or system voices). */
+    private var castKind: CastKind? = null
+
+    /** The narrator's voice id when the chapter started; segments carrying it are narration, whatever the narrator is now. */
+    private var castNarrator: String? = null
+
+    private fun isNarratorVoice(voice: String) = voice.isBlank() || voice == castNarrator
+
+    /** A line for the neural engine in segment voice [voice]. */
+    private fun sherpaLine(text: String, voice: String, engine: SherpaOnnxEngine): SherpaOnnxEngine.Line = when (castKind) {
+        CastKind.SHERPA_SPEAKER -> SherpaOnnxEngine.Line(text, voice.toIntOrNull() ?: 0)
+        CastKind.PIPER_MODEL -> SherpaOnnxEngine.Line(
+            text, 0, voice.takeIf { !isNarratorVoice(it) && it != engine.getCurrentVoiceId() }
+        )
+        else -> SherpaOnnxEngine.Line(text)
     }
 
     /** A sentence as it goes to the engine: replacements, then pronunciation. */
@@ -439,7 +496,7 @@ class TTSManager(private val context: Context) {
 
     // ── Text parsing (unchanged from original) ───────────────────
 
-    private fun parseTextIntoSegments(text: String, cast: com.abhinavxt.novelforge.data.tts.VoiceCast?): List<TextSegment> {
+    private fun parseTextIntoSegments(text: String, cast: VoiceCast?): List<TextSegment> {
         val pieces = com.abhinavxt.novelforge.data.tts.Dialogue.pieces(
             text, cast?.characters?.keys?.toList().orEmpty(), voiced = cast?.enabled == true
         )
@@ -450,7 +507,7 @@ class TTSManager(private val context: Context) {
                 paragraphIndex = it.paragraph,
                 sentenceIndexInParagraph = it.sentence,
                 isParagraphEnd = it.paragraphEnd && it.paragraph != lastParagraph,
-                voice = cast?.voiceFor(it) ?: 0
+                voice = cast?.voiceFor(it) ?: ""
             )
         }
     }
@@ -490,7 +547,10 @@ class TTSManager(private val context: Context) {
         if (chapterTitle.isNotBlank()) nowPlayingChapterTitle = chapterTitle
         if (coverUrl != null) nowPlayingCoverUrl = coverUrl
 
-        segments = parseTextIntoSegments(text, novelId?.let { castFor(it) })
+        val castVoices = castVoices()
+        castKind = castVoices?.kind
+        castNarrator = castVoices?.narrator
+        segments = parseTextIntoSegments(text, novelId?.let { castFor(it, castVoices) })
 
         if (segments.isEmpty()) {
             Logger.e("TTSManager", "No sentences to speak")
@@ -591,7 +651,18 @@ class TTSManager(private val context: Context) {
         Logger.d("TTSManager", "Speaking sentence $currentIndex: ${segment.text.take(50)}...")
 
         val s = _settings.value
-        (activeEngine as? SherpaOnnxEngine)?.setSpeakerId(segment.voice)
+        when (val engine = activeEngine) {
+            is SherpaOnnxEngine -> sherpaLine(textToSpeak, segment.voice, engine).let {
+                engine.setSpeakerId(it.speaker)
+                engine.setCastModel(it.model)
+            }
+            is GoogleTTSEngine -> engine.useVoiceForNextUtterance(
+                segment.voice.takeIf {
+                    castKind == CastKind.GOOGLE_VOICE && !isNarratorVoice(it) && it != engine.getCurrentVoiceId()
+                }
+            )
+            else -> Unit
+        }
 
         activeEngine.speak(
             text = textToSpeak,
@@ -647,7 +718,7 @@ class TTSManager(private val context: Context) {
         if (startIdx >= segments.size) return
 
         // The same text speakCurrentSentence will send, so the cache hits.
-        val upcoming = segments.subList(startIdx, endIdx).map { spokenText(it.text) to it.voice }.filter { it.first.isNotBlank() }
+        val upcoming = segments.subList(startIdx, endIdx).map { sherpaLine(spokenText(it.text), it.voice, sherpaEngine) }.filter { it.text.isNotBlank() }
         val s = _settings.value
 
         sherpaEngine.pregenerateBatchAsync(

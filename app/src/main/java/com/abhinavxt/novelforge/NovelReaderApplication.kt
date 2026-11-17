@@ -98,6 +98,8 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
                 // might want to short-circuit when the changed novel
                 // isn't the widget's current one.
                 widgetStateRepository.rebuildFromRepository(repository)
+                // Debounced sync after reading; a no-op unless sync is on.
+                com.abhinavxt.novelforge.worker.SyncScheduler.onProgressSaved(this)
             }
         )
     }
@@ -236,6 +238,28 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
 
         networkMonitor.start()
 
+        // Sync at app start: once per process, when the first activity starts (not on
+        // rotation or return from another screen). Re-arms the periodic work too.
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            private val first = java.util.concurrent.atomic.AtomicBoolean(true)
+            private val tracker = ForegroundTracker()
+            override fun onActivityStarted(activity: android.app.Activity) {
+                // The started-activity count going 0 -> 1 is the app coming to the foreground.
+                val foreground = tracker.onStarted()
+                if (first.compareAndSet(true, false)) {
+                    com.abhinavxt.novelforge.worker.SyncScheduler.onAppStart(this@NovelReaderApplication)
+                } else if (foreground) {
+                    com.abhinavxt.novelforge.worker.SyncScheduler.onForeground(this@NovelReaderApplication)
+                }
+            }
+            override fun onActivityCreated(a: android.app.Activity, b: android.os.Bundle?) {}
+            override fun onActivityResumed(a: android.app.Activity) {}
+            override fun onActivityPaused(a: android.app.Activity) {}
+            override fun onActivityStopped(a: android.app.Activity) = tracker.onStopped(a.isChangingConfigurations)
+            override fun onActivitySaveInstanceState(a: android.app.Activity, b: android.os.Bundle) {}
+            override fun onActivityDestroyed(a: android.app.Activity) {}
+        })
+
         // A queue left over from before the app was killed carries on unless it was paused.
         downloadManager.resumeIfPending()
 
@@ -287,5 +311,27 @@ class NovelReaderApplication : Application(), ImageLoaderFactory {
             .okHttpClient(client)
             .crossfade(true)
             .build()
+    }
+}
+/**
+ * Counts started activities and says when the app returns to the foreground. A stop caused by a
+ * configuration change (rotation) takes the count to 0 for a moment, but the next start is the same
+ * activity coming back, not a return from the background.
+ */
+internal class ForegroundTracker {
+    private var started = 0
+    private var rotating = false
+
+    /** True when this start is the app coming to the foreground. */
+    fun onStarted(): Boolean {
+        started++
+        val foreground = started == 1 && !rotating
+        rotating = false
+        return foreground
+    }
+
+    fun onStopped(changingConfigurations: Boolean) {
+        if (started > 0) started--
+        if (changingConfigurations) rotating = true
     }
 }

@@ -168,6 +168,9 @@ data class ReaderSettingsEntity(
 
     // ── Drop cap (v28) ──────────────────────────────────────────
     val dropCap: Boolean = false,
+
+    // ── Bionic reading (v30) ────────────────────────────────────
+    val bionicReading: Boolean = false,
 )
 
 @Entity(

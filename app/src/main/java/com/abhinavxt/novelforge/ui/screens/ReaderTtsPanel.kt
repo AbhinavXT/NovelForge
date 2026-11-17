@@ -397,21 +397,17 @@ internal fun TTSControlsPanel(
                 }
             }
 
-            // Character voices: only for a voice with several speakers (Kokoro and the like)
-            val speakerCount = remember(currentVoice) {
-                if (ttsManager.activeEngineId.value == com.abhinavxt.novelforge.data.tts.SherpaOnnxEngine.ENGINE_ID)
-                    ttsManager.sherpaEngine.speakerCount() else 0
-            }
-            val modelId = currentVoice?.id
+            // Character voices: whenever the active engine has at least two voices to give characters
+            val engineId by ttsManager.activeEngineId.collectAsState()
+            val castVoices = remember(currentVoice, engineId, showCharacterVoices) { ttsManager.castVoices() }
             val casting = ttsManager.voiceCasting
-            if (speakerCount > 1 && modelId != null && casting != null) {
+            if (castVoices != null && casting != null) {
                 Spacer(modifier = Modifier.height(8.dp))
                 TextButton(onClick = { showCharacterVoices = true }) { Text("Character voices") }
                 if (showCharacterVoices) {
                     com.abhinavxt.novelforge.ui.components.CharacterVoicesSheet(
                         novelId = novelId,
-                        modelId = modelId,
-                        speakerCount = speakerCount,
+                        voices = castVoices,
                         casting = casting,
                         onDismiss = { showCharacterVoices = false }
                     )

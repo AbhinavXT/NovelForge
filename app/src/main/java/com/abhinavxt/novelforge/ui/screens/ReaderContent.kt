@@ -104,6 +104,7 @@ import com.abhinavxt.novelforge.ui.components.ParagraphFormat
 import com.abhinavxt.novelforge.ui.components.QUOTE_INDENT_DP
 import com.abhinavxt.novelforge.ui.components.ReaderFormatting
 import com.abhinavxt.novelforge.ui.components.IMAGE_SPACING
+import com.abhinavxt.novelforge.ui.components.BionicReading
 import com.abhinavxt.novelforge.ui.components.DropCap
 import com.abhinavxt.novelforge.ui.components.addBookFormatting
 import com.abhinavxt.novelforge.ui.components.TextReplacementDialog
@@ -974,6 +975,7 @@ internal fun ReaderContent(
                                 index = index,
                                 format = seg.formatting?.get(index),
                                 dropCap = index == dropCapAt,
+                                bionic = settings.bionicReading,
                                 shown = seg.shown?.getOrNull(index),
                                 onNoteClick = showNote,
                                 selectionKey = selectionKey,
@@ -1227,6 +1229,8 @@ private fun BookmarkableParagraph(
     format: ParagraphFormat? = null,
     /** This paragraph opens its chapter with a drop cap. */
     dropCap: Boolean = false,
+    /** Bionic reading: word starts drawn bold. */
+    bionic: Boolean = false,
     /** How [paragraph] (as shown) maps to the stored text; null when unchanged. */
     shown: TextReplacements.Mapped? = null,
     onNoteClick: ((Footnote) -> Unit)? = null,
@@ -1293,9 +1297,13 @@ private fun BookmarkableParagraph(
                     // inside a highlight. The text itself is never changed.
                     val noteColor = MaterialTheme.colorScheme.primary
                     val dropCapColor = if (eink) Color.Black else colors.text
+                    val bionicRanges = remember(paragraph, bionic) {
+                        if (bionic) BionicReading.ranges(paragraph) else emptyList()
+                    }
                     val annotatedText = buildAnnotatedString {
                         append(paragraph)
                         addBookFormatting(format, noteColor, onNoteClick)
+                        if (bionic) with(BionicReading) { add(bionicRanges) }
                         if (dropCap) with(DropCap) { add(paragraph, dropCapColor) }
                         // TTS sentences and highlights point into the
                         // stored text; move them onto what's shown.

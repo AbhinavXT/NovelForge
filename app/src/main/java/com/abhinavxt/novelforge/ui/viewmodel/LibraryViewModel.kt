@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.abhinavxt.novelforge.data.LibraryRemover
 import com.abhinavxt.novelforge.data.NovelRepository
 import com.abhinavxt.novelforge.data.database.CategoryEntity
 import com.abhinavxt.novelforge.data.database.ReadingProgressEntity
@@ -726,35 +727,12 @@ class LibraryViewModel(
 
     fun removeFromLibrary(novelId: String) {
         viewModelScope.launch {
-            // A book that came from the library folder has to be remembered
-            // as unwanted before its row disappears, because the row IS the
-            // record that the file was seen. Without this the next scan
-            // would cheerfully import it again.
-            val context = appContext
-            var releaseAfterRemoval: String? = null
-            if (context != null) {
-                repository.getSourceUri(novelId)?.let { uri ->
-                    if (LibraryFolder.isInFolder(uri)) {
-                        LibraryFolder.ignoreUri(context, uri)
-                    } else {
-                        // A hand-picked file: its grant is released below,
-                        // once the row is gone, to free a slot in the budget.
-                        releaseAfterRemoval = uri
-                    }
-                }
-            }
-
-            if (novelId.startsWith("local_") && epubImporter != null) {
-                epubImporter.deleteLocalNovel(novelId)
-            }
-            repository.removeFromLibrary(novelId)
-            releaseAfterRemoval?.let { uri ->
-                // Another book may hold the same file (a re-import that was
-                // linked as a duplicate); its grant must survive.
-                if (!repository.isSourceUriInUse(uri)) {
-                    BookFileAccess.release(context!!, Uri.parse(uri))
-                }
-            }
+            // Folder-scan ignore record, files and rows: see LibraryRemover.
+            val importer = epubImporter
+            LibraryRemover(
+                repository, appContext,
+                if (importer != null) { id -> importer.deleteLocalNovel(id) } else null
+            ).remove(novelId)
             loadNovelsWithDownloads()
         }
     }

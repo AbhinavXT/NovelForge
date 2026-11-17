@@ -39,9 +39,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         VocabularyEntity::class,         // NEW in v25 — words saved from Define
         ChapterOriginalEntity::class,    // NEW in v26 — text from before translation
         GlossaryTermEntity::class,       // NEW in v26 — per-book translation glossary
-        DownloadQueueEntity::class       // NEW in v28 — background chapter download queue
+        DownloadQueueEntity::class,      // NEW in v28 — background chapter download queue
+        SyncRecordEntity::class          // NEW in v31 — WebDAV sync's merged state
     ],
-    version = 29,
+    version = 31,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -62,6 +63,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun vocabularyDao(): VocabularyDao          // NEW in v25
     abstract fun translationDao(): TranslationDao        // NEW in v26
     abstract fun downloadQueueDao(): DownloadQueueDao    // NEW in v28
+    abstract fun syncDao(): SyncDao                      // NEW in v31
 
     companion object {
         @Volatile
@@ -480,6 +482,28 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v30: the bionic reading switch. */
+        internal val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE reader_settings ADD COLUMN bionicReading INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /** v31: the sync engine's merged-state table. */
+        internal val MIGRATION_30_31 = object : Migration(30, 31) {
+            override fun migrate(db: SupportSQLiteDatabase) = createSyncRecordsTable(db)
+        }
+
+        /** Must match what Room generates for [SyncRecordEntity]; a test compares the two. */
+        internal fun createSyncRecordsTable(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `sync_records` (`kind` TEXT NOT NULL, `key` TEXT NOT NULL, " +
+                    "`hlc` INTEGER NOT NULL, `origin` TEXT NOT NULL, `deleted` INTEGER NOT NULL, `payload` TEXT, " +
+                    "`localId` TEXT, `digest` TEXT, PRIMARY KEY(`kind`, `key`))"
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_records_kind_localId` ON `sync_records` (`kind`, `localId`)")
+        }
+
         internal fun addOriginalTitleColumn(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE chapter_originals ADD COLUMN originalTitle TEXT")
         }
@@ -543,7 +567,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29)
+                    .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31)
                     // No fallbackToDestructiveMigration() — if a migration is missing,
                     // the app crashes instead of silently wiping the user's library,
                     // bookmarks, reading progress, and stats. Always write migrations.

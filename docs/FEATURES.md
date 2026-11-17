@@ -70,6 +70,7 @@ If you just want a quick summary, see the [README](../README.md).
     - [Privacy](#privacy)
   - [Continue-reading widget](#continue-reading-widget)
   - [Backup and restore](#backup-and-restore)
+  - [Sync](#sync)
   - [Privacy](#privacy-1)
     - [App lock](#app-lock)
     - [Incognito mode](#incognito-mode)
@@ -221,6 +222,8 @@ Auto-scroll is not available in paged mode (the button is hidden when paged is a
 **Looks.** The row at the top of Quick Settings sets several things in one tap: **Paper** (the Paper theme, Literata at 18, justified and hyphenated, with a drop cap), **Night** (the dark theme, looser lines, left-aligned), **Focus** (wide margins, larger type, generous spacing) and **Compact** (narrow margins, small type, tight spacing, for more text per screen). A look only changes how the page looks, never the reading mode, tap zones or TTS, and every setting it touched can still be changed after. The chip stays lit while your settings match it.
 
 **Drop cap.** A toggle in Quick Settings draws the first letter of each chapter's opening paragraph large, in scroll and paged modes. An opening quote mark stays its normal size, a chapter's own title line at the top of the text is passed over, and a paragraph that doesn't start with a letter gets none.
+
+**Bionic reading.** A toggle in Quick Settings, under Drop cap, draws the first part of every word bold to guide the eye, in scroll and paged modes. It only styles the text, so search, highlights, bookmarks and read-aloud are unaffected, and it combines with drop cap and book formatting. Chinese, Japanese, Korean and Thai text is left as is.
 
 **Cover colours.** A book's page in the app takes its accent colour from the cover: the Read button, tabs, links and download ticks. The colour is adjusted until it reads clearly on the current theme, and a grey or blank cover keeps the theme's own colour. Off in e-ink mode, and switchable in Settings → Appearance → **Colour book pages from their cover**.
 
@@ -650,7 +653,7 @@ Cons: bigger download, slower on older phones.
 
 ### Character voices
 
-With a voice that has several speakers (the Kokoro models: 11, 53 or 103 of them), each character can be read in their own voice. In the TTS panel, tap **Character voices**:
+Each character can be read in their own voice, with any engine that has at least two voices to give. That is a multi-speaker model (the Kokoro models: 11, 53 or 103 speakers; Piper LibriTTS-R, whose first 100 speakers are offered), a single-speaker Piper voice (characters get your other downloaded Piper voices of the same language, up to two of which are kept loaded at a time besides the narrator's), or the system (Google) voice (characters get the installed voices of the narrator's language, offline ones first). In the TTS panel, tap **Character voices**:
 
 - **Narrator** picks the voice for everything outside quotes. This works even with character voices off.
 - **Give characters their own voices** turns on the casting. Characters come from the book's [codex](#the-codex), so scan it first.
@@ -659,7 +662,7 @@ With a voice that has several speakers (the Kokoro models: 11, 53 or 103 of them
 
 A quote's speaker is the character next to a speech verb ("said Lin", "Chen asked"), else the only character the paragraph names, else, in a back-and-forth of bare lines, whoever spoke two lines before. "He said" and crowds of three or more aren't worked out; those lines go to Anyone else. A quote and its tag are read as two parts of one sentence, so the reader still highlights the whole sentence.
 
-Casts are kept per book and per voice model (speaker numbers mean different voices in each model) and aren't in backups. Changes apply from the next time you press play. [Audiobook generation](#audiobook-generation) uses the same cast. Piper and system voices have one speaker, so the option doesn't show for them.
+Casts are kept per book and per voice model (speaker numbers mean different voices in each model) and aren't in backups. Changes apply from the next time you press play. [Audiobook generation](#audiobook-generation) uses the same cast. Piper and system casts are kept under their own keys, so they never mix with a multi-speaker model's. With Piper or system voices the narrator simply keeps the voice you chose, a character whose voice is later deleted or uninstalled is read by the narrator, and the option only shows when there are at least two voices to choose from. A Piper voice recorded at a different sample rate plays at its own rate while reading, and is converted to the narrator's rate in audiobooks.
 
 ### Controls
 
@@ -769,7 +772,7 @@ The card is rendered with a fixed density so it looks identical on every device.
 
 ### Privacy
 
-Everything's computed locally in your phone's Room database. There's no analytics service, no server, no remote storage. If you delete the app, the stats are gone (back them up first if you care).
+Everything's computed locally in your phone's Room database. There's no analytics service, no NovelForge server and no remote storage of ours. (Only if you turn on [sync](#sync) do reading data go to a WebDAV folder you chose.) If you delete the app, the stats are gone (back them up first if you care).
 
 ---
 
@@ -821,6 +824,24 @@ The ZIP can be saved to Drive, Dropbox, anywhere.
 These are excluded because they're large and re-derivable. Including voice models would push backup ZIPs to 500 MB+.
 
 **Cross-device:** backup ZIPs are platform-portable across Android versions. The internal schema is versioned, so restoring a v1.6 backup on v1.8 works (forward-compatible). Backwards compatibility (v1.8 backup on v1.6) is not guaranteed; downgrades are not a supported flow.
+
+---
+
+## Sync
+
+Settings → Sync keeps your library, reading positions, bookmarks and highlights the same on several devices, without an account. You give NovelForge a WebDAV folder you already have (Nextcloud, a NAS, any WebDAV server) and every device writes its own small file there. There is no NovelForge server.
+
+**Setting up.** Enter the server address (for Nextcloud, `https://cloud.example.com/remote.php/dav/files/NAME/`), username, password and a name for this device. **Test connection** checks the address and login and says what is wrong in plain words. **Save and sync** stores them and syncs at once. The address must be https; a server with its own certificate (typical on a home network) shows its SHA-256 fingerprint and you can choose **Trust this certificate** after checking it. The password is kept encrypted with a key in the Android Keystore and is left out of backups.
+
+**What is synced:** the library (adding and removing books), reading positions, bookmarks, highlights and their notes, categories, per-book looks, reading stats.
+
+**What is not:** chapter text, covers, book files, global reader settings and API keys. An imported book syncs only between devices that have the same file. Moving a book to another source gives it a new identity: the old book is removed from your other devices together with its downloads, and the new one appears there. Reading position is last write wins, so re-reading an earlier chapter on one device moves the others there.
+
+**When it runs.** When the app opens, when you come back to it (at most once every 10 minutes), a couple of minutes after you stop reading, every 12 hours, and on **Sync now**. Runs do not pile up while the phone is offline. The **Sync automatically** switch turns this off without forgetting the login. Settings shows when it last ran and how it went.
+
+**Safeguards.** If a sync would remove more than half your books from this device, or another device removed more than half of the books you have, sync pauses and Settings shows a notice that stays until you answer it, also when the pause happened in the background. For books another device removed you choose **Remove here** or **Keep them** (the books stay and appear again on the other devices); for books this device lost you choose **Remove everywhere**. Restoring an app backup never moves the other devices back to older positions, and a device file that is too large, damaged or from a clock more than a day ahead is skipped and listed with the reason. If a device's clock is more than 2 minutes off the server's, Settings warns you. A device running a newer NovelForge than this one is listed as needing a newer NovelForge until you update. **Disconnect** removes the login from this device only; nothing is deleted on the server or on other devices.
+
+**Privacy.** Sync is off until you set it up. The owner of the server can read the titles, authors, highlights, notes and reading times stored there; it is not end-to-end encrypted. Chapter text and files never leave the phone.
 
 ---
 
@@ -910,7 +931,7 @@ Whatever's set here is the starting point for new novels; per-novel changes are 
 
 Some explicit non-features so expectations match reality:
 
-- **No cloud sync.** The app is offline-first and stays that way. Backup/restore is the closest equivalent - manual, on your terms.
+- **No NovelForge cloud.** The app is offline-first. [Sync](#sync) is optional and goes only to a WebDAV folder you provide yourself; backup/restore stays the manual alternative.
 - **No cloud AI unless you add it.** The codex, the relationship graph, and search are local heuristics plus a local index. The only thing that ever sends text out is [translation](#translation) with an AI provider, and only for books you switch it on for, with your own key.
 - **No account system.** Never. There is no NovelForge server.
 - **No iOS version.** App Store rules conflict with the way this app is built.

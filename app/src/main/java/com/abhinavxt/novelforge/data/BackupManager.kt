@@ -399,6 +399,9 @@ class BackupManager(
      * Restore from a backup file
      */
     suspend fun restoreBackup(uri: Uri, includeDownloads: Boolean = true): BackupResult = withContext(Dispatchers.IO) {
+        // The whole restore holds the sync gate: no sync can publish half-restored rows, and a sync
+        // that was running finishes first. Every exit (return, exception) releases it.
+        com.abhinavxt.novelforge.data.sync.SyncGate.restoring(context) { markSyncPending ->
         try {
             Logger.d("BackupManager", "Starting restore from backup...")
 
@@ -414,10 +417,14 @@ class BackupManager(
 
             // Validate version
             if (backup.version > BackupData.BACKUP_VERSION) {
-                return@withContext BackupResult.Error(
+                return@restoring BackupResult.Error(
                     "Backup was created with a newer version of the app. Please update the app first."
                 )
             }
+
+            // Restored rows carry old values: the next sync must prefer what sync already holds.
+            // Set before the first write, so a failed restore still leaves the token.
+            markSyncPending()
 
             // Restore novels
             var novelsRestored = 0
@@ -610,7 +617,6 @@ class BackupManager(
             }
 
             Logger.d("BackupManager", "Restore completed successfully")
-
             BackupResult.Success(
                 "Restore completed!\n" +
                         "$novelsRestored novels, $chaptersRestored chapters" +
@@ -625,6 +631,7 @@ class BackupManager(
         } catch (e: Exception) {
             Logger.e("BackupManager", "Restore failed", e)
             BackupResult.Error("Restore failed: ${e.message}")
+        }
         }
     }
 

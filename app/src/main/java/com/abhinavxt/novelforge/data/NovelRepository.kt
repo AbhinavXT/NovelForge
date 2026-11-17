@@ -164,6 +164,12 @@ class NovelRepository(
     fun bookImagesDir(novelId: String): java.io.File? = formatting?.imagesDir(novelId)
 
     suspend fun removeFromLibrary(novelId: String) {
+        removeRowsFromLibrary(novelId)
+        cleanupAfterRemoval(novelId)
+    }
+
+    /** The database part of a removal; safe inside a larger transaction (a rollback undoes it fully). */
+    suspend fun removeRowsFromLibrary(novelId: String) {
         database.withTransaction {
             novelDao.deleteNovelById(novelId)
             chapterDao.deleteChaptersForNovel(novelId)
@@ -175,6 +181,10 @@ class NovelRepository(
             database.translationDao().deleteOriginals(novelId)
             database.translationDao().deleteGlossary(novelId)
         }
+    }
+
+    /** What a removal does outside the database: formatting files and the widget hook. */
+    suspend fun cleanupAfterRemoval(novelId: String) {
         formatting?.clearAll(novelId)
         // Widget hook — if the removed novel was the widget's novel, the
         // callback will clear the widget. If not, it re-picks the most
@@ -552,6 +562,7 @@ class NovelRepository(
             hyphenation = settings.hyphenation,
             paragraphSpacing = settings.paragraphSpacing,
             dropCap = settings.dropCap,
+            bionicReading = settings.bionicReading,
         )
         settingsDao.saveSettings(entity)
     }
@@ -878,6 +889,7 @@ class NovelRepository(
             hyphenation = this.hyphenation,
             paragraphSpacing = this.paragraphSpacing.coerceIn(0, 32),
             dropCap = this.dropCap,
+            bionicReading = this.bionicReading,
         )
     }
 

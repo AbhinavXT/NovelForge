@@ -18,6 +18,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -243,7 +244,7 @@ class AudioExporter(
         text: String,
         speakerId: Int = 0,
         speed: Float = 1.0f,
-        /** Character voices (neural voices only); when set it decides each line's speaker instead of [speakerId]. */
+        /** Character voices; when set it decides each line's voice instead of [speakerId]. */
         cast: VoiceCast? = null
     ): Boolean = withContext(Dispatchers.Default) {
 
@@ -267,9 +268,12 @@ class AudioExporter(
 
         _exportingChapters.value = _exportingChapters.value + chapterId
 
+        var googleCastUsed = false
         try {
             // 1. Split text into sentences
-            val sentences = splitIntoSentences(text, cast.takeIf { useSherpa })
+            val castKind = ttsManager.castVoices()?.kind
+            googleCastUsed = castKind == CastKind.GOOGLE_VOICE
+            val sentences = splitIntoSentences(text, cast.takeIf { castKind != null })
             if (sentences.isEmpty()) {
                 _exportState.value = ExportState.Error(chapterId, "No text to export")
                 return@withContext false
@@ -282,6 +286,7 @@ class AudioExporter(
             tempFile.createNewFile()
             var totalPcmBytes = 0L
             var sampleRate = if (useSherpa) sherpaEngine.getTtsWrapper()!!.sampleRate else 22050
+            var sampleRateKnown = useSherpa
 
             try {
                 FileOutputStream(tempFile).use { pcmOut ->
@@ -306,15 +311,20 @@ class AudioExporter(
 
                         if (useSherpa) {
                             // ── Sherpa path: generate raw samples ──
-                            val audio = sherpaEngine.getTtsWrapper()!!.generate(
-                                text = entry.text,
-                                speakerId = entry.voice ?: speakerId,
-                                speed = speed
-                            )
+                            // Another Piper model may run at another sample rate: bring it to the narrator's.
+                            val line = when (castKind) {
+                                CastKind.PIPER_MODEL -> SherpaOnnxEngine.Line(
+                                    entry.text, 0,
+                                    entry.voice?.takeIf { it.isNotBlank() && it != sherpaEngine.getCurrentVoiceId() }
+                                )
+                                else -> SherpaOnnxEngine.Line(entry.text, entry.voice?.toIntOrNull() ?: speakerId)
+                            }
+                            val audio = sherpaEngine.synthesize(line, speed)
 
                             if (audio != null && audio.samples.isNotEmpty()) {
-                                writeSamplesToPcm(pcmOut, audio.samples)
-                                totalPcmBytes += audio.samples.size * 2L
+                                val samples = Resample.linear(audio.samples, audio.sampleRate, sampleRate)
+                                writeSamplesToPcm(pcmOut, samples)
+                                totalPcmBytes += samples.size * 2L
                             }
                         } else {
                             // ── Google TTS path: synthesize to temp WAV, extract PCM ──
@@ -322,6 +332,11 @@ class AudioExporter(
                             val sentenceFile = File(context.cacheDir, "tts_sentence_$index.wav")
                             try {
                                 val success = withContext(Dispatchers.Main) {
+                                    if (googleCastUsed) googleEngine.useVoiceForNextUtterance(
+                                        entry.voice?.takeIf {
+                                            it.isNotBlank() && it != googleEngine.getCurrentVoiceId()
+                                        }
+                                    )
                                     googleEngine.synthesizeToFile(
                                         text = entry.text,
                                         outputFile = sentenceFile,
@@ -330,12 +345,22 @@ class AudioExporter(
                                 }
 
                                 if (success && sentenceFile.exists() && sentenceFile.length() > 44) {
-                                    // Read sample rate from WAV header on first sentence
-                                    if (index == 0) {
-                                        sampleRate = readWavSampleRate(sentenceFile)
+                                    // The first sentence's WAV header sets the sample rate; a character's
+                                    // voice at another rate is resampled to it.
+                                    val rate = readWavSampleRate(sentenceFile)
+                                    if (!sampleRateKnown) {
+                                        sampleRate = rate
+                                        sampleRateKnown = true
                                     }
-                                    // Copy raw PCM data (skip 44-byte WAV header) to pcmOut
-                                    val pcmBytes = copyPcmFromWav(sentenceFile, pcmOut)
+                                    val pcmBytes = if (rate == sampleRate) {
+                                        // Copy raw PCM data (skip 44-byte WAV header) to pcmOut
+                                        copyPcmFromWav(sentenceFile, pcmOut)
+                                    } else {
+                                        val raw = sentenceFile.readBytes().let { it.copyOfRange(minOf(44, it.size), it.size) }
+                                        val samples = Resample.linear(Resample.pcm16ToFloat(raw), rate, sampleRate)
+                                        writeSamplesToPcm(pcmOut, samples)
+                                        samples.size * 2L
+                                    }
                                     if (pcmBytes > 0) {
                                         totalPcmBytes += pcmBytes
                                     }
@@ -400,6 +425,7 @@ class AudioExporter(
 
             } finally {
                 tempFile.delete()
+                if (useGoogle && googleCastUsed) withContext(Dispatchers.Main + NonCancellable) { googleEngine.useVoiceForNextUtterance(null) }
             }
 
         } catch (e: CancellationException) {
@@ -512,8 +538,8 @@ class AudioExporter(
     private data class SentenceEntry(
         val text: String,
         val isParagraphEnd: Boolean,
-        /** The cast's speaker for this line, or null for the export's own. */
-        val voice: Int? = null
+        /** The cast's voice for this line (speaker number, Piper model or system voice), or null for the export's own. */
+        val voice: String? = null
     )
 
     private fun splitIntoSentences(text: String, cast: VoiceCast?): List<SentenceEntry> =
