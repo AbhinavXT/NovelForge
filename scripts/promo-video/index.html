@@ -1,0 +1,157 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Inter:wght@400;500;600&display=block" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1920px;height:1080px;overflow:hidden;background:#0f1024}
+#stage{position:relative;width:1920px;height:1080px;overflow:hidden;font-family:Inter,sans-serif;color:#f4efe6}
+#bg{position:absolute;inset:0;background:radial-gradient(1200px 800px at var(--bx,30%) var(--by,20%),#2b2f6e 0%,transparent 60%),radial-gradient(900px 700px at 85% 90%,#3a2950 0%,transparent 60%),#0f1024}
+#grain{position:absolute;inset:0;opacity:.06;background-image:repeating-linear-gradient(0deg,#fff 0 1px,transparent 1px 3px)}
+.scene{position:absolute;inset:0;opacity:0}
+.serif{font-family:Fraunces,serif}
+.h{font-family:Fraunces,serif;font-weight:600;font-size:96px;line-height:1.02;letter-spacing:-1.5px}
+.h em{font-style:italic;font-weight:400;color:#b9bdf5}
+.sub{font-size:30px;color:#c9c4d8;line-height:1.45;font-weight:400}
+.kicker{font-size:22px;letter-spacing:5px;text-transform:uppercase;color:#8f95e8;font-weight:600}
+.phone{position:absolute;width:458px;height:1008px;border-radius:56px;background:#08080f;padding:14px;box-shadow:0 60px 120px rgba(0,0,0,.55),0 0 0 2px #2a2b40 inset}
+.phone img{width:100%;height:100%;border-radius:44px;display:block;object-fit:cover}
+.chip{display:inline-block;padding:14px 26px;border-radius:999px;background:rgba(122,130,230,.16);border:1.5px solid rgba(150,158,245,.35);font-size:24px;font-weight:500;color:#e6e4f5;margin:0 12px 14px 0}
+.copy{position:absolute;left:150px;top:0;bottom:0;width:820px;display:flex;flex-direction:column;justify-content:center;gap:34px}
+.big{position:absolute;left:0;right:0;text-align:center;font-family:Fraunces,serif;font-weight:600;font-size:150px;letter-spacing:-3px}
+</style></head>
+<body><div id="stage">
+<div id="bg"></div><div id="grain"></div>
+
+<!-- S1 title -->
+<div class="scene" id="s1">
+  <img id="s1icon" src="../../app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp" style="position:absolute;left:50%;top:300px;width:180px;height:180px;margin-left:-90px;border-radius:44px;box-shadow:0 30px 80px rgba(80,90,220,.45)">
+  <div id="s1t" class="h" style="position:absolute;left:0;right:0;top:520px;text-align:center;font-size:150px">NovelForge</div>
+  <div id="s1s" class="sub serif" style="position:absolute;left:0;right:0;top:720px;text-align:center;font-size:42px;font-style:italic">A reading app for people who actually read.</div>
+</div>
+
+<!-- S2 library -->
+<div class="scene" id="s2">
+  <div class="copy">
+    <div class="kicker k">Your library</div>
+    <div class="h t">Every book,<br><em>right on your phone.</em></div>
+    <div class="sub s">Web novels from 22 plugin sources, plus your own EPUB, TXT and Markdown files. Downloaded once, read anywhere.</div>
+  </div>
+  <div class="phone" id="s2a" style="left:1020px;top:60px"><img src="../../docs/images/homescreen.png"></div>
+  <div class="phone" id="s2b" style="left:1400px;top:120px"><img src="../../docs/images/libraryscreen.png"></div>
+</div>
+
+<!-- S3 reader -->
+<div class="scene" id="s3">
+  <div class="copy">
+    <div class="kicker k">The reader</div>
+    <div class="h t">Read it<br><em>your way.</em></div>
+    <div class="chips s"><span class="chip">12 themes</span><span class="chip">8 fonts</span><span class="chip">E-ink mode</span><span class="chip">Scroll or paged</span><span class="chip">Auto-scroll</span><span class="chip">Bionic reading</span><span class="chip">AI translation</span></div>
+  </div>
+  <div class="phone" id="s3a" style="left:1020px;top:40px"><img src="../../docs/images/readerscreen.png"></div>
+  <div class="phone" id="s3b" style="left:1400px;top:100px"><img src="../../docs/images/quicksetting.png"></div>
+</div>
+
+<!-- S4 audio -->
+<div class="scene" id="s4">
+  <div class="copy">
+    <div class="kicker k">Listen</div>
+    <div class="h t">Or let it<br><em>read to you.</em></div>
+    <div class="chips s"><span class="chip">Neural TTS · Piper &amp; Kokoro</span><span class="chip">A voice for every character</span><span class="chip">M4B audiobooks</span><span class="chip">Fully offline</span></div>
+  </div>
+  <div id="wave" style="position:absolute;left:1020px;top:430px;width:880px;height:200px"></div>
+  <div class="phone" id="s4a" style="left:1210px;top:36px"><img src="../../docs/images/audioscreen.png"></div>
+</div>
+
+<!-- S5 codex -->
+<div class="scene" id="s5">
+  <div class="copy" style="width:720px">
+    <div class="kicker k">Character codex</div>
+    <div class="h t">It remembers<br><em>who's who.</em></div>
+    <div class="sub s">Characters, places and factions — and a relationship graph that grows with your reading position. Spoiler-safe. Computed on-device.</div>
+  </div>
+  <svg id="graph" width="1920" height="1080" style="position:absolute;left:0;top:0"></svg>
+</div>
+
+<!-- S6 privacy -->
+<div class="scene" id="s6">
+  <div class="big" id="p1" style="top:230px">No account.</div>
+  <div class="big" id="p2" style="top:430px">No subscription.</div>
+  <div class="big" id="p3" style="top:630px"><em style="font-style:italic;font-weight:400;color:#b9bdf5">No analytics.</em></div>
+</div>
+
+<!-- S7 end -->
+<div class="scene" id="s7">
+  <img id="s7icon" src="../../app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp" style="position:absolute;left:50%;top:250px;width:160px;height:160px;margin-left:-80px;border-radius:40px;box-shadow:0 30px 80px rgba(80,90,220,.45)">
+  <div id="s7t" class="h" style="position:absolute;left:0;right:0;top:450px;text-align:center;font-size:130px">NovelForge</div>
+  <div id="s7s" class="sub" style="position:absolute;left:0;right:0;top:630px;text-align:center;font-size:34px">Free &amp; open source · Android 7.0+ · MIT</div>
+  <div id="s7u" style="position:absolute;left:50%;top:730px;transform:translateX(-50%);padding:20px 40px;border-radius:999px;background:#f4efe6;color:#14152b;font-size:32px;font-weight:600;font-family:'JetBrains Mono',monospace;white-space:nowrap">github.com/AbhinavXT/NovelForge</div>
+</div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const eo=x=>1-Math.pow(1-clamp(x),3);          // ease out cubic
+const eio=x=>{x=clamp(x);return x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2};
+const ramp=(t,a,b)=>clamp((t-a)/(b-a));
+// scene windows [start,end]
+const SC={s1:[0,3.6],s2:[3.4,8.4],s3:[8.2,13.2],s4:[13,18],s5:[17.8,23],s6:[22.8,26.4],s7:[26.2,30.5]};
+const DURATION=30.5;
+const F=0.45; // crossfade
+function sceneAlpha(t,[a,b]){ if(t<a||t>b) return 0; const fi=a===0?1:ramp(t,a,a+F); const fo=b>=DURATION?1:1-ramp(t,b-F,b); return Math.min(fi,fo); }
+function set(el,o,tx=0,ty=0,s=1,r=0,blur=0){el.style.opacity=o;el.style.transform=`translate(${tx}px,${ty}px) scale(${s}) rotate(${r}deg)`;el.style.filter=blur?`blur(${blur}px)`:'none'}
+function copyIn(sc,lt){
+  const q=s=>sc.querySelector(s);
+  [['.k',0.15],['.t',0.3],['.s',0.6]].forEach(([sel,d])=>{const el=q(sel);if(!el)return;const p=eo(ramp(lt,d,d+0.9));set(el,p,0,(1-p)*40,1,0,(1-p)*8)});
+}
+// wave bars
+const wave=$('wave');const NB=54;for(let i=0;i<NB;i++){const b=document.createElement('div');b.style.cssText=`position:absolute;bottom:0;width:8px;border-radius:4px;left:${i*16}px;background:linear-gradient(#b9bdf5,#6e76d6)`;wave.appendChild(b)}
+// graph
+const NS='http://www.w3.org/2000/svg';const g=$('graph');
+const nodes=[['Odysseus',1340,520,1.0],['Telemachus',1130,330,.2],['Penelope',1560,320,.35],['Athena',1600,720,.5],['Nestor',1050,700,.65],['Menelaus',1330,860,.8],['Eumaeus',1720,520,.95],['Helen',1100,900,1.1]];
+const edges=[[0,1,.4],[0,2,.55],[1,2,.6],[0,3,.7],[1,3,.75],[1,4,.85],[0,5,1.0],[4,5,1.05],[0,6,1.15],[2,6,1.2],[5,7,1.25],[3,1,1.3]];
+const eEls=edges.map(([a,b])=>{const l=document.createElementNS(NS,'line');l.setAttribute('x1',nodes[a][1]);l.setAttribute('y1',nodes[a][2]);l.setAttribute('x2',nodes[b][1]);l.setAttribute('y2',nodes[b][2]);l.setAttribute('stroke','#8f95e8');l.setAttribute('stroke-width','3');g.appendChild(l);return l});
+const nEls=nodes.map(([n,x,y],i)=>{const gr=document.createElementNS(NS,'g');const c=document.createElementNS(NS,'circle');c.setAttribute('r',i===0?54:40);c.setAttribute('fill',i===0?'#6e76d6':'#2b2f6e');c.setAttribute('stroke','#b9bdf5');c.setAttribute('stroke-width','3');
+  const ini=document.createElementNS(NS,'text');ini.textContent=n[0];ini.setAttribute('text-anchor','middle');ini.setAttribute('dy','.35em');ini.setAttribute('font-family','Fraunces');ini.setAttribute('font-size',i===0?44:32);ini.setAttribute('fill','#f4efe6');ini.setAttribute('font-weight','600');
+  const lb=document.createElementNS(NS,'text');lb.textContent=n;lb.setAttribute('text-anchor','middle');lb.setAttribute('y',i===0?92:76);lb.setAttribute('font-family','Inter');lb.setAttribute('font-size','24');lb.setAttribute('font-weight','500');lb.setAttribute('fill','#e6e4f5');
+  gr.append(c,ini,lb);g.appendChild(gr);gr._x=x;gr._y=y;return gr});
+
+function render(t){
+  $('bg').style.setProperty('--bx',(30+20*Math.sin(t*0.25))+'%');$('bg').style.setProperty('--by',(20+15*Math.cos(t*0.2))+'%');
+  for(const k in SC){const a=sceneAlpha(t,SC[k]);$(k).style.opacity=a;$(k).style.visibility=a>0?'visible':'hidden'}
+  // S1
+  {const lt=t-SC.s1[0];const p=eo(ramp(lt,0.1,1.0));set($('s1icon'),p,0,(1-p)*30,0.6+0.4*p);
+   const p2=eo(ramp(lt,0.5,1.4));set($('s1t'),p2,0,(1-p2)*40,1,0,(1-p2)*10);
+   const p3=eo(ramp(lt,1.0,1.9));set($('s1s'),p3,0,(1-p3)*30);
+   $('s1').style.transform=`scale(${1+0.03*clamp(lt/3.6)})`;}
+  // S2
+  {const lt=t-SC.s2[0];copyIn($('s2'),lt);const d=lt*6;
+   const a=eo(ramp(lt,0.2,1.3)),b=eo(ramp(lt,0.45,1.55));
+   set($('s2a'),a,(1-a)*300,(1-a)*80-d+10,0.86,-4);set($('s2b'),b,(1-b)*400,(1-b)*120-d*1.6+20,0.8,5);}
+  // S3
+  {const lt=t-SC.s3[0];copyIn($('s3'),lt);const d=lt*6;
+   const a=eo(ramp(lt,0.2,1.3)),b=eo(ramp(lt,0.45,1.55));
+   set($('s3a'),a,(1-a)*300,(1-a)*-80+d,0.86,-3);set($('s3b'),b,(1-b)*400,(1-b)*-120+d*1.6-40,0.8,4);
+   [...$('s3').querySelectorAll('.chip')].forEach((c,i)=>{const p=eo(ramp(lt,0.8+i*0.12,1.4+i*0.12));c.style.opacity=p;c.style.transform=`translateY(${(1-p)*20}px)`});}
+  // S4
+  {const lt=t-SC.s4[0];copyIn($('s4'),lt);
+   const a=eo(ramp(lt,0.2,1.3));set($('s4a'),a,0,(1-a)*200,0.84+0.04*a);
+   [...$('s4').querySelectorAll('.chip')].forEach((c,i)=>{const p=eo(ramp(lt,0.8+i*0.14,1.4+i*0.14));c.style.opacity=p;c.style.transform=`translateY(${(1-p)*20}px)`});
+   const wp=eo(ramp(lt,1.0,1.8));wave.style.opacity=wp*0.55;
+   [...wave.children].forEach((b,i)=>{const h=20+90*Math.abs(Math.sin(lt*3+i*0.45)*Math.sin(lt*1.3+i*0.17));b.style.height=h+'px'});}
+  // S5
+  {const lt=t-SC.s5[0];copyIn($('s5'),lt);
+   nEls.forEach((n,i)=>{const p=eo(ramp(lt,0.4+nodes[i][3],0.9+nodes[i][3]));const fl=6*Math.sin(lt*1.5+i);n.setAttribute('transform',`translate(${n._x},${n._y+fl}) scale(${0.3+0.7*p})`);n.style.opacity=p});
+   eEls.forEach((l,i)=>{const [a,b,d]=edges[i];const p=eio(ramp(lt,0.6+d,1.3+d));const x1=nodes[a][1],y1=nodes[a][2]+6*Math.sin(lt*1.5+a),x2=nodes[b][1],y2=nodes[b][2]+6*Math.sin(lt*1.5+b);
+     l.setAttribute('x1',x1);l.setAttribute('y1',y1);l.setAttribute('x2',x1+(x2-x1)*p);l.setAttribute('y2',y1+(y2-y1)*p);l.style.opacity=0.55*Math.min(1,p*3)});}
+  // S6
+  {const lt=t-SC.s6[0];['p1','p2','p3'].forEach((id,i)=>{const p=eo(ramp(lt,0.2+i*0.75,0.9+i*0.75));set($(id),p,0,(1-p)*50,1,0,(1-p)*12)});}
+  // S7
+  {const lt=t-SC.s7[0];const p=eo(ramp(lt,0.2,1.1));set($('s7icon'),p,0,(1-p)*30,0.6+0.4*p);
+   const p2=eo(ramp(lt,0.5,1.4));set($('s7t'),p2,0,(1-p2)*40,1,0,(1-p2)*10);
+   const p3=eo(ramp(lt,0.9,1.8));set($('s7s'),p3,0,(1-p3)*30);
+   const p4=eo(ramp(lt,1.3,2.2));$('s7u').style.opacity=p4;$('s7u').style.transform=`translateX(-50%) translateY(${(1-p4)*30}px) scale(${0.9+0.1*p4})`;
+   const fade=1-ramp(t,DURATION-0.6,DURATION);$('stage').style.opacity=fade;}
+}
+window.render=render;window.DURATION=DURATION;render(0);
+</script></body></html>
