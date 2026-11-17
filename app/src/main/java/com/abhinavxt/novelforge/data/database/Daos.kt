@@ -181,6 +181,29 @@ interface NovelDao {
     @Query("UPDATE novels SET language = :language WHERE id = :novelId")
     suspend fun setLanguage(novelId: String, language: String?)
 
+    // ── Sync ────────────────────────────────────────────────────
+
+    /** Imported books that hold their text but have no fingerprint yet (backfilled for sync). */
+    @Query("SELECT id FROM novels WHERE source = 'local' AND textFingerprint IS NULL AND archivedAt IS NULL")
+    suspend fun getLocalNovelIdsWithoutFingerprint(): List<String>
+
+    @Query("UPDATE novels SET textFingerprint = :fingerprint WHERE id = :novelId")
+    suspend fun setFingerprint(novelId: String, fingerprint: String)
+
+    @Query("SELECT * FROM categories")
+    suspend fun getAllCategoriesOnce(): List<CategoryEntity>
+
+    @Query("SELECT * FROM novel_categories")
+    suspend fun getAllCrossRefsOnce(): List<NovelCategoryCrossRef>
+
+    @Query("""
+        SELECT rs.novelId AS novelId, c.number AS chapterNumber, rs.wordsRead AS wordsRead,
+               rs.readingTimeMs AS readingTimeMs, rs.completedAt AS completedAt
+        FROM reading_stats rs LEFT JOIN chapters c ON c.id = rs.chapterId
+        ORDER BY rs.id
+    """)
+    suspend fun getStatSyncRows(): List<StatSyncRow>
+
     // Source migration: rows that only need their novelId re-pointed.
     @Query("UPDATE reading_stats SET novelId = :to WHERE novelId = :from")
     suspend fun moveReadingStats(from: String, to: String)
@@ -191,6 +214,18 @@ interface NovelDao {
     @Query("UPDATE novel_categories SET novelId = :to WHERE novelId = :from")
     suspend fun moveCategories(from: String, to: String)
 }
+
+/** Id, title and url of one chapter row. For sync. */
+data class ChapterRef(val id: String, val title: String, val url: String)
+
+/** One reading-stat event with the number of its chapter (null when the chapter row is gone). For sync. */
+data class StatSyncRow(
+    val novelId: String,
+    val chapterNumber: Int?,
+    val wordsRead: Int,
+    val readingTimeMs: Long,
+    val completedAt: Long
+)
 
 data class NovelStatusRow(val id: String, val readingStatus: String)
 
@@ -277,6 +312,10 @@ interface ChapterDao {
     /** Whether the chapter holds stored text; null when it has no row. Cheaper than loading the text to ask. */
     @Query("SELECT isDownloaded FROM chapters WHERE id = :chapterId")
     suspend fun isDownloaded(chapterId: String): Boolean?
+
+    /** The local row of chapter [number] (sync resolves positions by number); null when not fetched yet. */
+    @Query("SELECT id, title, url FROM chapters WHERE novelId = :novelId AND number = :number ORDER BY id LIMIT 1")
+    suspend fun getChapterRefByNumber(novelId: String, number: Int): ChapterRef?
 
     @Query("SELECT COUNT(*) FROM chapters WHERE novelId = :novelId")
     suspend fun getChapterCount(novelId: String): Int
@@ -808,6 +847,9 @@ interface CategoryDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertCrossRefs(refs: List<NovelCategoryCrossRef>)
+
+    @Query("DELETE FROM novel_categories WHERE novelId = :novelId AND categoryId = :categoryId")
+    suspend fun deleteCrossRef(novelId: String, categoryId: Long)
 
     @Query("DELETE FROM novel_categories WHERE novelId = :novelId")
     suspend fun clearNovelCategories(novelId: String)

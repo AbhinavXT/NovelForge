@@ -793,6 +793,23 @@ fun SettingsScreen(
             HorizontalDivider()
             Spacer(modifier = Modifier.height(24.dp))
 
+            // ── Sync Section ─────────────────────────────────────
+            Text(
+                text = "Sync",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            com.abhinavxt.novelforge.ui.components.SyncSettingsSection(
+                viewModel = viewModel(
+                    factory = com.abhinavxt.novelforge.ui.viewmodel.SyncViewModel.Factory(context)
+                )
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(24.dp))
+
             // ── TTS Section ─────────────────────────────────────
             Text(
                 text = "Text-to-Speech",
