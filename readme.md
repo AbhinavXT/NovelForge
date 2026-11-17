@@ -4,9 +4,7 @@ A reading app for people who actually read.
 
 NovelForge is a privacy-respecting Android reader for web novels and EPUBs. No account. No subscription. No analytics. The book stays on your phone, and the app does the heavy lifting there too: a character codex, a relationship graph, and full-text search across your whole library, all computed on-device.
 
-<p align="center">
-  <a href="docs/media/promo.mp4"><img src="docs/media/promo-poster.jpg" alt="NovelForge promo video - click to play" width="800"></a>
-</p>
+https://github.com/user-attachments/assets/a7588bd9-af0d-4506-aa7c-577ba1e72662
 
 ## What it does
 
