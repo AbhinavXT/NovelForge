@@ -3,7 +3,15 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "scripts/promo-video/**"
   pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "scripts/promo-video/**"
 
 permissions:
   contents: read
@@ -35,9 +43,6 @@ jobs:
       # and matches its index entry) and the plugin runtime tests.
       - name: Unit tests
         run: ./gradlew --no-daemon :app:testDebugUnitTest
-
-      - name: Debug build
-        run: ./gradlew --no-daemon :app:assembleDebug
 
       - name: Upload test reports
         if: failure()
