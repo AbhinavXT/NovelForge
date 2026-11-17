@@ -231,7 +231,7 @@ fun CodexScreen(
                 hasScanned == false && scanState is CodexViewModel.ScanState.Idle -> {
                     CodexEmptyState(
                         title = "Build the codex",
-                        subtitle = "Claude-free, offline heuristics scan your downloaded chapters and find every recurring character, place, and faction.",
+                        subtitle = "Offline heuristics scan your downloaded chapters and find every recurring character, place, and faction.",
                         buttonLabel = "Scan downloaded chapters",
                         onButtonClick = { viewModel.startScan() }
                     )
