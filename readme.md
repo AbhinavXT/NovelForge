@@ -2,7 +2,7 @@
 
 A reading app for people who actually read.
 
-NovelForge is a privacy-respecting Android reader for web novels and EPUBs. No account. No subscription. No analytics. The book stays on your phone - and now the app reads it too: a character codex, a relationship graph, and full-text search across your whole library, all computed on-device.
+NovelForge is a privacy-respecting Android reader for web novels and EPUBs. No account. No subscription. No analytics. The book stays on your phone, and the app does the heavy lifting there too: a character codex, a relationship graph, and full-text search across your whole library, all computed on-device.
 
 <p align="center">
   <a href="docs/media/promo.mp4"><img src="docs/media/promo-poster.jpg" alt="NovelForge promo video - click to play" width="800"></a>
@@ -14,17 +14,20 @@ NovelForge is a privacy-respecting Android reader for web novels and EPUBs. No a
 - **Character codex** - every recurring character, place, and faction indexed on-device, spoiler-safe: it only ever shows you what you've read
 - **Relationship graph** - who appears with whom, drawn as a live map that grows with your reading position
 - Full-text search across every downloaded chapter, plus in-chapter find with match highlighting
-- 12 themes (including one for e-ink screens, with an e-ink mode that turns off animations), 8 reading fonts, configurable margins and line spacing
+- 12 themes (including one for e-ink screens, with an e-ink mode that turns off animations), 8 reading fonts, bionic reading, configurable margins and line spacing
 - Scroll mode, paged mode, a teleprompter-style auto-scroll, and four tap-zone layouts
+- Downloads chapters in the background for offline reading, with a continue-reading home-screen widget
+- Sync your library, progress, bookmarks and highlights between devices through your own WebDAV server - still no account
+- App lock with your device's screen lock or fingerprint
 - Translate raw or machine-translated novels with your own AI key or offline, with a per-book glossary that keeps names consistent
-- Character voices: each character read in their own Kokoro voice, cast automatically from the codex
+- Character voices: each character read in their own Kokoro, Piper or Google voice, cast automatically from the codex
 - Neural text-to-speech with Piper, Kokoro, and your device's TTS
 - A pronunciation dictionary that can also *silence* symbols and words the engine reads aloud
 - Generates M4B audiobooks with chapter markers
 - Tracks reading stats locally (streaks, words, chapters, time)
 - Bookmarks and highlights with notes, exportable as JSON
 - Backup and restore as a single ZIP
-- Sources are plugins: 22 built in, kept up to date from [NovelForge-plugins](https://github.com/AbhinavXT/NovelForge-plugins), and you can add your own ([how](docs/PLUGINS.md))
+- Sources are plugins: 4 bundled, about 20 more one tap away, all kept up to date from [NovelForge-plugins](https://github.com/AbhinavXT/NovelForge-plugins), and you can add your own ([how](docs/PLUGINS.md))
 
 [Full feature list →](docs/FEATURES.md)
 
@@ -36,11 +39,9 @@ Requires Android 7.0 (API 24) or later. Not on the Play Store.
 
 Note: the APK ships `arm64-v8a` and `x86_64` only, so 32-bit ARM devices are not supported despite the API level.
 
-```
 1. Download the APK
 2. Open it - Android asks once for install permission
 3. Open the app
-```
 
 That's it. No account, no setup.
 
@@ -60,14 +61,14 @@ the environment, so sign it yourself (or use `assembleDebug`) before it will
 install. Official releases are built by `.github/workflows/release.yml` when a
 `v*` tag is pushed.
 
-Requirements: Android Studio Ladybug or later, JDK 21, Android SDK 36.
+Requirements: Android Studio Narwhal 3 (2025.1.3) or later, JDK 17 or 21, Android SDK 36.
 
 Gradle 8.14 does not run on JDK 25 - if Android Studio picks it up, set
 **Settings → Build Tools → Gradle → Gradle JDK** to 21.
 
 ## Stack
 
-Kotlin · Jetpack Compose · Room (with FTS4) · Coroutines/Flow · WorkManager · Coil · Sherpa-ONNX
+Kotlin · Jetpack Compose (Material 3) · Room (with FTS4) · Coroutines/Flow · WorkManager · OkHttp/jsoup · Rhino (plugin sandbox) · Coil · Sherpa-ONNX
 
 MVVM with a repository layer. See [`docs/FEATURES.md`](docs/FEATURES.md) for what each feature covers, and the source itself for how the layers connect.
 
@@ -79,10 +80,12 @@ The project is built on weekends. Reviews aren't instant. Be patient.
 
 Contributions are accepted under MIT, the same license as the project.
 
-## Disclaimer 
+## Disclaimer
 
 NovelForge is a reader. It does not host, store, or distribute any content. It renders pages from sources you choose to add, the same pages your browser would load.
+
 All content accessed through the app belongs to its respective authors and rightsholders. You are responsible for how you use the app and for complying with the terms of the sites you connect to and the laws of your jurisdiction.
+
 If a work is available through an official platform, Patreon, or paid tier, please support the author there. Web novelists depend on it.
 
 ## License
