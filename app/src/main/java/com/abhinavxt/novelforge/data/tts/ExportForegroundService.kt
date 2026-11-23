@@ -20,6 +20,9 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class ExportForegroundService : Service() {
 
+    // Set once onStartCommand has called startForeground; stopping earlier crashes the app.
+    @Volatile private var foregrounded = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -53,11 +56,12 @@ class ExportForegroundService : Service() {
             app.audioExporter.cancel()
             app.m4bBuilder.cancel()
         }
-        stopIfIdle()
+        synchronized(lock) {
+            foregrounded = true
+            if (count == 0) stopSelf()
+        }
         return START_NOT_STICKY
     }
-
-    private fun stopIfIdle() = synchronized(lock) { if (count == 0) stopSelf() }
 
     // API 35 caps mediaProcessing at ~6h; the system crashes the app if we don't stop.
     override fun onTimeout(startId: Int, fgsType: Int) {
@@ -86,7 +90,8 @@ class ExportForegroundService : Service() {
         /** The service stops itself once the last running export / build has finished. */
         fun end() = synchronized(lock) {
             if (count > 0) count--
-            if (count == 0) instance?.stopSelf()
+            // A job that ends before onStartCommand has foregrounded leaves the stop to onStartCommand.
+            if (count == 0) instance?.takeIf { it.foregrounded }?.stopSelf()
         }
     }
 }
