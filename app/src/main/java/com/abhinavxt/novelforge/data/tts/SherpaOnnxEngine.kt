@@ -334,7 +334,9 @@ class SherpaOnnxEngine(
 
             val created = SherpaOnnxWrapper.create(modelConfig)
             // Old handles may be mid-generate; release them only once the mutex is free.
-            val oldMain = synchronized(wrapperLock) { ttsWrapper.also { ttsWrapper = created } }
+            val oldMain = synchronized(wrapperLock) {
+                ttsWrapper.also { ttsWrapper = created; if (created != null) currentModelId = modelId }
+            }
             failedExtras.clear()
             releaseWhenIdle(extraModels.takeAll() + listOfNotNull(oldMain?.takeIf { it !== created }))
             if (ttsWrapper == null) {
@@ -343,7 +345,6 @@ class SherpaOnnxEngine(
             }
 
             sampleRate = ttsWrapper!!.sampleRate
-            currentModelId = modelId
             isReady = true
             Logger.d(TAG, "Loaded model: $modelId (sampleRate=$sampleRate)")
             onReady()
@@ -367,7 +368,7 @@ class SherpaOnnxEngine(
         onDone: () -> Unit,
         onError: (String) -> Unit
     ) {
-        if (!isReady || ttsWrapper == null) {
+        if (!isReady) {  // a null wrapper mid-swap is fine: generation waits on the mutex
             onError("SherpaOnnxEngine not initialized")
             return
         }
@@ -511,6 +512,9 @@ class SherpaOnnxEngine(
      * Expose the wrapper for direct generation (used by AudioExporter).
      */
     fun getTtsWrapper(): SherpaOnnxWrapper? = ttsWrapper
+
+    /** Narrator model's sample rate; a plain field, safe while the model is being swapped. */
+    fun narratorSampleRate(): Int = sampleRate
 
     // ── Downloaded models discovery ──────────────────────────────
 

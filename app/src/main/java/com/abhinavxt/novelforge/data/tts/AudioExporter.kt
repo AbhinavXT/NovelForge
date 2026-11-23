@@ -256,7 +256,6 @@ class AudioExporter(
         // Determine which engine to use
         val useSherpa = activeEngineId == SherpaOnnxEngine.ENGINE_ID
                 && sherpaEngine.isReady
-                && sherpaEngine.getTtsWrapper() != null
 
         val useGoogle = activeEngineId == GoogleTTSEngine.ENGINE_ID
                 && googleEngine.isReady
@@ -293,7 +292,7 @@ class AudioExporter(
             val tempFile = File(context.cacheDir, "tts_export_${System.currentTimeMillis()}.pcm")
             tempFile.createNewFile()
             var totalPcmBytes = 0L
-            var sampleRate = if (useSherpa) sherpaEngine.getTtsWrapper()!!.sampleRate else 22050
+            var sampleRate = if (useSherpa) sherpaEngine.narratorSampleRate() else 22050
             var sampleRateKnown = useSherpa
 
             try {
