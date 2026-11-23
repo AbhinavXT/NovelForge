@@ -21,11 +21,11 @@ import java.nio.ByteOrder
 /**
  * Merges individual exported WAV chapter files into a single audiobook WAV.
  *
- * Reads from Music/NovelReader/{novelTitle}/, sorts chapters by filename,
+ * Reads from Music/NovelForge/{novelTitle}/, sorts chapters by filename,
  * verifies matching sample rates, concatenates PCM data, and writes a
  * combined WAV file.
  *
- * Output: Music/NovelReader/{novelTitle}/{novelTitle}_audiobook.wav
+ * Output: Music/NovelForge/{novelTitle}/{novelTitle}_audiobook.wav
  */
 class AudioMerger(private val context: Context) {
 
@@ -42,7 +42,7 @@ class AudioMerger(private val context: Context) {
     /**
      * Merge all WAV files in a novel's export directory into one audiobook.
      *
-     * @param novelTitle The novel folder name under Music/NovelReader/
+     * @param novelTitle The novel folder name under Music/NovelForge/
      * @param voiceFilter Optional voice name to filter — only merge files for this voice
      */
     suspend fun mergeChapters(
@@ -50,10 +50,7 @@ class AudioMerger(private val context: Context) {
         voiceFilter: String? = null
     ): String? = withContext(Dispatchers.IO) {
         try {
-            val baseDir = File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),
-                "novelforge/$novelTitle"
-            )
+            val baseDir = AudioExporter.novelAudioDir(AudioExporter.sanitizeName(novelTitle))
 
             if (!baseDir.exists() || !baseDir.isDirectory) {
                 _state.value = MergeState.Error("No exported audio found for \"$novelTitle\"")
@@ -77,7 +74,7 @@ class AudioMerger(private val context: Context) {
                 ?: emptyList()
 
             if (wavFiles.isEmpty()) {
-                _state.value = MergeState.Error("No WAV files found to merge")
+                _state.value = MergeState.Error("No WAV files found to merge. Merge works on WAV exports; build an M4B instead")
                 return@withContext null
             }
 
@@ -204,7 +201,7 @@ class AudioMerger(private val context: Context) {
         val values = ContentValues().apply {
             put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
             put(MediaStore.Audio.Media.MIME_TYPE, "audio/wav")
-            put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/novelforge/$novelFolder")
+            put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/${AudioExporter.SUBFOLDER}/$novelFolder")
             put(MediaStore.Audio.Media.IS_PENDING, 1)
         }
 
@@ -223,7 +220,7 @@ class AudioMerger(private val context: Context) {
         values.put(MediaStore.Audio.Media.IS_PENDING, 0)
         context.contentResolver.update(uri, values, null, null)
 
-        return "Music/novelforge/$novelFolder/$fileName"
+        return "Music/${AudioExporter.SUBFOLDER}/$novelFolder/$fileName"
     }
 
     private fun writeDirectly(

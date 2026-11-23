@@ -10,6 +10,7 @@ import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.speech.tts.TextToSpeech
 import androidx.core.app.NotificationCompat
 import com.abhinavxt.novelforge.MainActivity
 import com.abhinavxt.novelforge.R
@@ -46,24 +47,39 @@ import java.nio.ByteOrder
  *
  * Exposes [exportState] as a StateFlow for UI observation.
  */
+/** Extensions of exported chapter audio: WAV, or AAC in an MP4 container. */
+internal val CHAPTER_AUDIO_EXTENSIONS = setOf("wav", "m4a")
+
+/** AAC bitrate for per-chapter .m4a exports (mono speech). */
+private const val CHAPTER_AAC_BITRATE = 64_000
+
 class AudioExporter(
     private val context: Context,
     private val ttsManager: com.abhinavxt.novelforge.data.TTSManager
 ) {
     companion object {
         private const val TAG = "AudioExporter"
-        private const val SUBFOLDER = "NovelForge"
+        /** Public Music subfolder every export, M4B build and merge reads and writes (exact case matters under scoped storage). */
+        internal const val SUBFOLDER = "NovelForge"
+
+        /** The one place that resolves a novel's audio folder; [novelFolder] is already sanitized. */
+        internal fun novelAudioDir(novelFolder: String): File =
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "$SUBFOLDER/$novelFolder")
+
+        /** Same sanitization as the exported file and folder names. */
+        internal fun sanitizeName(name: String): String =
+            name.replace(Regex("[^a-zA-Z0-9._\\- ]"), "_").replace(Regex("\\s+"), "_").take(100)
         private const val SILENCE_BETWEEN_SENTENCES_MS = 300
         private const val SILENCE_BETWEEN_PARAGRAPHS_MS = 600
 
         // Export progress notification
         private const val EXPORT_CHANNEL_ID = "audio_export_channel"
-        private const val EXPORT_NOTIFICATION_ID = 2001
+        const val EXPORT_NOTIFICATION_ID = 2001
     }
 
     // Own scope — survives ViewModel destruction so exports continue in background
     private val exportScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private var currentExportJob: Job? = null
+    private val exportJobs = mutableSetOf<Job>() // guarded by itself; Cancel must reach every running export
     private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
     init {
@@ -88,6 +104,14 @@ class AudioExporter(
      * Show or update the export progress notification.
      */
     private fun showExportNotification(chapterTitle: String, sentence: Int, total: Int, progress: Float) {
+        notificationManager.notify(
+            EXPORT_NOTIFICATION_ID,
+            buildExportNotification("Exporting: $chapterTitle", "Sentence $sentence / $total", (progress * 100).toInt())
+        )
+    }
+
+    /** The one progress notification; also used by [ExportForegroundService] as its foreground notification. */
+    fun buildExportNotification(title: String, text: String, percent: Int?): android.app.Notification {
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
@@ -95,21 +119,25 @@ class AudioExporter(
             context, 0, openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val cancelPending = PendingIntent.getService(
+            context, 1,
+            Intent(context, ExportForegroundService::class.java).setAction(ExportForegroundService.ACTION_CANCEL),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
-        val notification = NotificationCompat.Builder(context, EXPORT_CHANNEL_ID)
-            .setContentTitle("Exporting: $chapterTitle")
-            .setContentText("Sentence $sentence / $total")
+        return NotificationCompat.Builder(context, EXPORT_CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(text)
             .setSubText("Novel Forge")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setOngoing(true)
             .setContentIntent(openPending)
-            .setProgress(100, (progress * 100).toInt(), false)
+            .addAction(0, "Cancel", cancelPending)
+            .setProgress(100, percent ?: 0, percent == null)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setSilent(true)
             .build()
-
-        notificationManager.notify(EXPORT_NOTIFICATION_ID, notification)
     }
 
     /**
@@ -168,21 +196,20 @@ class AudioExporter(
     fun isChapterExported(novelTitle: String, chapterTitle: String, voiceName: String? = null): Boolean {
         val novelFolder = sanitizeFilename(novelTitle)
         val chapterPrefix = sanitizeFilename(chapterTitle)
-        val musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-        val novelDir = File(musicDir, "$SUBFOLDER/$novelFolder")
+        val novelDir = novelAudioDir(novelFolder)
         if (!novelDir.exists()) return false
 
         return if (voiceName != null) {
-            // Check for exact voice match: "Chapter_1_Amy_Low.wav"
+            // Check for exact voice match: "Chapter_1_Amy_Low.wav" or .m4a
             val voiceSuffix = sanitizeFilename(voiceName)
             val expectedName = "${chapterPrefix}_${voiceSuffix}"
             novelDir.listFiles()?.any {
-                it.isFile && it.extension == "wav" && it.nameWithoutExtension == expectedName
+                it.isFile && it.extension in CHAPTER_AUDIO_EXTENSIONS && it.nameWithoutExtension == expectedName
             } == true
         } else {
             // Match any voice: files starting with chapterPrefix
             novelDir.listFiles()?.any {
-                it.isFile && it.extension == "wav" && it.nameWithoutExtension.startsWith(chapterPrefix)
+                it.isFile && it.extension in CHAPTER_AUDIO_EXTENSIONS && it.nameWithoutExtension.startsWith(chapterPrefix)
             } == true
         }
     }
@@ -200,13 +227,12 @@ class AudioExporter(
         voiceName: String? = null
     ): Set<String> {
         val novelFolder = sanitizeFilename(novelTitle)
-        val musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-        val novelDir = File(musicDir, "$SUBFOLDER/$novelFolder")
+        val novelDir = novelAudioDir(novelFolder)
         if (!novelDir.exists()) return emptySet()
 
         // List files ONCE — this is the expensive I/O call
         val wavFileNames = novelDir.listFiles()
-            ?.filter { it.isFile && it.extension == "wav" }
+            ?.filter { it.isFile && it.extension in CHAPTER_AUDIO_EXTENSIONS }
             ?.map { it.nameWithoutExtension }
             ?.toSet()
             ?: return emptySet()
@@ -255,7 +281,6 @@ class AudioExporter(
         // Determine which engine to use
         val useSherpa = activeEngineId == SherpaOnnxEngine.ENGINE_ID
                 && sherpaEngine.isReady
-                && sherpaEngine.getTtsWrapper() != null
 
         val useGoogle = activeEngineId == GoogleTTSEngine.ENGINE_ID
                 && googleEngine.isReady
@@ -280,12 +305,20 @@ class AudioExporter(
             }
 
             Logger.d(TAG, "Exporting ${sentences.size} sentences for: $chapterTitle (engine=${if (useSherpa) "Sherpa" else "Google"})")
+            val startedAt = System.currentTimeMillis()
+
+            // Sherpa: one call per sentence. System TTS: consecutive same-voice sentences share a call
+            // (each call costs a thread hop and a file round trip); breaks at paragraph ends keep the longer pause.
+            // The fixed sentence pause is written between calls, so while it is non-zero nothing is grouped.
+            val units = if (useSherpa) sentences.map { SpeechChunk(it.text, it.voice, it.isParagraphEnd, 1) }
+            else chunkSentences(sentences, TextToSpeech.getMaxSpeechInputLength() - 100, SILENCE_BETWEEN_SENTENCES_MS)
+            var sentencesDone = 0
 
             // 2. Stream PCM to a temp file (avoids holding entire chapter in memory)
             val tempFile = File(context.cacheDir, "tts_export_${System.currentTimeMillis()}.pcm")
             tempFile.createNewFile()
             var totalPcmBytes = 0L
-            var sampleRate = if (useSherpa) sherpaEngine.getTtsWrapper()!!.sampleRate else 22050
+            var sampleRate = if (useSherpa) sherpaEngine.narratorSampleRate() else 22050
             var sampleRateKnown = useSherpa
 
             try {
@@ -296,18 +329,20 @@ class AudioExporter(
                     val paragraphSilenceSamples = (sampleRate * SILENCE_BETWEEN_PARAGRAPHS_MS) / 1000
                     val silenceBuffer = ByteArray(paragraphSilenceSamples * 2)
 
-                    for ((index, entry) in sentences.withIndex()) {
+                    for ((index, entry) in units.withIndex()) {
                         ensureActive()
 
-                        val progress = index.toFloat() / sentences.size
+                        val progress = sentencesDone.toFloat() / sentences.size
+                        val shown = minOf(sentencesDone + 1, sentences.size)
                         _exportState.value = ExportState.Exporting(
                             chapterId = chapterId,
                             progress = progress,
-                            currentSentence = index + 1,
+                            currentSentence = shown,
                             totalSentences = sentences.size
                         )
                         // Update notification so progress is visible even when user leaves the screen
-                        showExportNotification(chapterTitle, index + 1, sentences.size, progress)
+                        showExportNotification(chapterTitle, shown, sentences.size, progress)
+                        sentencesDone += entry.sentences
 
                         if (useSherpa) {
                             // ── Sherpa path: generate raw samples ──
@@ -320,6 +355,8 @@ class AudioExporter(
                                 else -> SherpaOnnxEngine.Line(entry.text, entry.voice?.toIntOrNull() ?: speakerId)
                             }
                             val audio = sherpaEngine.synthesize(line, speed)
+                            // A failed model rebuild must not end as a silent WAV reported done.
+                            if (audio == null && !sherpaEngine.isReady) error("TTS model unavailable")
 
                             if (audio != null && audio.samples.isNotEmpty()) {
                                 val samples = Resample.linear(audio.samples, audio.sampleRate, sampleRate)
@@ -410,10 +447,13 @@ class AudioExporter(
                 val novelFolder = sanitizeFilename(novelTitle)
                 val voiceSuffix = sanitizeFilename(voiceName)
                 val chapterFile = sanitizeFilename(chapterTitle) + "_" + voiceSuffix
-                val filePath = writeWavFromTempFile(novelFolder, chapterFile, tempFile, totalPcmBytes, sampleRate)
+                val filePath = if (ttsManager.exportFormat == "aac")
+                    writeM4aFromTempFile(novelFolder, chapterFile, tempFile, sampleRate)
+                else writeWavFromTempFile(novelFolder, chapterFile, tempFile, totalPcmBytes, sampleRate)
 
                 if (filePath != null) {
                     Logger.d(TAG, "Export complete: $filePath (${totalPcmBytes / 1024}KB PCM)")
+                    Logger.d(TAG, "Export timing: ${System.currentTimeMillis() - startedAt} ms for ${totalPcmBytes / 2.0 / sampleRate} s of audio")
                     _exportState.value = ExportState.Completed(chapterId, filePath)
                     showExportCompleteNotification(chapterTitle)
                     return@withContext true
@@ -443,6 +483,11 @@ class AudioExporter(
         }
     }
 
+    /** Local Piper/Kokoro exports run on more threads than playback does; see [SherpaOnnxEngine.withExportThreads]. */
+    private suspend fun <T> withFastSynthesis(block: suspend () -> T): T =
+        if (ttsManager.activeEngineId.value == SherpaOnnxEngine.ENGINE_ID) ttsManager.sherpaEngine.withExportThreads(block)
+        else block()
+
     /**
      * Launch a single chapter export in the exporter's own scope.
      * Survives ViewModel destruction — export continues even if user navigates away.
@@ -458,10 +503,12 @@ class AudioExporter(
         cast: VoiceCast? = null,
         onComplete: ((Boolean) -> Unit)? = null
     ) {
-        currentExportJob = exportScope.launch {
-            val success = exportChapter(chapterId, novelTitle, chapterTitle, voiceName, text, speakerId, speed, cast)
+        exportScope.launch {
+            val success = withFastSynthesis {
+                exportChapter(chapterId, novelTitle, chapterTitle, voiceName, text, speakerId, speed, cast)
+            }
             onComplete?.invoke(success)
-        }
+        }.also(::trackForeground)
     }
 
     /**
@@ -479,8 +526,8 @@ class AudioExporter(
         onEachComplete: ((String) -> Unit)? = null,
         onAllDone: (() -> Unit)? = null
     ) {
-        currentExportJob = exportScope.launch {
-            for (info in chapters) {
+        exportScope.launch {
+            withFastSynthesis { for (info in chapters) {
                 if (info.chapterId in alreadyExported) continue
                 if (info.content.isBlank()) continue
 
@@ -503,8 +550,18 @@ class AudioExporter(
                 } catch (e: Exception) {
                     Logger.e(TAG, "Export failed for ${info.chapterTitle}", e)
                 }
-            }
+            } }
             onAllDone?.invoke()
+        }.also(::trackForeground)
+    }
+
+    /** Keep [ExportForegroundService] up for as long as [job] runs (including if it is cancelled). */
+    private fun trackForeground(job: Job) {
+        synchronized(exportJobs) { exportJobs.add(job) }
+        ExportForegroundService.begin(context)
+        job.invokeOnCompletion {
+            synchronized(exportJobs) { exportJobs.remove(job) }
+            ExportForegroundService.end()
         }
     }
 
@@ -519,8 +576,7 @@ class AudioExporter(
      * Cancel any in-progress export.
      */
     fun cancel() {
-        currentExportJob?.cancel()
-        currentExportJob = null
+        synchronized(exportJobs) { exportJobs.toList() }.forEach { it.cancel() }
         _exportState.value = ExportState.Idle
         _exportingChapters.value = emptySet()
         dismissExportNotification()
@@ -534,13 +590,6 @@ class AudioExporter(
     }
 
     // ── Text splitting ───────────────────────────────────────────
-
-    private data class SentenceEntry(
-        val text: String,
-        val isParagraphEnd: Boolean,
-        /** The cast's voice for this line (speaker number, Piper model or system voice), or null for the export's own. */
-        val voice: String? = null
-    )
 
     private fun splitIntoSentences(text: String, cast: VoiceCast?): List<SentenceEntry> =
         Dialogue.pieces(text, cast?.characters?.keys?.toList().orEmpty(), voiced = cast?.enabled == true)
@@ -598,6 +647,76 @@ class AudioExporter(
             } else {
                 writeWavDirectly(novelFolder, chapterFile, tempFile, pcmSize, sampleRate)
             }
+        }
+    }
+
+    /**
+     * Encode the temp PCM straight to AAC (.m4a) in the cache, then publish it the way the WAV path does.
+     * Returns the saved path, or null on failure; the partial output is deleted either way.
+     */
+    private suspend fun writeM4aFromTempFile(
+        novelFolder: String,
+        chapterFile: String,
+        tempFile: File,
+        sampleRate: Int
+    ): String? {
+        val encoded = File(context.cacheDir, "tts_export_${System.currentTimeMillis()}.m4a")
+        return try {
+            withContext(Dispatchers.IO) {
+                M4BAudiobookBuilder.encodePcmFileToM4a(tempFile, sampleRate, CHAPTER_AAC_BITRATE, encoded)
+                ensureActive()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    writeM4aViaMediaStore(novelFolder, chapterFile, encoded)
+                } else {
+                    writeM4aDirectly(novelFolder, chapterFile, encoded)
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.e(TAG, "AAC encode failed", e)
+            null
+        } finally {
+            encoded.delete()
+        }
+    }
+
+    private fun writeM4aViaMediaStore(novelFolder: String, chapterFile: String, encoded: File): String? {
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Audio.Media.DISPLAY_NAME, "$chapterFile.m4a")
+            put(MediaStore.Audio.Media.MIME_TYPE, "audio/mp4")
+            put(MediaStore.Audio.Media.RELATIVE_PATH,
+                "${Environment.DIRECTORY_MUSIC}/$SUBFOLDER/$novelFolder")
+            put(MediaStore.Audio.Media.IS_PENDING, 1)
+        }
+        val resolver = context.contentResolver
+        val uri = resolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, contentValues) ?: return null
+        return try {
+            resolver.openOutputStream(uri)?.use { copyFileToStream(encoded, it) }
+            contentValues.clear()
+            contentValues.put(MediaStore.Audio.Media.IS_PENDING, 0)
+            resolver.update(uri, contentValues, null, null)
+            "${Environment.DIRECTORY_MUSIC}/$SUBFOLDER/$novelFolder/$chapterFile.m4a"
+        } catch (e: Exception) {
+            Logger.e(TAG, "MediaStore write failed", e)
+            resolver.delete(uri, null, null)
+            null
+        }
+    }
+
+    private fun writeM4aDirectly(novelFolder: String, chapterFile: String, encoded: File): String? {
+        val musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+        val outputDir = File(musicDir, "$SUBFOLDER/$novelFolder")
+        outputDir.mkdirs()
+        val outputFile = File(outputDir, "$chapterFile.m4a")
+        return try {
+            FileOutputStream(outputFile).use { copyFileToStream(encoded, it) }
+            MediaScannerConnection.scanFile(context, arrayOf(outputFile.absolutePath), arrayOf("audio/mp4"), null)
+            outputFile.absolutePath
+        } catch (e: Exception) {
+            Logger.e(TAG, "Direct write failed", e)
+            outputFile.delete()
+            null
         }
     }
 
@@ -767,9 +886,5 @@ class AudioExporter(
 
     // ── Utilities ────────────────────────────────────────────────
 
-    private fun sanitizeFilename(name: String): String {
-        return name.replace(Regex("[^a-zA-Z0-9._\\- ]"), "_")
-            .replace(Regex("\\s+"), "_")
-            .take(100)
-    }
+    private fun sanitizeFilename(name: String) = sanitizeName(name)
 }

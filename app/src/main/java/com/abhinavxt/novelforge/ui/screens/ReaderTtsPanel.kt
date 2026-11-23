@@ -39,6 +39,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.FilterChip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -487,6 +493,33 @@ internal fun TTSControlsPanel(
                         onValueChange = { ttsManager.setParagraphPause(it.toLong()) },
                         valueRange = 0f..3000f,
                         steps = 5
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Chapter export format; read when an export starts
+                    val exportFormat by ttsManager.exportFormatFlow.collectAsState()
+                    Text("Audio export format", style = MaterialTheme.typography.bodyMedium)
+                    Row(
+                        modifier = Modifier.selectableGroup(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("wav" to "WAV", "aac" to "AAC").forEach { (key, label) ->
+                            FilterChip(
+                                selected = exportFormat == key,
+                                onClick = { ttsManager.exportFormat = key },
+                                label = { Text(label) },
+                                modifier = Modifier.semantics {
+                                    role = Role.RadioButton
+                                    contentDescription = "Audio export format: $label"
+                                }
+                            )
+                        }
+                    }
+                    Text(
+                        "AAC (.m4a): about 4\u00d7 smaller than WAV",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))

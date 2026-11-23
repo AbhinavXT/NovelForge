@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <!-- Background chapter downloads run as a foreground WorkManager job. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Audio export / M4B build keep running in the background (API 35+ type). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
     <!-- AudioTrack has no setWakeMode() the way MediaPlayer does, so the
          CPU can suspend in the gap between sentences while Sherpa
          generates the next one. Normal permission, no user prompt. -->
@@ -58,6 +60,11 @@
         </activity>
 
         <!-- TTS Foreground Service -->
+        <service
+            android:name=".data.tts.ExportForegroundService"
+            android:foregroundServiceType="dataSync|mediaProcessing"
+            android:exported="false" />
+
         <service
             android:name=".data.TTSForegroundService"
             android:foregroundServiceType="mediaPlayback"

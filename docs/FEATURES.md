@@ -724,16 +724,20 @@ Generate an `.m4b` audiobook from any novel in your library.
 You'll be asked:
 
 - **Chapter range** - all, or a contiguous range
-- **Voice** - any installed Piper or Kokoro voice (system TTS not supported here; the audio quality wouldn't be worth the file size)
+- **Voice** - any installed voice: Piper, Kokoro or a system TTS voice (system voices sound robotic, so Piper or Kokoro is usually the better choice)
 - **Speed and pitch** - same controls as the reader's TTS
 
-The export runs in the background. You can keep using the app. When done, the M4B lands in `Downloads/NovelForge/`.
+The export runs in the background and keeps going if you leave the app: a notification shows progress and has a **Cancel** button. Cancelling an M4B build stops at once and leaves any existing audiobook of the same name untouched. When done, the M4B lands in `Music/NovelForge/<novel>/`, next to the chapter files.
 
 **M4B specifics:**
 
-- Container is MP4, audio is AAC (LC profile), 128 kbps mono, 22050 Hz sample rate. This is what audiobook players expect.
+- Container is MP4, audio is AAC (LC profile), 128 kbps mono, at the voice's own sample rate (chapters must share one, so build from a single voice). This is what audiobook players expect.
 - Chapter markers (Nero `chpl` atoms) are written, so apps like Smart Audiobook Player and BookFunnel show the correct chapter boundaries.
 - File size depends on total runtime. As a rough rule: ~1 MB per minute of audio. A 200-chapter novel can be 8+ hours = 500+ MB. The app warns before generating very large files.
+
+**Chapter export format:** chapter audio is exported as WAV by default. In the reader's TTS settings, "Audio export format" can be switched to AAC, which writes `.m4a` files (AAC-LC, mono, 64 kbps) about 4 times smaller than WAV. The choice is part of backup and restore. The audio library lists both. "Merge as Audiobook" only merges WAV files; for AAC chapters, build an M4B, which accepts `.m4a` and `.wav` chapters (if a chapter exists in both formats, the WAV is used).
+
+**Export speed:** Piper and Kokoro exports use more CPU cores on phones that have several fast ones. Very long sentences are split to fit a system voice's input limit. The gain depends on the phone.
 
 The export uses Android's `MediaCodec` for AAC encoding and `MediaMuxer` for the MP4 container - no FFmpeg dependency, no native binaries beyond what Sherpa-ONNX needs for the voice model itself.
 

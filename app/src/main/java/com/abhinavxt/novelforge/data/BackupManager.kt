@@ -127,7 +127,9 @@ data class TTSSettingsBackup(
     val voiceName: String?,
     val sentencePauseMs: Long,
     val paragraphPauseMs: Long,
-    val volume: Float
+    val volume: Float,
+    /** "wav" or "aac"; null in backups made before the option existed. */
+    val exportFormat: String? = null
 )
 
 data class BookmarkBackup(
@@ -303,7 +305,8 @@ class BackupManager(
                 voiceName = ttsPrefs.getString("tts_voice", null),
                 sentencePauseMs = ttsPrefs.getLong("tts_sentence_pause", 0L),
                 paragraphPauseMs = ttsPrefs.getLong("tts_paragraph_pause", 0L),
-                volume = ttsPrefs.getFloat("tts_volume", 1.0f)
+                volume = ttsPrefs.getFloat("tts_volume", 1.0f),
+                exportFormat = ttsPrefs.getString("tts_export_format", "wav")
             )
 
             // Bookmarks
@@ -512,6 +515,8 @@ class BackupManager(
                     .putLong("tts_sentence_pause", tts.sentencePauseMs)
                     .putLong("tts_paragraph_pause", tts.paragraphPauseMs)
                     .putFloat("tts_volume", tts.volume)
+                    // Old backups carry no format: leave the current choice alone.
+                    .putString("tts_export_format", tts.exportFormat ?: ttsPrefs.getString("tts_export_format", "wav"))
                     .apply()
             }
 

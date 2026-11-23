@@ -174,6 +174,17 @@ private data class VersionEntry(
 
 private val changelogEntries = listOf(
     VersionEntry(
+        version = "v2.12.0",
+        date = "Nov 2026",
+        changes = listOf(
+            "Export chapter audio as AAC (.m4a), about 4 times smaller than WAV. Choose it in the reader's TTS settings; WAV stays the default",
+            "Faster Piper and Kokoro exports on phones with more fast cores. Exports keep running in the background, with a Cancel button in the notification",
+            "Fixed: building an M4B or merging WAVs couldn't find exported chapters, and M4B chapter markers were never written",
+            "Fixed: cancelling an M4B build stops at once and no longer deletes an existing audiobook of the same name on Android 9 and older",
+            "Fixed: very long sentences are now split for system voices"
+        )
+    ),
+    VersionEntry(
         version = "v2.11.0",
         date = "Nov 2026",
         changes = listOf(
