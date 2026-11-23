@@ -59,7 +59,7 @@ class AudioExporter(
 
         // Export progress notification
         private const val EXPORT_CHANNEL_ID = "audio_export_channel"
-        private const val EXPORT_NOTIFICATION_ID = 2001
+        const val EXPORT_NOTIFICATION_ID = 2001
     }
 
     // Own scope — survives ViewModel destruction so exports continue in background
@@ -89,6 +89,14 @@ class AudioExporter(
      * Show or update the export progress notification.
      */
     private fun showExportNotification(chapterTitle: String, sentence: Int, total: Int, progress: Float) {
+        notificationManager.notify(
+            EXPORT_NOTIFICATION_ID,
+            buildExportNotification("Exporting: $chapterTitle", "Sentence $sentence / $total", (progress * 100).toInt())
+        )
+    }
+
+    /** The one progress notification; also used by [ExportForegroundService] as its foreground notification. */
+    fun buildExportNotification(title: String, text: String, percent: Int?): android.app.Notification {
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
@@ -96,21 +104,25 @@ class AudioExporter(
             context, 0, openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val cancelPending = PendingIntent.getService(
+            context, 1,
+            Intent(context, ExportForegroundService::class.java).setAction(ExportForegroundService.ACTION_CANCEL),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
-        val notification = NotificationCompat.Builder(context, EXPORT_CHANNEL_ID)
-            .setContentTitle("Exporting: $chapterTitle")
-            .setContentText("Sentence $sentence / $total")
+        return NotificationCompat.Builder(context, EXPORT_CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(text)
             .setSubText("Novel Forge")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setOngoing(true)
             .setContentIntent(openPending)
-            .setProgress(100, (progress * 100).toInt(), false)
+            .addAction(0, "Cancel", cancelPending)
+            .setProgress(100, percent ?: 0, percent == null)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setSilent(true)
             .build()
-
-        notificationManager.notify(EXPORT_NOTIFICATION_ID, notification)
     }
 
     /**
@@ -479,6 +491,7 @@ class AudioExporter(
             }
             onComplete?.invoke(success)
         }
+        trackForeground(currentExportJob!!)
     }
 
     /**
@@ -523,6 +536,13 @@ class AudioExporter(
             } }
             onAllDone?.invoke()
         }
+        trackForeground(currentExportJob!!)
+    }
+
+    /** Keep [ExportForegroundService] up for as long as [job] runs (including if it is cancelled). */
+    private fun trackForeground(job: Job) {
+        ExportForegroundService.begin(context)
+        job.invokeOnCompletion { ExportForegroundService.end(context) }
     }
 
     /** Data class for batch export */

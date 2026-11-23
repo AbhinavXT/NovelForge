@@ -14,6 +14,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -108,6 +109,8 @@ class M4BAudiobookBuilder(private val context: Context) {
         currentJob = scope.launch {
             generateAudiobook(novelTitle, voiceFilter)
         }
+        ExportForegroundService.begin(context)
+        currentJob!!.invokeOnCompletion { ExportForegroundService.end(context) }
     }
 
     fun cancel() {
@@ -230,7 +233,7 @@ class M4BAudiobookBuilder(private val context: Context) {
      * Encode all WAV files to a single AAC stream in an M4A container.
      * Tracks chapter boundaries (timestamps where each chapter starts).
      */
-    private fun encodeToM4A(
+    private suspend fun encodeToM4A(
         wavFiles: List<File>,
         sampleRate: Int,
         outputFile: File,
@@ -259,6 +262,7 @@ class M4BAudiobookBuilder(private val context: Context) {
 
         try {
             for ((fileIndex, wavFile) in wavFiles.withIndex()) {
+                currentCoroutineContext().ensureActive()
                 // Record chapter start timestamp
                 val chapterStartUs = (totalSamplesWritten * 1_000_000L) / sampleRate
                 val chapterTitle = extractChapterTitle(wavFile)
@@ -283,6 +287,7 @@ class M4BAudiobookBuilder(private val context: Context) {
                     var inputDone = false
 
                     while (!inputDone) {
+                        currentCoroutineContext().ensureActive()
                         // Feed input
                         val inputIndex = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
                         if (inputIndex >= 0) {
@@ -311,6 +316,7 @@ class M4BAudiobookBuilder(private val context: Context) {
 
                 // Drain any remaining output after this chapter
                 while (true) {
+                    currentCoroutineContext().ensureActive()
                     val result = drainEncoder(encoder, muxer, bufferInfo, trackIndex, muxerStarted)
                     if (result.first >= 0) trackIndex = result.first
                     if (result.second) muxerStarted = true
@@ -346,6 +352,7 @@ class M4BAudiobookBuilder(private val context: Context) {
             // Final drain
             var draining = true
             while (draining) {
+                currentCoroutineContext().ensureActive()
                 val outIdx = encoder.dequeueOutputBuffer(bufferInfo, CODEC_TIMEOUT_US)
                 when {
                     outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
@@ -369,12 +376,11 @@ class M4BAudiobookBuilder(private val context: Context) {
             }
 
         } finally {
-            encoder.stop()
-            encoder.release()
-            if (muxerStarted) {
-                muxer.stop()
-            }
-            muxer.release()
+            // Each step guarded so a failing stop() can't skip the releases or mask a cancel.
+            runCatching { encoder.stop() }
+            runCatching { encoder.release() }
+            if (muxerStarted) runCatching { muxer.stop() }
+            runCatching { muxer.release() }
         }
 
         Logger.d(TAG, "Encoded ${wavFiles.size} chapters, total ${totalSamplesWritten} samples")
@@ -418,7 +424,7 @@ class M4BAudiobookBuilder(private val context: Context) {
      * Feed a block of PCM data (e.g. silence) to the encoder.
      * Returns (trackIndex, muxerStarted, samplesWritten).
      */
-    private fun feedPcmToEncoder(
+    private suspend fun feedPcmToEncoder(
         encoder: MediaCodec,
         muxer: MediaMuxer,
         pcmData: ByteArray,
@@ -434,6 +440,7 @@ class M4BAudiobookBuilder(private val context: Context) {
         var samplesWritten = 0L
 
         while (offset < pcmData.size) {
+            currentCoroutineContext().ensureActive()
             val inputIdx = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
             if (inputIdx >= 0) {
                 val inputBuffer = encoder.getInputBuffer(inputIdx)!!
@@ -682,7 +689,7 @@ class M4BAudiobookBuilder(private val context: Context) {
      * Save the M4B file to Music/novelforge/{novelFolder}/.
      * Uses MediaStore on Android 10+, direct file I/O on older versions.
      */
-    private fun saveToMusic(novelFolder: String, fileName: String, tempFile: File): String? {
+    private suspend fun saveToMusic(novelFolder: String, fileName: String, tempFile: File): String? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             saveViaMediaStore(novelFolder, fileName, tempFile)
         } else {
@@ -690,7 +697,7 @@ class M4BAudiobookBuilder(private val context: Context) {
         }
     }
 
-    private fun saveViaMediaStore(novelFolder: String, fileName: String, tempFile: File): String? {
+    private suspend fun saveViaMediaStore(novelFolder: String, fileName: String, tempFile: File): String? {
         val values = ContentValues().apply {
             put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
             put(MediaStore.Audio.Media.MIME_TYPE, "audio/mp4")
@@ -702,10 +709,14 @@ class M4BAudiobookBuilder(private val context: Context) {
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values
         ) ?: return null
 
-        context.contentResolver.openOutputStream(uri)?.use { out ->
-            FileInputStream(tempFile).use { input ->
-                input.copyTo(out, 8192)
+        try {
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                FileInputStream(tempFile).use { input -> copyCancellable(input, out) }
             }
+        } catch (e: Throwable) {
+            // Cancelled or failed mid-copy: drop the half-written pending row.
+            runCatching { context.contentResolver.delete(uri, null, null) }
+            throw e
         }
 
         values.clear()
@@ -715,15 +726,32 @@ class M4BAudiobookBuilder(private val context: Context) {
         return "Music/novelforge/$novelFolder/$fileName"
     }
 
-    private fun saveDirectly(novelFolder: String, fileName: String, tempFile: File): String? {
+    private suspend fun saveDirectly(novelFolder: String, fileName: String, tempFile: File): String? {
         val dir = File(
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),
             "novelforge/$novelFolder"
         )
         dir.mkdirs()
         val outputFile = File(dir, fileName)
-        tempFile.copyTo(outputFile, overwrite = true)
+        try {
+            FileInputStream(tempFile).use { input ->
+                outputFile.outputStream().use { out -> copyCancellable(input, out) }
+            }
+        } catch (e: Throwable) {
+            outputFile.delete()
+            throw e
+        }
         return outputFile.absolutePath
+    }
+
+    private suspend fun copyCancellable(input: java.io.InputStream, out: java.io.OutputStream) {
+        val buf = ByteArray(64 * 1024)
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val n = input.read(buf)
+            if (n < 0) break
+            out.write(buf, 0, n)
+        }
     }
 
     // ── Data classes ────────────────────────────────────────────
