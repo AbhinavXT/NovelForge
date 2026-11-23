@@ -372,7 +372,7 @@ fun AudioChapterListScreen(
                             Text("Combine ${novel?.chapters?.size ?: 0} chapter files into a single audiobook WAV.")
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                "Saved alongside the chapter files in Music/NovelReader/.",
+                                "Saved alongside the chapter files in Music/NovelForge/.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

@@ -59,7 +59,16 @@ class AudioExporter(
 ) {
     companion object {
         private const val TAG = "AudioExporter"
-        private const val SUBFOLDER = "NovelForge"
+        /** Public Music subfolder every export, M4B build and merge reads and writes (exact case matters under scoped storage). */
+        internal const val SUBFOLDER = "NovelForge"
+
+        /** The one place that resolves a novel's audio folder; [novelFolder] is already sanitized. */
+        internal fun novelAudioDir(novelFolder: String): File =
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "$SUBFOLDER/$novelFolder")
+
+        /** Same sanitization as the exported file and folder names. */
+        internal fun sanitizeName(name: String): String =
+            name.replace(Regex("[^a-zA-Z0-9._\\- ]"), "_").replace(Regex("\\s+"), "_").take(100)
         private const val SILENCE_BETWEEN_SENTENCES_MS = 300
         private const val SILENCE_BETWEEN_PARAGRAPHS_MS = 600
 
@@ -187,8 +196,7 @@ class AudioExporter(
     fun isChapterExported(novelTitle: String, chapterTitle: String, voiceName: String? = null): Boolean {
         val novelFolder = sanitizeFilename(novelTitle)
         val chapterPrefix = sanitizeFilename(chapterTitle)
-        val musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-        val novelDir = File(musicDir, "$SUBFOLDER/$novelFolder")
+        val novelDir = novelAudioDir(novelFolder)
         if (!novelDir.exists()) return false
 
         return if (voiceName != null) {
@@ -219,8 +227,7 @@ class AudioExporter(
         voiceName: String? = null
     ): Set<String> {
         val novelFolder = sanitizeFilename(novelTitle)
-        val musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-        val novelDir = File(musicDir, "$SUBFOLDER/$novelFolder")
+        val novelDir = novelAudioDir(novelFolder)
         if (!novelDir.exists()) return emptySet()
 
         // List files ONCE — this is the expensive I/O call
@@ -879,9 +886,5 @@ class AudioExporter(
 
     // ── Utilities ────────────────────────────────────────────────
 
-    private fun sanitizeFilename(name: String): String {
-        return name.replace(Regex("[^a-zA-Z0-9._\\- ]"), "_")
-            .replace(Regex("\\s+"), "_")
-            .take(100)
-    }
+    private fun sanitizeFilename(name: String) = sanitizeName(name)
 }

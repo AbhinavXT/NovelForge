@@ -517,7 +517,7 @@ internal fun TTSControlsPanel(
                         }
                     }
                     Text(
-                        "AAC (.m4a): about 5\u00d7 smaller than WAV",
+                        "AAC (.m4a): about 4\u00d7 smaller than WAV",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline
                     )

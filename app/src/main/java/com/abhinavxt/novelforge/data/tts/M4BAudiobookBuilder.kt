@@ -38,7 +38,7 @@ import java.nio.ByteOrder
  * and support chapter navigation (tap to jump to Chapter 5).
  *
  * Pipeline:
- *   1. Read WAV files from Music/novelforge/{novelTitle}/
+ *   1. Read WAV files from Music/${AudioExporter.SUBFOLDER}/{novelTitle}/
  *   2. Encode PCM → AAC using [MediaCodec] (128kbps, LC profile)
  *   3. Mux into MP4 container using [MediaMuxer]
  *   4. Track chapter boundary timestamps during encoding
@@ -435,10 +435,10 @@ class M4BAudiobookBuilder(private val context: Context) {
     /**
      * Generate a chaptered M4B audiobook from exported WAV files.
      *
-     * Reads WAV files from Music/novelforge/[novelTitle]/, encodes them
+     * Reads WAV files from Music/${AudioExporter.SUBFOLDER}/[novelTitle]/, encodes them
      * to AAC, creates a single .m4b with chapter markers.
      *
-     * @param novelTitle  Folder name under Music/novelforge/
+     * @param novelTitle  Folder name under Music/${AudioExporter.SUBFOLDER}/
      * @param voiceFilter Optional — only use WAV files from this voice
      */
     fun launch(novelTitle: String, voiceFilter: String? = null) {
@@ -467,10 +467,7 @@ class M4BAudiobookBuilder(private val context: Context) {
     ) = withContext(Dispatchers.IO) {
         try {
             // 1. Find and sort WAV chapter files
-            val baseDir = File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),
-                "novelforge/${sanitizeFilename(novelTitle)}"
-            )
+            val baseDir = AudioExporter.novelAudioDir(sanitizeFilename(novelTitle))
 
             if (!baseDir.exists() || !baseDir.isDirectory) {
                 _state.value = BuildState.Error("No exported audio found for \"$novelTitle\"")
@@ -546,7 +543,7 @@ class M4BAudiobookBuilder(private val context: Context) {
 
                 ensureActive()
 
-                // 5. Save to Music/novelforge/ as .m4b
+                // 5. Save to Music/${AudioExporter.SUBFOLDER}/ as .m4b
                 _state.value = BuildState.Building(
                     phase = "Saving audiobook",
                     currentChapter = wavFiles.size,
@@ -722,12 +719,15 @@ class M4BAudiobookBuilder(private val context: Context) {
             val atomPos = raf.filePointer
             if (raf.read(headerBuf) != 8) break
 
-            val size = ByteBuffer.wrap(headerBuf, 0, 4).order(ByteOrder.BIG_ENDIAN).int.toLong() and 0xFFFFFFFFL
+            var size = ByteBuffer.wrap(headerBuf, 0, 4).order(ByteOrder.BIG_ENDIAN).int.toLong() and 0xFFFFFFFFL
             val type = headerBuf.copyOfRange(4, 8)
 
             if (type.contentEquals(typeBytes)) {
                 return atomPos
             }
+
+            // size == 1: the real size follows as 64 bits (MediaMuxer writes mdat this way on newer Android)
+            if (size == 1L) size = raf.readLong()
 
             // Move to next atom
             if (size < 8) break // Invalid
@@ -786,16 +786,12 @@ class M4BAudiobookBuilder(private val context: Context) {
      * Must match [AudioExporter.sanitizeFilename] exactly — the WAV files
      * are saved using that function, so we need to find them with the same name.
      */
-    private fun sanitizeFilename(name: String): String {
-        return name.replace(Regex("[^a-zA-Z0-9._\\- ]"), "_")
-            .replace(Regex("\\s+"), "_")
-            .take(100)
-    }
+    private fun sanitizeFilename(name: String) = AudioExporter.sanitizeName(name)
 
     // ── File output ─────────────────────────────────────────────
 
     /**
-     * Save the M4B file to Music/novelforge/{novelFolder}/.
+     * Save the M4B file to Music/${AudioExporter.SUBFOLDER}/{novelFolder}/.
      * Uses MediaStore on Android 10+, direct file I/O on older versions.
      */
     private suspend fun saveToMusic(novelFolder: String, fileName: String, tempFile: File): String? {
@@ -810,7 +806,7 @@ class M4BAudiobookBuilder(private val context: Context) {
         val values = ContentValues().apply {
             put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
             put(MediaStore.Audio.Media.MIME_TYPE, "audio/mp4")
-            put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/novelforge/$novelFolder")
+            put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/${AudioExporter.SUBFOLDER}/$novelFolder")
             put(MediaStore.Audio.Media.IS_PENDING, 1)
         }
 
@@ -832,14 +828,11 @@ class M4BAudiobookBuilder(private val context: Context) {
         values.put(MediaStore.Audio.Media.IS_PENDING, 0)
         context.contentResolver.update(uri, values, null, null)
 
-        return "Music/novelforge/$novelFolder/$fileName"
+        return "Music/${AudioExporter.SUBFOLDER}/$novelFolder/$fileName"
     }
 
     private suspend fun saveDirectly(novelFolder: String, fileName: String, tempFile: File): String? {
-        val dir = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),
-            "novelforge/$novelFolder"
-        )
+        val dir = AudioExporter.novelAudioDir(novelFolder)
         dir.mkdirs()
         val outputFile = File(dir, fileName)
         // Write beside the target and rename on success so a cancel never destroys an existing audiobook.
