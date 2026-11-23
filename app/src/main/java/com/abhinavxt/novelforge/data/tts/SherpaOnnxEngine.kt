@@ -59,7 +59,9 @@ class SherpaOnnxEngine(
     override var isReady: Boolean = false
         private set
 
-    private var ttsWrapper: SherpaOnnxWrapper? = null
+    @Volatile private var ttsWrapper: SherpaOnnxWrapper? = null
+    /** Guards swaps of [ttsWrapper] between model loads and the export reload. */
+    private val wrapperLock = Any()
 
     private var currentModelId: String? = null
     private var currentSpeakerId: Int = 0
@@ -239,38 +241,59 @@ class SherpaOnnxEngine(
 
     /**
      * Runs [block] with the narrator model reloaded on more threads (thread count is fixed at creation),
-     * then reloads it at the playback count. The old instance is released first so a big model is never
-     * held twice. Playback during the export is safe: every generate goes through [generateMutex], and
-     * the swap happens under it; playback just uses the faster model until the export ends.
+     * then reloads it at the playback count. Skipped when that would not add threads. The old instance is
+     * released first so a big model is never held twice; [ttsWrapper] is null (never a released handle)
+     * while the new one builds, all under [generateMutex], so playback just waits. A voice change made
+     * meanwhile wins: whatever we built is released and the user's model stays.
      */
     suspend fun <T> withExportThreads(block: suspend () -> T): T {
-        val boosted = swapMainModel(SherpaOnnxWrapper.exportThreads())
+        val boosted = swapMainModel()
         try {
             return block()
         } finally {
             if (boosted != null) withContext(NonCancellable) {
                 generateMutex.withLock {
-                    // Not ours any more if the user loaded another model meanwhile (that path released it).
-                    if (ttsWrapper === boosted) { boosted.release(); ttsWrapper = reload(null) }
+                    val id = currentModelId
+                    // Not ours any more if the user loaded another model meanwhile (that path releases it).
+                    val ours = synchronized(wrapperLock) { (ttsWrapper === boosted).also { if (it) ttsWrapper = null } }
+                    if (ours && id != null) {
+                        boosted.release()
+                        val t0 = System.currentTimeMillis()
+                        val config = detectModelConfig(File(modelsDir, id))
+                        install(config?.let { SherpaOnnxWrapper.create(it) }, id)
+                        Logger.d(TAG, "Export model restore: ${System.currentTimeMillis() - t0} ms")
+                    }
                 }
             }
         }
     }
 
-    private suspend fun swapMainModel(threads: Int): SherpaOnnxWrapper? = generateMutex.withLock {
-        val old = ttsWrapper ?: return@withLock null
-        val dir = File(modelsDir, currentModelId ?: return@withLock null)
-        val config = detectModelConfig(dir) ?: return@withLock null
+    private suspend fun swapMainModel(): SherpaOnnxWrapper? = generateMutex.withLock {
+        val id = currentModelId ?: return@withLock null
+        val config = detectModelConfig(File(modelsDir, id)) ?: return@withLock null
+        val playback = SherpaOnnxWrapper.playbackThreads(config)
+        val threads = SherpaOnnxWrapper.exportThreads(playback)
+        if (!shouldBoost(threads, playback)) return@withLock null
+        val old = synchronized(wrapperLock) { ttsWrapper.also { ttsWrapper = null } } ?: return@withLock null
+        val t0 = System.currentTimeMillis()
         old.release()
-        val created = SherpaOnnxWrapper.create(config, threads) ?: SherpaOnnxWrapper.create(config)
-        ttsWrapper = created
-        created?.takeIf { it.threadsOverride }
+        val boosted = SherpaOnnxWrapper.create(config, threads)
+        val installed = boosted ?: SherpaOnnxWrapper.create(config)
+        Logger.d(TAG, "Export model swap to $threads threads: ${System.currentTimeMillis() - t0} ms")
+        install(installed, id)
+        boosted?.takeIf { it === ttsWrapper }
     }
 
-    private fun reload(threads: Int?): SherpaOnnxWrapper? {
-        val dir = File(modelsDir, currentModelId ?: return null)
-        val config = detectModelConfig(dir) ?: return null
-        return SherpaOnnxWrapper.create(config, threads)
+    /**
+     * Puts [w] in place if nobody changed the model since [id] was current, else releases it (the
+     * caller holds [generateMutex], so no generate is using it). A failed rebuild marks the engine
+     * not ready so the normal load path recovers.
+     */
+    private fun install(w: SherpaOnnxWrapper?, id: String) {
+        val ok = synchronized(wrapperLock) {
+            (ttsWrapper == null && currentModelId == id).also { if (it) ttsWrapper = w }
+        }
+        if (!ok) w?.release() else if (w == null) isReady = false
     }
 
     // ── Lifecycle ────────────────────────────────────────────────
@@ -301,7 +324,6 @@ class SherpaOnnxEngine(
         }
 
         clearCache()
-        val oldMain = ttsWrapper
 
         try {
             val modelConfig = detectModelConfig(modelDir)
@@ -312,7 +334,7 @@ class SherpaOnnxEngine(
 
             val created = SherpaOnnxWrapper.create(modelConfig)
             // Old handles may be mid-generate; release them only once the mutex is free.
-            ttsWrapper = created
+            val oldMain = synchronized(wrapperLock) { ttsWrapper.also { ttsWrapper = created } }
             failedExtras.clear()
             releaseWhenIdle(extraModels.takeAll() + listOfNotNull(oldMain?.takeIf { it !== created }))
             if (ttsWrapper == null) {
@@ -483,7 +505,7 @@ class SherpaOnnxEngine(
     }
 
     /** How many speakers the loaded model has; 1 for most Piper voices, 11+ for Kokoro. */
-    fun speakerCount(): Int = ttsWrapper?.numSpeakers() ?: 0
+    fun speakerCount(): Int = ttsWrapper?.speakerCount ?: 0
 
     /**
      * Expose the wrapper for direct generation (used by AudioExporter).
@@ -801,7 +823,7 @@ class SherpaOnnxWrapper private constructor(
     val threadsOverride: Boolean = false
 ) {
     /** A JNI call like the others; a model that can't say is treated as one speaker. */
-    fun numSpeakers(): Int = runCatching { tts.numSpeakers() }.getOrDefault(1)
+    val speakerCount: Int = runCatching { tts.numSpeakers() }.getOrDefault(1)  // read once: no JNI outside the mutex
 
     companion object {
         private const val TAG = "SherpaOnnxWrapper"
@@ -861,12 +883,14 @@ class SherpaOnnxWrapper private constructor(
         }
 
         /** Export thread count: the fast cores (from sysfs max freqs), capped at 6, at least the playback count. */
-        fun exportThreads(): Int {
+        fun playbackThreads(config: SherpaModelConfig): Int = getOptimalThreadCount(isHeavyModel = config.type != ModelType.VITS)
+
+        fun exportThreads(playback: Int): Int {
             val cores = Runtime.getRuntime().availableProcessors()
             val freqs = (0 until cores).mapNotNull {
                 runCatching { File("/sys/devices/system/cpu/cpu$it/cpufreq/cpuinfo_max_freq").readText().trim().toLong() }.getOrNull()
             }
-            return exportThreadCount(freqs, cores, getOptimalThreadCount(isHeavyModel = true))
+            return exportThreadCount(freqs, cores, playback)
         }
 
         private fun buildConfig(config: SherpaModelConfig, threads: Int? = null): OfflineTtsConfig {

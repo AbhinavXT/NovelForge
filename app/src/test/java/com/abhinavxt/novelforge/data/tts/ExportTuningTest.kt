@@ -24,6 +24,11 @@ class ExportTuningTest {
         assertEquals(2, exportThreadCount(emptyList(), 2, playbackThreads = 2))
     }
 
+    @Test fun boost_onlyWhenMoreThreads() {
+        assertEquals(false, shouldBoost(2, 2))
+        assertEquals(true, shouldBoost(4, 2))
+    }
+
     private fun s(t: String, para: Boolean = false, v: String? = null) = SentenceEntry(t, para, v)
 
     @Test fun chunks_groupSameVoiceAndSplitOnVoiceChange() {

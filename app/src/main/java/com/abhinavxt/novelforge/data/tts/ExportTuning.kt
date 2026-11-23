@@ -14,6 +14,9 @@ internal fun exportThreadCount(maxFreqs: List<Long>, cores: Int, playbackThreads
     return fast.coerceAtMost(cap).coerceAtLeast(playbackThreads)
 }
 
+/** Reloading the model only pays off when it adds threads. */
+internal fun shouldBoost(exportThreads: Int, playbackThreads: Int) = exportThreads > playbackThreads
+
 internal data class SentenceEntry(
     val text: String,
     val isParagraphEnd: Boolean,
