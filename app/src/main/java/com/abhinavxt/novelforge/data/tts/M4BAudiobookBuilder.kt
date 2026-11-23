@@ -73,6 +73,8 @@ class M4BAudiobookBuilder(private val context: Context) {
         /** MediaCodec buffer timeout in microseconds */
         private const val CODEC_TIMEOUT_US = 10_000L
 
+        private const val RATE_MISMATCH = "Chapters were exported at different sample rates; export them with one voice"
+
         /**
          * Chapter files to build from: .wav and .m4a exports (not earlier audiobooks), optionally for
          * one voice, in chapter order. When a chapter exists in both formats the WAV is used.
@@ -104,7 +106,7 @@ class M4BAudiobookBuilder(private val context: Context) {
         }
 
         /** Decode a mono .m4a to raw 16-bit PCM in [out]. */
-        private suspend fun decodeM4aToPcm(file: File, out: File) {
+        private suspend fun decodeM4aToPcm(file: File, out: File, expectedRate: Int) {
             val extractor = MediaExtractor()
             var decoder: MediaCodec? = null
             try {
@@ -115,6 +117,7 @@ class M4BAudiobookBuilder(private val context: Context) {
                 decoder.configure(format, null, null, 0)
                 decoder.start()
                 val info = MediaCodec.BufferInfo()
+                var channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
                 var inputDone = false
                 var outputDone = false
                 java.io.FileOutputStream(out).use { os ->
@@ -135,13 +138,26 @@ class M4BAudiobookBuilder(private val context: Context) {
                             }
                         }
                         val o = decoder.dequeueOutputBuffer(info, CODEC_TIMEOUT_US)
-                        if (o >= 0) {
+                        if (o == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                            val f = decoder.outputFormat
+                            channels = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                            check(f.getInteger(MediaFormat.KEY_SAMPLE_RATE) == expectedRate) { RATE_MISMATCH }
+                            check(channels in 1..2) { "Unsupported channel layout in ${file.name}" }
+                        } else if (o >= 0) {
                             val buf = decoder.getOutputBuffer(o)!!
                             buf.position(info.offset).limit(info.offset + info.size)
-                            while (buf.hasRemaining()) {
-                                val n = minOf(chunk.size, buf.remaining())
-                                buf.get(chunk, 0, n)
-                                os.write(chunk, 0, n)
+                            if (channels == 1) {
+                                while (buf.hasRemaining()) {
+                                    val n = minOf(chunk.size, buf.remaining())
+                                    buf.get(chunk, 0, n)
+                                    os.write(chunk, 0, n)
+                                }
+                            } else {
+                                // Stereo: average left and right into mono 16-bit
+                                val shorts = buf.order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+                                val bb = ByteBuffer.allocate(shorts.remaining() / 2 * 2).order(ByteOrder.LITTLE_ENDIAN)
+                                while (shorts.remaining() >= 2) bb.putShort(((shorts.get() + shorts.get()) / 2).toShort())
+                                os.write(bb.array(), 0, bb.position())
                             }
                             decoder.releaseOutputBuffer(o, false)
                             if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
@@ -158,7 +174,12 @@ class M4BAudiobookBuilder(private val context: Context) {
         // ── AAC encoding ────────────────────────────────────────────
 
         /** Raw 16-bit mono PCM in [file], after [skipBytes] of header. */
-        class PcmInput(val file: File, val skipBytes: Long = 0)
+        class PcmInput(
+            val file: File,
+            val skipBytes: Long = 0,
+            /** Runs just before the input is read (lazy decode); [file] is deleted after it is consumed. */
+            val prepare: (suspend () -> Unit)? = null
+        )
 
         /** Encode one PCM file to a single-track .m4a (used by the per-chapter AAC export). */
         suspend fun encodePcmFileToM4a(pcm: File, sampleRate: Int, bitrate: Int, outputFile: File) =
@@ -204,6 +225,7 @@ class M4BAudiobookBuilder(private val context: Context) {
                     onInputStart(fileIndex, chapterStartUs)
 
                     // Feed PCM to encoder
+                    input.prepare?.invoke()
                     FileInputStream(input.file).use { fis ->
                         fis.skip(input.skipBytes)
 
@@ -238,6 +260,8 @@ class M4BAudiobookBuilder(private val context: Context) {
                             }
                         }
                     }
+
+                    if (input.prepare != null) input.file.delete()
 
                     // Drain any remaining output after this chapter
                     while (true) {
@@ -478,7 +502,7 @@ class M4BAudiobookBuilder(private val context: Context) {
                 return@withContext
             }
             if (rates.any { it != sampleRate }) {
-                _state.value = BuildState.Error("Chapters were exported at different sample rates; export them with one voice")
+                _state.value = BuildState.Error(RATE_MISMATCH)
                 return@withContext
             }
 
@@ -490,11 +514,13 @@ class M4BAudiobookBuilder(private val context: Context) {
             try {
                 val inputs = wavFiles.mapIndexed { i, f ->
                     if (f.extension == "wav") PcmInput(f, 44) else {
-                        _state.value = BuildState.Building("Decoding", i + 1, wavFiles.size, i.toFloat() / wavFiles.size)
                         val pcm = File(context.cacheDir, "m4b_dec_${System.currentTimeMillis()}_$i.pcm")
                         tempPcm.add(pcm)
-                        decodeM4aToPcm(f, pcm)
-                        PcmInput(pcm)
+                        // Decoded just before it is encoded and deleted right after, so cache use stays one chapter
+                        PcmInput(pcm, 0) {
+                            _state.value = BuildState.Building("Decoding", i + 1, wavFiles.size, i.toFloat() / wavFiles.size)
+                            decodeM4aToPcm(f, pcm, sampleRate)
+                        }
                     }
                 }
                 encodePcmToM4a(inputs, sampleRate, AAC_BITRATE, tempM4a) { index, startUs ->

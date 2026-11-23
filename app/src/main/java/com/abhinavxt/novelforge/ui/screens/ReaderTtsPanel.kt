@@ -39,7 +39,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.FilterChip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -493,14 +498,21 @@ internal fun TTSControlsPanel(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // Chapter export format; read when an export starts
-                    var exportFormat by remember { mutableStateOf(ttsManager.exportFormat) }
+                    val exportFormat by ttsManager.exportFormatFlow.collectAsState()
                     Text("Audio export format", style = MaterialTheme.typography.bodyMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.selectableGroup(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         listOf("wav" to "WAV", "aac" to "AAC").forEach { (key, label) ->
                             FilterChip(
                                 selected = exportFormat == key,
-                                onClick = { exportFormat = key; ttsManager.exportFormat = key },
-                                label = { Text(label) }
+                                onClick = { ttsManager.exportFormat = key },
+                                label = { Text(label) },
+                                modifier = Modifier.semantics {
+                                    role = Role.RadioButton
+                                    contentDescription = "Audio export format: $label"
+                                }
                             )
                         }
                     }
