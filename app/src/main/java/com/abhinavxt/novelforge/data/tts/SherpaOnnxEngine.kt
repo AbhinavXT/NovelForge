@@ -274,7 +274,10 @@ class SherpaOnnxEngine(
         val playback = SherpaOnnxWrapper.playbackThreads(config)
         val threads = SherpaOnnxWrapper.exportThreads(playback)
         if (!shouldBoost(threads, playback)) return@withLock null
-        val old = synchronized(wrapperLock) { ttsWrapper.also { ttsWrapper = null } } ?: return@withLock null
+        // Only detach the model this swap was decided for; a load that got in first owns the wrapper now.
+        val old = synchronized(wrapperLock) {
+            if (currentModelId == id) ttsWrapper.also { ttsWrapper = null } else null
+        } ?: return@withLock null
         val t0 = System.currentTimeMillis()
         old.release()
         val boosted = SherpaOnnxWrapper.create(config, threads)
@@ -339,12 +342,13 @@ class SherpaOnnxEngine(
             }
             failedExtras.clear()
             releaseWhenIdle(extraModels.takeAll() + listOfNotNull(oldMain?.takeIf { it !== created }))
-            if (ttsWrapper == null) {
+            if (created == null) {
+                isReady = false  // the old model was just replaced by nothing
                 onError("Failed to create Sherpa-ONNX TTS instance for: ${modelDir.name}")
                 return
             }
 
-            sampleRate = ttsWrapper!!.sampleRate
+            sampleRate = created.sampleRate
             isReady = true
             Logger.d(TAG, "Loaded model: $modelId (sampleRate=$sampleRate)")
             onReady()

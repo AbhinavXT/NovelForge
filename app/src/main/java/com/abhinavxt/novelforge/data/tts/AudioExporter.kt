@@ -341,6 +341,8 @@ class AudioExporter(
                                 else -> SherpaOnnxEngine.Line(entry.text, entry.voice?.toIntOrNull() ?: speakerId)
                             }
                             val audio = sherpaEngine.synthesize(line, speed)
+                            // A failed model rebuild must not end as a silent WAV reported done.
+                            if (audio == null && !sherpaEngine.isReady) error("TTS model unavailable")
 
                             if (audio != null && audio.samples.isNotEmpty()) {
                                 val samples = Resample.linear(audio.samples, audio.sampleRate, sampleRate)
