@@ -1010,6 +1010,11 @@ class TTSManager(private val context: Context) {
         }
     }
 
+    /** Chapter export format: "wav" (default) or "aac" (.m4a). Read when an export starts. */
+    var exportFormat: String
+        get() = prefs.getString("tts_export_format", "wav") ?: "wav"
+        set(value) { prefs.edit().putString("tts_export_format", value).apply() }
+
     fun setSentencePause(pauseMs: Long) {
         _settings.value = _settings.value.copy(sentencePauseMs = pauseMs.coerceIn(0L, 2000L))
         saveSettings()

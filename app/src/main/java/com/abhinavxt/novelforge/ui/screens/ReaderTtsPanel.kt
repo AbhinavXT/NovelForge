@@ -39,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -487,6 +488,26 @@ internal fun TTSControlsPanel(
                         onValueChange = { ttsManager.setParagraphPause(it.toLong()) },
                         valueRange = 0f..3000f,
                         steps = 5
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Chapter export format; read when an export starts
+                    var exportFormat by remember { mutableStateOf(ttsManager.exportFormat) }
+                    Text("Audio export format", style = MaterialTheme.typography.bodyMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("wav" to "WAV", "aac" to "AAC").forEach { (key, label) ->
+                            FilterChip(
+                                selected = exportFormat == key,
+                                onClick = { exportFormat = key; ttsManager.exportFormat = key },
+                                label = { Text(label) }
+                            )
+                        }
+                    }
+                    Text(
+                        "AAC (.m4a): about 5\u00d7 smaller than WAV",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))

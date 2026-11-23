@@ -77,7 +77,7 @@ class AudioMerger(private val context: Context) {
                 ?: emptyList()
 
             if (wavFiles.isEmpty()) {
-                _state.value = MergeState.Error("No WAV files found to merge")
+                _state.value = MergeState.Error("No WAV files found to merge. Merge works on WAV exports; build an M4B instead")
                 return@withContext null
             }
 

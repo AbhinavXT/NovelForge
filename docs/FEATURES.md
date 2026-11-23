@@ -727,13 +727,15 @@ You'll be asked:
 - **Voice** - any installed voice: Piper, Kokoro or a system TTS voice (system voices sound robotic, so Piper or Kokoro is usually the better choice)
 - **Speed and pitch** - same controls as the reader's TTS
 
-The export runs in the background. You can keep using the app. When done, the M4B lands in `Downloads/NovelForge/`.
+The export runs in the background. You can keep using the app. When done, the M4B lands in `Music/NovelForge/<novel>/`, next to the chapter files.
 
 **M4B specifics:**
 
-- Container is MP4, audio is AAC (LC profile), 128 kbps mono, 22050 Hz sample rate. This is what audiobook players expect.
+- Container is MP4, audio is AAC (LC profile), 128 kbps mono, at the voice's own sample rate (chapters must share one, so build from a single voice). This is what audiobook players expect.
 - Chapter markers (Nero `chpl` atoms) are written, so apps like Smart Audiobook Player and BookFunnel show the correct chapter boundaries.
 - File size depends on total runtime. As a rough rule: ~1 MB per minute of audio. A 200-chapter novel can be 8+ hours = 500+ MB. The app warns before generating very large files.
+
+**Chapter export format:** chapter audio is exported as WAV by default. In the reader's TTS settings, "Audio export format" can be switched to AAC, which writes `.m4a` files (AAC-LC, mono, 64 kbps) about 5 times smaller than WAV. The choice is part of backup and restore. The audio library lists both. "Merge as Audiobook" only merges WAV files; for AAC chapters, build an M4B, which accepts `.m4a` and `.wav` chapters (if a chapter exists in both formats, the WAV is used).
 
 The export uses Android's `MediaCodec` for AAC encoding and `MediaMuxer` for the MP4 container - no FFmpeg dependency, no native binaries beyond what Sherpa-ONNX needs for the voice model itself.
 

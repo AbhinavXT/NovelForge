@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
+import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.os.Build
@@ -29,7 +30,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Generates a chaptered M4B audiobook from exported WAV chapter files.
+ * Generates a chaptered M4B audiobook from exported WAV or AAC (.m4a) chapter files.
  *
  * M4B is an AAC-encoded MP4 container with chapter markers — the standard
  * format used by Apple Books, Smart Audiobook Player, and most podcast apps.
@@ -71,6 +72,318 @@ class M4BAudiobookBuilder(private val context: Context) {
 
         /** MediaCodec buffer timeout in microseconds */
         private const val CODEC_TIMEOUT_US = 10_000L
+
+        /**
+         * Chapter files to build from: .wav and .m4a exports (not earlier audiobooks), optionally for
+         * one voice, in chapter order. When a chapter exists in both formats the WAV is used.
+         */
+        internal fun pickChapterFiles(files: List<File>, sanitizedVoice: String?): List<File> =
+            files.filter { it.isFile && it.extension in CHAPTER_AUDIO_EXTENSIONS && !it.name.contains("_audiobook") }
+                .filter { sanitizedVoice == null || it.nameWithoutExtension.endsWith("_$sanitizedVoice", ignoreCase = true) }
+                .sortedBy { if (it.extension == "wav") 0 else 1 }
+                .distinctBy { it.nameWithoutExtension }
+                .sortedBy { Regex("(\\d+)").find(it.nameWithoutExtension)?.value?.toIntOrNull() ?: 0 }
+
+        /** Sample rate of a chapter file (WAV header or .m4a track), or -1 when unreadable. */
+        private fun readSampleRate(file: File): Int = try {
+            if (file.extension == "m4a") {
+                val ex = MediaExtractor()
+                try {
+                    ex.setDataSource(file.absolutePath)
+                    ex.getTrackFormat(0).getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                } finally { ex.release() }
+            } else {
+                file.inputStream().use { input ->
+                    val header = ByteArray(44)
+                    input.read(header)
+                    ByteBuffer.wrap(header, 24, 4).order(ByteOrder.LITTLE_ENDIAN).int
+                }
+            }
+        } catch (e: Exception) {
+            -1
+        }
+
+        /** Decode a mono .m4a to raw 16-bit PCM in [out]. */
+        private suspend fun decodeM4aToPcm(file: File, out: File) {
+            val extractor = MediaExtractor()
+            var decoder: MediaCodec? = null
+            try {
+                extractor.setDataSource(file.absolutePath)
+                val format = extractor.getTrackFormat(0)
+                extractor.selectTrack(0)
+                decoder = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!)
+                decoder.configure(format, null, null, 0)
+                decoder.start()
+                val info = MediaCodec.BufferInfo()
+                var inputDone = false
+                var outputDone = false
+                java.io.FileOutputStream(out).use { os ->
+                    val chunk = ByteArray(16384)
+                    while (!outputDone) {
+                        currentCoroutineContext().ensureActive()
+                        if (!inputDone) {
+                            val i = decoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
+                            if (i >= 0) {
+                                val n = extractor.readSampleData(decoder.getInputBuffer(i)!!, 0)
+                                if (n < 0) {
+                                    decoder.queueInputBuffer(i, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                    inputDone = true
+                                } else {
+                                    decoder.queueInputBuffer(i, 0, n, extractor.sampleTime, 0)
+                                    extractor.advance()
+                                }
+                            }
+                        }
+                        val o = decoder.dequeueOutputBuffer(info, CODEC_TIMEOUT_US)
+                        if (o >= 0) {
+                            val buf = decoder.getOutputBuffer(o)!!
+                            buf.position(info.offset).limit(info.offset + info.size)
+                            while (buf.hasRemaining()) {
+                                val n = minOf(chunk.size, buf.remaining())
+                                buf.get(chunk, 0, n)
+                                os.write(chunk, 0, n)
+                            }
+                            decoder.releaseOutputBuffer(o, false)
+                            if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
+                        }
+                    }
+                }
+            } finally {
+                runCatching { decoder?.stop() }
+                runCatching { decoder?.release() }
+                extractor.release()
+            }
+        }
+
+        // ── AAC encoding ────────────────────────────────────────────
+
+        /** Raw 16-bit mono PCM in [file], after [skipBytes] of header. */
+        class PcmInput(val file: File, val skipBytes: Long = 0)
+
+        /** Encode one PCM file to a single-track .m4a (used by the per-chapter AAC export). */
+        suspend fun encodePcmFileToM4a(pcm: File, sampleRate: Int, bitrate: Int, outputFile: File) =
+            encodePcmToM4a(listOf(PcmInput(pcm)), sampleRate, bitrate, outputFile)
+
+        /**
+         * Encode PCM inputs back to back (with a silent gap between them) to one AAC stream in an
+         * M4A container. [onInputStart] gets each input's index and start time in microseconds.
+         */
+        suspend fun encodePcmToM4a(
+            inputs: List<PcmInput>,
+            sampleRate: Int,
+            bitrate: Int,
+            outputFile: File,
+            onInputStart: (index: Int, startUs: Long) -> Unit = { _, _ -> }
+        ) {
+            // Configure AAC encoder
+            val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, 1)
+            format.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+            format.setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
+
+            val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
+            encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            encoder.start()
+
+            val muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            var trackIndex = -1
+            var muxerStarted = false
+
+            // Total PCM samples processed — used to calculate timestamps
+            var totalSamplesWritten = 0L
+            val bufferInfo = MediaCodec.BufferInfo()
+
+            // Silence between chapters: N samples of zeros
+            val silenceSamples = (sampleRate * CHAPTER_GAP_MS) / 1000
+            val silenceBytes = ByteArray(silenceSamples * 2) // 16-bit = 2 bytes per sample
+
+            try {
+                for ((fileIndex, input) in inputs.withIndex()) {
+                    currentCoroutineContext().ensureActive()
+                    // Record chapter start timestamp
+                    val chapterStartUs = (totalSamplesWritten * 1_000_000L) / sampleRate
+                    onInputStart(fileIndex, chapterStartUs)
+
+                    // Feed PCM to encoder
+                    FileInputStream(input.file).use { fis ->
+                        fis.skip(input.skipBytes)
+
+                        val readBuffer = ByteArray(8192)
+                        var bytesRead: Int
+                        var inputDone = false
+
+                        while (!inputDone) {
+                            currentCoroutineContext().ensureActive()
+                            // Feed input
+                            val inputIndex = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
+                            if (inputIndex >= 0) {
+                                val inputBuffer = encoder.getInputBuffer(inputIndex)!!
+                                bytesRead = fis.read(readBuffer, 0, minOf(readBuffer.size, inputBuffer.remaining()))
+
+                                if (bytesRead <= 0) {
+                                    // No more data from this chapter
+                                    encoder.queueInputBuffer(inputIndex, 0, 0, 0, 0)
+                                    inputDone = true
+                                } else {
+                                    inputBuffer.put(readBuffer, 0, bytesRead)
+                                    val presentationTimeUs = (totalSamplesWritten * 1_000_000L) / sampleRate
+                                    encoder.queueInputBuffer(inputIndex, 0, bytesRead, presentationTimeUs, 0)
+                                    totalSamplesWritten += bytesRead / 2 // 16-bit = 2 bytes per sample
+                                }
+                            }
+
+                            // Drain output
+                            drainEncoder(encoder, muxer, bufferInfo, trackIndex, muxerStarted).let { (ti, ms) ->
+                                if (ti >= 0) trackIndex = ti
+                                if (ms) muxerStarted = true
+                            }
+                        }
+                    }
+
+                    // Drain any remaining output after this chapter
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val result = drainEncoder(encoder, muxer, bufferInfo, trackIndex, muxerStarted)
+                        if (result.first >= 0) trackIndex = result.first
+                        if (result.second) muxerStarted = true
+                        if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
+                        val outIdx = encoder.dequeueOutputBuffer(bufferInfo, CODEC_TIMEOUT_US)
+                        if (outIdx < 0 && outIdx != MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) break
+                        if (outIdx >= 0) {
+                            val buf = encoder.getOutputBuffer(outIdx)!!
+                            if (muxerStarted && bufferInfo.size > 0) {
+                                muxer.writeSampleData(trackIndex, buf, bufferInfo)
+                            }
+                            encoder.releaseOutputBuffer(outIdx, false)
+                        }
+                    }
+
+                    // Add silence between chapters (not after the last one)
+                    if (fileIndex < inputs.size - 1) {
+                        feedPcmToEncoder(encoder, muxer, silenceBytes, totalSamplesWritten,
+                            sampleRate, bufferInfo, trackIndex, muxerStarted).let { (ti, ms, sw) ->
+                            if (ti >= 0) trackIndex = ti
+                            if (ms) muxerStarted = true
+                            totalSamplesWritten += sw
+                        }
+                    }
+                }
+
+                // Signal end of stream
+                val finalInputIdx = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
+                if (finalInputIdx >= 0) {
+                    encoder.queueInputBuffer(finalInputIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                }
+
+                // Final drain
+                var draining = true
+                while (draining) {
+                    currentCoroutineContext().ensureActive()
+                    val outIdx = encoder.dequeueOutputBuffer(bufferInfo, CODEC_TIMEOUT_US)
+                    when {
+                        outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                            if (!muxerStarted) {
+                                trackIndex = muxer.addTrack(encoder.outputFormat)
+                                muxer.start()
+                                muxerStarted = true
+                            }
+                        }
+                        outIdx >= 0 -> {
+                            val buf = encoder.getOutputBuffer(outIdx)!!
+                            if (muxerStarted && bufferInfo.size > 0) {
+                                muxer.writeSampleData(trackIndex, buf, bufferInfo)
+                            }
+                            val isEos = bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                            encoder.releaseOutputBuffer(outIdx, false)
+                            if (isEos) draining = false
+                        }
+                        else -> draining = false
+                    }
+                }
+
+            } finally {
+                // Each step guarded so a failing stop() can't skip the releases or mask a cancel.
+                runCatching { encoder.stop() }
+                runCatching { encoder.release() }
+                if (muxerStarted) runCatching { muxer.stop() }
+                runCatching { muxer.release() }
+            }
+
+            Logger.d(TAG, "Encoded ${inputs.size} inputs, total ${totalSamplesWritten} samples")
+        }
+
+        /**
+         * Drain available output from the encoder and write to the muxer.
+         * Returns (trackIndex, muxerStarted) — either or both may have changed.
+         */
+        private fun drainEncoder(
+            encoder: MediaCodec,
+            muxer: MediaMuxer,
+            bufferInfo: MediaCodec.BufferInfo,
+            trackIndex: Int,
+            muxerStarted: Boolean
+        ): Pair<Int, Boolean> {
+            var ti = trackIndex
+            var ms = muxerStarted
+
+            val outIdx = encoder.dequeueOutputBuffer(bufferInfo, CODEC_TIMEOUT_US)
+            when {
+                outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                    if (!ms) {
+                        ti = muxer.addTrack(encoder.outputFormat)
+                        muxer.start()
+                        ms = true
+                    }
+                }
+                outIdx >= 0 -> {
+                    val outputBuffer = encoder.getOutputBuffer(outIdx)!!
+                    if (ms && bufferInfo.size > 0) {
+                        muxer.writeSampleData(ti, outputBuffer, bufferInfo)
+                    }
+                    encoder.releaseOutputBuffer(outIdx, false)
+                }
+            }
+            return ti to ms
+        }
+
+        /**
+         * Feed a block of PCM data (e.g. silence) to the encoder.
+         * Returns (trackIndex, muxerStarted, samplesWritten).
+         */
+        private suspend fun feedPcmToEncoder(
+            encoder: MediaCodec,
+            muxer: MediaMuxer,
+            pcmData: ByteArray,
+            currentSamples: Long,
+            sampleRate: Int,
+            bufferInfo: MediaCodec.BufferInfo,
+            trackIndex: Int,
+            muxerStarted: Boolean
+        ): Triple<Int, Boolean, Long> {
+            var ti = trackIndex
+            var ms = muxerStarted
+            var offset = 0
+            var samplesWritten = 0L
+
+            while (offset < pcmData.size) {
+                currentCoroutineContext().ensureActive()
+                val inputIdx = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
+                if (inputIdx >= 0) {
+                    val inputBuffer = encoder.getInputBuffer(inputIdx)!!
+                    val bytesToWrite = minOf(pcmData.size - offset, inputBuffer.remaining())
+                    inputBuffer.put(pcmData, offset, bytesToWrite)
+                    val pts = ((currentSamples + samplesWritten) * 1_000_000L) / sampleRate
+                    encoder.queueInputBuffer(inputIdx, 0, bytesToWrite, pts, 0)
+                    offset += bytesToWrite
+                    samplesWritten += bytesToWrite / 2
+                }
+                // Drain output while feeding
+                drainEncoder(encoder, muxer, bufferInfo, ti, ms).let { (t, m) ->
+                    if (t >= 0) ti = t
+                    if (m) ms = true
+                }
+            }
+            return Triple(ti, ms, samplesWritten)
+        }
     }
 
     // ── Observable state ────────────────────────────────────────
@@ -140,22 +453,13 @@ class M4BAudiobookBuilder(private val context: Context) {
                 return@withContext
             }
 
-            val wavFiles = baseDir.listFiles()
-                ?.filter { it.isFile && it.extension == "wav" && !it.name.contains("_audiobook") }
-                ?.filter { file ->
-                    if (voiceFilter != null) {
-                        val sanitizedVoice = sanitizeFilename(voiceFilter)
-                        file.nameWithoutExtension.endsWith("_$sanitizedVoice", ignoreCase = true)
-                    } else true
-                }
-                ?.sortedBy { file ->
-                    // Extract chapter number from filename: "Chapter_1_VoiceName.wav"
-                    Regex("(\\d+)").find(file.nameWithoutExtension)?.value?.toIntOrNull() ?: 0
-                }
-                ?: emptyList()
+            val wavFiles = pickChapterFiles(
+                baseDir.listFiles()?.toList() ?: emptyList(),
+                voiceFilter?.let { sanitizeFilename(it) }
+            )
 
             if (wavFiles.isEmpty()) {
-                _state.value = BuildState.Error("No WAV chapter files found. Export chapters first.")
+                _state.value = BuildState.Error("No exported chapter audio found. Export chapters first.")
                 return@withContext
             }
 
@@ -164,21 +468,44 @@ class M4BAudiobookBuilder(private val context: Context) {
                 return@withContext
             }
 
-            Logger.d(TAG, "Building M4B from ${wavFiles.size} WAV files")
+            Logger.d(TAG, "Building M4B from ${wavFiles.size} chapter files")
 
-            // 2. Read sample rate from first WAV (all must match)
-            val sampleRate = readWavSampleRate(wavFiles.first())
+            // 2. All chapters must share one sample rate (the voice's)
+            val rates = wavFiles.map { readSampleRate(it) }
+            val sampleRate = rates.first()
             if (sampleRate <= 0) {
-                _state.value = BuildState.Error("Cannot read audio format from WAV files")
+                _state.value = BuildState.Error("Cannot read audio format from chapter files")
+                return@withContext
+            }
+            if (rates.any { it != sampleRate }) {
+                _state.value = BuildState.Error("Chapters were exported at different sample rates; export them with one voice")
                 return@withContext
             }
 
-            // 3. Create temp M4A file, encode all chapters
+            // 3. Create temp M4A file, encode all chapters (.m4a ones are decoded to temp PCM first)
             val tempM4a = File(context.cacheDir, "audiobook_${System.currentTimeMillis()}.m4a")
             val chapters = mutableListOf<ChapterMark>()
+            val tempPcm = mutableListOf<File>()
 
             try {
-                encodeToM4A(wavFiles, sampleRate, tempM4a, chapters)
+                val inputs = wavFiles.mapIndexed { i, f ->
+                    if (f.extension == "wav") PcmInput(f, 44) else {
+                        _state.value = BuildState.Building("Decoding", i + 1, wavFiles.size, i.toFloat() / wavFiles.size)
+                        val pcm = File(context.cacheDir, "m4b_dec_${System.currentTimeMillis()}_$i.pcm")
+                        tempPcm.add(pcm)
+                        decodeM4aToPcm(f, pcm)
+                        PcmInput(pcm)
+                    }
+                }
+                encodePcmToM4a(inputs, sampleRate, AAC_BITRATE, tempM4a) { index, startUs ->
+                    chapters.add(ChapterMark(extractChapterTitle(wavFiles[index]), startUs))
+                    _state.value = BuildState.Building(
+                        phase = "Encoding",
+                        currentChapter = index + 1,
+                        totalChapters = wavFiles.size,
+                        progress = index.toFloat() / wavFiles.size
+                    )
+                }
 
                 ensureActive()
 
@@ -215,6 +542,7 @@ class M4BAudiobookBuilder(private val context: Context) {
 
             } finally {
                 tempM4a.delete()
+                tempPcm.forEach { it.delete() }
             }
 
         } catch (e: CancellationException) {
@@ -225,239 +553,6 @@ class M4BAudiobookBuilder(private val context: Context) {
             Logger.e(TAG, "M4B build failed", e)
             _state.value = BuildState.Error("Build failed: ${e.message}")
         }
-    }
-
-    // ── AAC encoding ────────────────────────────────────────────
-
-    /**
-     * Encode all WAV files to a single AAC stream in an M4A container.
-     * Tracks chapter boundaries (timestamps where each chapter starts).
-     */
-    private suspend fun encodeToM4A(
-        wavFiles: List<File>,
-        sampleRate: Int,
-        outputFile: File,
-        chapters: MutableList<ChapterMark>
-    ) {
-        // Configure AAC encoder
-        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, 1)
-        format.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
-        format.setInteger(MediaFormat.KEY_BIT_RATE, AAC_BITRATE)
-
-        val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
-        encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        encoder.start()
-
-        val muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-        var trackIndex = -1
-        var muxerStarted = false
-
-        // Total PCM samples processed — used to calculate timestamps
-        var totalSamplesWritten = 0L
-        val bufferInfo = MediaCodec.BufferInfo()
-
-        // Silence between chapters: N samples of zeros
-        val silenceSamples = (sampleRate * CHAPTER_GAP_MS) / 1000
-        val silenceBytes = ByteArray(silenceSamples * 2) // 16-bit = 2 bytes per sample
-
-        try {
-            for ((fileIndex, wavFile) in wavFiles.withIndex()) {
-                currentCoroutineContext().ensureActive()
-                // Record chapter start timestamp
-                val chapterStartUs = (totalSamplesWritten * 1_000_000L) / sampleRate
-                val chapterTitle = extractChapterTitle(wavFile)
-                chapters.add(ChapterMark(chapterTitle, chapterStartUs))
-
-                _state.value = BuildState.Building(
-                    phase = "Encoding",
-                    currentChapter = fileIndex + 1,
-                    totalChapters = wavFiles.size,
-                    progress = fileIndex.toFloat() / wavFiles.size
-                )
-
-                Logger.d(TAG, "Encoding chapter ${fileIndex + 1}/${wavFiles.size}: ${wavFile.name}")
-
-                // Read WAV and feed PCM to encoder
-                FileInputStream(wavFile).use { fis ->
-                    // Skip 44-byte WAV header
-                    fis.skip(44)
-
-                    val readBuffer = ByteArray(8192)
-                    var bytesRead: Int
-                    var inputDone = false
-
-                    while (!inputDone) {
-                        currentCoroutineContext().ensureActive()
-                        // Feed input
-                        val inputIndex = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
-                        if (inputIndex >= 0) {
-                            val inputBuffer = encoder.getInputBuffer(inputIndex)!!
-                            bytesRead = fis.read(readBuffer, 0, minOf(readBuffer.size, inputBuffer.remaining()))
-
-                            if (bytesRead <= 0) {
-                                // No more data from this chapter
-                                encoder.queueInputBuffer(inputIndex, 0, 0, 0, 0)
-                                inputDone = true
-                            } else {
-                                inputBuffer.put(readBuffer, 0, bytesRead)
-                                val presentationTimeUs = (totalSamplesWritten * 1_000_000L) / sampleRate
-                                encoder.queueInputBuffer(inputIndex, 0, bytesRead, presentationTimeUs, 0)
-                                totalSamplesWritten += bytesRead / 2 // 16-bit = 2 bytes per sample
-                            }
-                        }
-
-                        // Drain output
-                        drainEncoder(encoder, muxer, bufferInfo, trackIndex, muxerStarted).let { (ti, ms) ->
-                            if (ti >= 0) trackIndex = ti
-                            if (ms) muxerStarted = true
-                        }
-                    }
-                }
-
-                // Drain any remaining output after this chapter
-                while (true) {
-                    currentCoroutineContext().ensureActive()
-                    val result = drainEncoder(encoder, muxer, bufferInfo, trackIndex, muxerStarted)
-                    if (result.first >= 0) trackIndex = result.first
-                    if (result.second) muxerStarted = true
-                    if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
-                    val outIdx = encoder.dequeueOutputBuffer(bufferInfo, CODEC_TIMEOUT_US)
-                    if (outIdx < 0 && outIdx != MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) break
-                    if (outIdx >= 0) {
-                        val buf = encoder.getOutputBuffer(outIdx)!!
-                        if (muxerStarted && bufferInfo.size > 0) {
-                            muxer.writeSampleData(trackIndex, buf, bufferInfo)
-                        }
-                        encoder.releaseOutputBuffer(outIdx, false)
-                    }
-                }
-
-                // Add silence between chapters (not after the last one)
-                if (fileIndex < wavFiles.size - 1) {
-                    feedPcmToEncoder(encoder, muxer, silenceBytes, totalSamplesWritten,
-                        sampleRate, bufferInfo, trackIndex, muxerStarted).let { (ti, ms, sw) ->
-                        if (ti >= 0) trackIndex = ti
-                        if (ms) muxerStarted = true
-                        totalSamplesWritten += sw
-                    }
-                }
-            }
-
-            // Signal end of stream
-            val finalInputIdx = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
-            if (finalInputIdx >= 0) {
-                encoder.queueInputBuffer(finalInputIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-            }
-
-            // Final drain
-            var draining = true
-            while (draining) {
-                currentCoroutineContext().ensureActive()
-                val outIdx = encoder.dequeueOutputBuffer(bufferInfo, CODEC_TIMEOUT_US)
-                when {
-                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                        if (!muxerStarted) {
-                            trackIndex = muxer.addTrack(encoder.outputFormat)
-                            muxer.start()
-                            muxerStarted = true
-                        }
-                    }
-                    outIdx >= 0 -> {
-                        val buf = encoder.getOutputBuffer(outIdx)!!
-                        if (muxerStarted && bufferInfo.size > 0) {
-                            muxer.writeSampleData(trackIndex, buf, bufferInfo)
-                        }
-                        val isEos = bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
-                        encoder.releaseOutputBuffer(outIdx, false)
-                        if (isEos) draining = false
-                    }
-                    else -> draining = false
-                }
-            }
-
-        } finally {
-            // Each step guarded so a failing stop() can't skip the releases or mask a cancel.
-            runCatching { encoder.stop() }
-            runCatching { encoder.release() }
-            if (muxerStarted) runCatching { muxer.stop() }
-            runCatching { muxer.release() }
-        }
-
-        Logger.d(TAG, "Encoded ${wavFiles.size} chapters, total ${totalSamplesWritten} samples")
-    }
-
-    /**
-     * Drain available output from the encoder and write to the muxer.
-     * Returns (trackIndex, muxerStarted) — either or both may have changed.
-     */
-    private fun drainEncoder(
-        encoder: MediaCodec,
-        muxer: MediaMuxer,
-        bufferInfo: MediaCodec.BufferInfo,
-        trackIndex: Int,
-        muxerStarted: Boolean
-    ): Pair<Int, Boolean> {
-        var ti = trackIndex
-        var ms = muxerStarted
-
-        val outIdx = encoder.dequeueOutputBuffer(bufferInfo, CODEC_TIMEOUT_US)
-        when {
-            outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                if (!ms) {
-                    ti = muxer.addTrack(encoder.outputFormat)
-                    muxer.start()
-                    ms = true
-                }
-            }
-            outIdx >= 0 -> {
-                val outputBuffer = encoder.getOutputBuffer(outIdx)!!
-                if (ms && bufferInfo.size > 0) {
-                    muxer.writeSampleData(ti, outputBuffer, bufferInfo)
-                }
-                encoder.releaseOutputBuffer(outIdx, false)
-            }
-        }
-        return ti to ms
-    }
-
-    /**
-     * Feed a block of PCM data (e.g. silence) to the encoder.
-     * Returns (trackIndex, muxerStarted, samplesWritten).
-     */
-    private suspend fun feedPcmToEncoder(
-        encoder: MediaCodec,
-        muxer: MediaMuxer,
-        pcmData: ByteArray,
-        currentSamples: Long,
-        sampleRate: Int,
-        bufferInfo: MediaCodec.BufferInfo,
-        trackIndex: Int,
-        muxerStarted: Boolean
-    ): Triple<Int, Boolean, Long> {
-        var ti = trackIndex
-        var ms = muxerStarted
-        var offset = 0
-        var samplesWritten = 0L
-
-        while (offset < pcmData.size) {
-            currentCoroutineContext().ensureActive()
-            val inputIdx = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
-            if (inputIdx >= 0) {
-                val inputBuffer = encoder.getInputBuffer(inputIdx)!!
-                val bytesToWrite = minOf(pcmData.size - offset, inputBuffer.remaining())
-                inputBuffer.put(pcmData, offset, bytesToWrite)
-                val pts = ((currentSamples + samplesWritten) * 1_000_000L) / sampleRate
-                encoder.queueInputBuffer(inputIdx, 0, bytesToWrite, pts, 0)
-                offset += bytesToWrite
-                samplesWritten += bytesToWrite / 2
-            }
-            // Drain output while feeding
-            drainEncoder(encoder, muxer, bufferInfo, ti, ms).let { (t, m) ->
-                if (t >= 0) ti = t
-                if (m) ms = true
-            }
-        }
-        return Triple(ti, ms, samplesWritten)
     }
 
     // ── Chapter marker injection ────────────────────────────────
@@ -641,19 +736,7 @@ class M4BAudiobookBuilder(private val context: Context) {
         return -1
     }
 
-    // ── WAV helpers ─────────────────────────────────────────────
-
-    private fun readWavSampleRate(file: File): Int {
-        return try {
-            file.inputStream().use { input ->
-                val header = ByteArray(44)
-                input.read(header)
-                ByteBuffer.wrap(header, 24, 4).order(ByteOrder.LITTLE_ENDIAN).int
-            }
-        } catch (e: Exception) {
-            -1
-        }
-    }
+    // ── Chapter file helpers ────────────────────────────────────
 
     /**
      * Extract a readable chapter title from the WAV filename.

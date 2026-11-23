@@ -47,6 +47,12 @@ import java.nio.ByteOrder
  *
  * Exposes [exportState] as a StateFlow for UI observation.
  */
+/** Extensions of exported chapter audio: WAV, or AAC in an MP4 container. */
+internal val CHAPTER_AUDIO_EXTENSIONS = setOf("wav", "m4a")
+
+/** AAC bitrate for per-chapter .m4a exports (mono speech). */
+private const val CHAPTER_AAC_BITRATE = 64_000
+
 class AudioExporter(
     private val context: Context,
     private val ttsManager: com.abhinavxt.novelforge.data.TTSManager
@@ -186,16 +192,16 @@ class AudioExporter(
         if (!novelDir.exists()) return false
 
         return if (voiceName != null) {
-            // Check for exact voice match: "Chapter_1_Amy_Low.wav"
+            // Check for exact voice match: "Chapter_1_Amy_Low.wav" or .m4a
             val voiceSuffix = sanitizeFilename(voiceName)
             val expectedName = "${chapterPrefix}_${voiceSuffix}"
             novelDir.listFiles()?.any {
-                it.isFile && it.extension == "wav" && it.nameWithoutExtension == expectedName
+                it.isFile && it.extension in CHAPTER_AUDIO_EXTENSIONS && it.nameWithoutExtension == expectedName
             } == true
         } else {
             // Match any voice: files starting with chapterPrefix
             novelDir.listFiles()?.any {
-                it.isFile && it.extension == "wav" && it.nameWithoutExtension.startsWith(chapterPrefix)
+                it.isFile && it.extension in CHAPTER_AUDIO_EXTENSIONS && it.nameWithoutExtension.startsWith(chapterPrefix)
             } == true
         }
     }
@@ -219,7 +225,7 @@ class AudioExporter(
 
         // List files ONCE — this is the expensive I/O call
         val wavFileNames = novelDir.listFiles()
-            ?.filter { it.isFile && it.extension == "wav" }
+            ?.filter { it.isFile && it.extension in CHAPTER_AUDIO_EXTENSIONS }
             ?.map { it.nameWithoutExtension }
             ?.toSet()
             ?: return emptySet()
@@ -434,7 +440,9 @@ class AudioExporter(
                 val novelFolder = sanitizeFilename(novelTitle)
                 val voiceSuffix = sanitizeFilename(voiceName)
                 val chapterFile = sanitizeFilename(chapterTitle) + "_" + voiceSuffix
-                val filePath = writeWavFromTempFile(novelFolder, chapterFile, tempFile, totalPcmBytes, sampleRate)
+                val filePath = if (ttsManager.exportFormat == "aac")
+                    writeM4aFromTempFile(novelFolder, chapterFile, tempFile, sampleRate)
+                else writeWavFromTempFile(novelFolder, chapterFile, tempFile, totalPcmBytes, sampleRate)
 
                 if (filePath != null) {
                     Logger.d(TAG, "Export complete: $filePath (${totalPcmBytes / 1024}KB PCM)")
@@ -632,6 +640,76 @@ class AudioExporter(
             } else {
                 writeWavDirectly(novelFolder, chapterFile, tempFile, pcmSize, sampleRate)
             }
+        }
+    }
+
+    /**
+     * Encode the temp PCM straight to AAC (.m4a) in the cache, then publish it the way the WAV path does.
+     * Returns the saved path, or null on failure; the partial output is deleted either way.
+     */
+    private suspend fun writeM4aFromTempFile(
+        novelFolder: String,
+        chapterFile: String,
+        tempFile: File,
+        sampleRate: Int
+    ): String? {
+        val encoded = File(context.cacheDir, "tts_export_${System.currentTimeMillis()}.m4a")
+        return try {
+            withContext(Dispatchers.IO) {
+                M4BAudiobookBuilder.encodePcmFileToM4a(tempFile, sampleRate, CHAPTER_AAC_BITRATE, encoded)
+                ensureActive()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    writeM4aViaMediaStore(novelFolder, chapterFile, encoded)
+                } else {
+                    writeM4aDirectly(novelFolder, chapterFile, encoded)
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.e(TAG, "AAC encode failed", e)
+            null
+        } finally {
+            encoded.delete()
+        }
+    }
+
+    private fun writeM4aViaMediaStore(novelFolder: String, chapterFile: String, encoded: File): String? {
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Audio.Media.DISPLAY_NAME, "$chapterFile.m4a")
+            put(MediaStore.Audio.Media.MIME_TYPE, "audio/mp4")
+            put(MediaStore.Audio.Media.RELATIVE_PATH,
+                "${Environment.DIRECTORY_MUSIC}/$SUBFOLDER/$novelFolder")
+            put(MediaStore.Audio.Media.IS_PENDING, 1)
+        }
+        val resolver = context.contentResolver
+        val uri = resolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, contentValues) ?: return null
+        return try {
+            resolver.openOutputStream(uri)?.use { copyFileToStream(encoded, it) }
+            contentValues.clear()
+            contentValues.put(MediaStore.Audio.Media.IS_PENDING, 0)
+            resolver.update(uri, contentValues, null, null)
+            "${Environment.DIRECTORY_MUSIC}/$SUBFOLDER/$novelFolder/$chapterFile.m4a"
+        } catch (e: Exception) {
+            Logger.e(TAG, "MediaStore write failed", e)
+            resolver.delete(uri, null, null)
+            null
+        }
+    }
+
+    private fun writeM4aDirectly(novelFolder: String, chapterFile: String, encoded: File): String? {
+        val musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+        val outputDir = File(musicDir, "$SUBFOLDER/$novelFolder")
+        outputDir.mkdirs()
+        val outputFile = File(outputDir, "$chapterFile.m4a")
+        return try {
+            FileOutputStream(outputFile).use { copyFileToStream(encoded, it) }
+            MediaScannerConnection.scanFile(context, arrayOf(outputFile.absolutePath), arrayOf("audio/mp4"), null)
+            outputFile.absolutePath
+        } catch (e: Exception) {
+            Logger.e(TAG, "Direct write failed", e)
+            outputFile.delete()
+            null
         }
     }
 
