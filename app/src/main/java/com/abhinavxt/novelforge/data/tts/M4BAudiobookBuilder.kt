@@ -110,7 +110,7 @@ class M4BAudiobookBuilder(private val context: Context) {
             generateAudiobook(novelTitle, voiceFilter)
         }
         ExportForegroundService.begin(context)
-        currentJob!!.invokeOnCompletion { ExportForegroundService.end(context) }
+        currentJob!!.invokeOnCompletion { ExportForegroundService.end() }
     }
 
     fun cancel() {
@@ -733,13 +733,17 @@ class M4BAudiobookBuilder(private val context: Context) {
         )
         dir.mkdirs()
         val outputFile = File(dir, fileName)
+        // Write beside the target and rename on success so a cancel never destroys an existing audiobook.
+        val partial = File(dir, "$fileName.part")
         try {
             FileInputStream(tempFile).use { input ->
-                outputFile.outputStream().use { out -> copyCancellable(input, out) }
+                partial.outputStream().use { out -> copyCancellable(input, out) }
             }
-        } catch (e: Throwable) {
-            outputFile.delete()
-            throw e
+            if (!partial.renameTo(outputFile)) {
+                partial.copyTo(outputFile, overwrite = true)
+            }
+        } finally {
+            partial.delete()
         }
         return outputFile.absolutePath
     }

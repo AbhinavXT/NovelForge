@@ -22,13 +22,19 @@ class ExportForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+    }
+
+    override fun onDestroy() {
+        if (instance === this) instance = null
+        super.onDestroy()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val app = application as NovelReaderApplication
-        if (intent?.action == ACTION_CANCEL) {
-            app.audioExporter.cancel()
-            app.m4bBuilder.cancel()
-            return START_NOT_STICKY
-        }
+        // Always enter the foreground first: stopping before startForeground() crashes the app.
         try {
             val notification = app.audioExporter.buildExportNotification("Audio export", "Working in the background", null)
             if (Build.VERSION.SDK_INT >= 35) {
@@ -41,24 +47,34 @@ class ExportForegroundService : Service() {
         } catch (e: Exception) {
             // Includes ForegroundServiceStartNotAllowedException (API 31+); the export carries on without it.
             Logger.e(TAG, "Could not enter foreground", e)
-            stopSelf()
         }
+        if (intent?.action == ACTION_CANCEL) {
+            // Cancelled jobs call end() as they finish, which stops the service.
+            app.audioExporter.cancel()
+            app.m4bBuilder.cancel()
+        }
+        stopIfIdle()
         return START_NOT_STICKY
     }
 
+    private fun stopIfIdle() = synchronized(lock) { if (count == 0) stopSelf() }
+
     // API 35 caps mediaProcessing at ~6h; the system crashes the app if we don't stop.
     override fun onTimeout(startId: Int, fgsType: Int) {
+        Logger.e(TAG, "Foreground service timed out; export continues unprotected")
         stopSelf()
     }
 
     companion object {
         private const val TAG = "ExportFgService"
         const val ACTION_CANCEL = "com.abhinavxt.novelforge.action.CANCEL_EXPORT"
-        private val active = AtomicInteger(0)
+        private val lock = Any()
+        private var count = 0
+        private var instance: ExportForegroundService? = null
 
         /** Call when an export or M4B build is launched; pair with [end]. */
         fun begin(context: Context) {
-            if (active.getAndIncrement() != 0) return
+            synchronized(lock) { count++ }
             try {
                 ContextCompat.startForegroundService(context, Intent(context, ExportForegroundService::class.java))
             } catch (e: Exception) {
@@ -67,11 +83,10 @@ class ExportForegroundService : Service() {
             }
         }
 
-        /** Stops the service once the last running export / build has finished. */
-        fun end(context: Context) {
-            if (active.decrementAndGet() > 0) return
-            active.set(0)
-            context.stopService(Intent(context, ExportForegroundService::class.java))
+        /** The service stops itself once the last running export / build has finished. */
+        fun end() = synchronized(lock) {
+            if (count > 0) count--
+            if (count == 0) instance?.stopSelf()
         }
     }
 }

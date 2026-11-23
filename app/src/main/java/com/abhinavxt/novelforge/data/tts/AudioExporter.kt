@@ -64,7 +64,7 @@ class AudioExporter(
 
     // Own scope — survives ViewModel destruction so exports continue in background
     private val exportScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private var currentExportJob: Job? = null
+    private val exportJobs = mutableSetOf<Job>() // guarded by itself; Cancel must reach every running export
     private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
     init {
@@ -487,13 +487,12 @@ class AudioExporter(
         cast: VoiceCast? = null,
         onComplete: ((Boolean) -> Unit)? = null
     ) {
-        currentExportJob = exportScope.launch {
+        exportScope.launch {
             val success = withFastSynthesis {
                 exportChapter(chapterId, novelTitle, chapterTitle, voiceName, text, speakerId, speed, cast)
             }
             onComplete?.invoke(success)
-        }
-        trackForeground(currentExportJob!!)
+        }.also(::trackForeground)
     }
 
     /**
@@ -511,7 +510,7 @@ class AudioExporter(
         onEachComplete: ((String) -> Unit)? = null,
         onAllDone: (() -> Unit)? = null
     ) {
-        currentExportJob = exportScope.launch {
+        exportScope.launch {
             withFastSynthesis { for (info in chapters) {
                 if (info.chapterId in alreadyExported) continue
                 if (info.content.isBlank()) continue
@@ -537,14 +536,17 @@ class AudioExporter(
                 }
             } }
             onAllDone?.invoke()
-        }
-        trackForeground(currentExportJob!!)
+        }.also(::trackForeground)
     }
 
     /** Keep [ExportForegroundService] up for as long as [job] runs (including if it is cancelled). */
     private fun trackForeground(job: Job) {
+        synchronized(exportJobs) { exportJobs.add(job) }
         ExportForegroundService.begin(context)
-        job.invokeOnCompletion { ExportForegroundService.end(context) }
+        job.invokeOnCompletion {
+            synchronized(exportJobs) { exportJobs.remove(job) }
+            ExportForegroundService.end()
+        }
     }
 
     /** Data class for batch export */
@@ -558,8 +560,7 @@ class AudioExporter(
      * Cancel any in-progress export.
      */
     fun cancel() {
-        currentExportJob?.cancel()
-        currentExportJob = null
+        synchronized(exportJobs) { exportJobs.toList() }.forEach { it.cancel() }
         _exportState.value = ExportState.Idle
         _exportingChapters.value = emptySet()
         dismissExportNotification()
