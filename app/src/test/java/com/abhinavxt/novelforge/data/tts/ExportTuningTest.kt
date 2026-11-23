@@ -43,6 +43,12 @@ class ExportTuningTest {
         assertEquals(listOf(true, false), c.map { it.isParagraphEnd })
     }
 
+    @Test fun chunks_nonZeroSentencePauseKeepsEverySentenceSeparate() {
+        val c = chunkSentences(listOf(s("A."), s("B."), s("C.", para = true)), 100, sentencePauseMs = 300)
+        assertEquals(listOf("A.", "B.", "C."), c.map { it.text })
+        assertEquals(listOf(false, false, true), c.map { it.isParagraphEnd })
+    }
+
     @Test fun chunks_respectLengthLimit() {
         val c = chunkSentences(listOf(s("aaaa"), s("bbbb"), s("cccc")), 9)
         assertEquals(listOf("aaaa bbbb", "cccc"), c.map { it.text })

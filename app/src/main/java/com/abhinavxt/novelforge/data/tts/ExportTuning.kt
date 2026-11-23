@@ -34,9 +34,10 @@ internal data class SpeechChunk(
 
 /**
  * Groups consecutive sentences of one voice into chunks of at most [maxLen] chars. A voice change or a
- * paragraph end closes the chunk; a sentence longer than [maxLen] is cut at word boundaries.
+ * paragraph end closes the chunk; a sentence longer than [maxLen] is cut at word boundaries. A non-zero
+ * [sentencePauseMs] closes every chunk at its sentence, because the exporter inserts that silence between chunks.
  */
-internal fun chunkSentences(entries: List<SentenceEntry>, maxLen: Int): List<SpeechChunk> {
+internal fun chunkSentences(entries: List<SentenceEntry>, maxLen: Int, sentencePauseMs: Int = 0): List<SpeechChunk> {
     val out = ArrayList<SpeechChunk>()
     val cur = StringBuilder()
     var curVoice: String? = null
@@ -63,7 +64,7 @@ internal fun chunkSentences(entries: List<SentenceEntry>, maxLen: Int): List<Spe
         curVoice = e.voice
         count++
         paragraphEnd = e.isParagraphEnd
-        if (e.isParagraphEnd) flush()
+        if (e.isParagraphEnd || sentencePauseMs > 0) flush()
     }
     flush()
     return out

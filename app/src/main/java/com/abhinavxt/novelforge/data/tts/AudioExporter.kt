@@ -296,8 +296,9 @@ class AudioExporter(
 
             // Sherpa: one call per sentence. System TTS: consecutive same-voice sentences share a call
             // (each call costs a thread hop and a file round trip); breaks at paragraph ends keep the longer pause.
+            // The fixed sentence pause is written between calls, so while it is non-zero nothing is grouped.
             val units = if (useSherpa) sentences.map { SpeechChunk(it.text, it.voice, it.isParagraphEnd, 1) }
-            else chunkSentences(sentences, TextToSpeech.getMaxSpeechInputLength() - 100)
+            else chunkSentences(sentences, TextToSpeech.getMaxSpeechInputLength() - 100, SILENCE_BETWEEN_SENTENCES_MS)
             var sentencesDone = 0
 
             // 2. Stream PCM to a temp file (avoids holding entire chapter in memory)

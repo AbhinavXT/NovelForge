@@ -724,7 +724,7 @@ Generate an `.m4b` audiobook from any novel in your library.
 You'll be asked:
 
 - **Chapter range** - all, or a contiguous range
-- **Voice** - any installed Piper or Kokoro voice (system TTS not supported here; the audio quality wouldn't be worth the file size)
+- **Voice** - any installed voice: Piper, Kokoro or a system TTS voice (system voices sound robotic, so Piper or Kokoro is usually the better choice)
 - **Speed and pitch** - same controls as the reader's TTS
 
 The export runs in the background. You can keep using the app. When done, the M4B lands in `Downloads/NovelForge/`.
