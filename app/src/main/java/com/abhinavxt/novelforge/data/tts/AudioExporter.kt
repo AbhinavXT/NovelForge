@@ -10,6 +10,7 @@ import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.speech.tts.TextToSpeech
 import androidx.core.app.NotificationCompat
 import com.abhinavxt.novelforge.MainActivity
 import com.abhinavxt.novelforge.R
@@ -280,6 +281,13 @@ class AudioExporter(
             }
 
             Logger.d(TAG, "Exporting ${sentences.size} sentences for: $chapterTitle (engine=${if (useSherpa) "Sherpa" else "Google"})")
+            val startedAt = System.currentTimeMillis()
+
+            // Sherpa: one call per sentence. System TTS: consecutive same-voice sentences share a call
+            // (each call costs a thread hop and a file round trip); breaks at paragraph ends keep the longer pause.
+            val units = if (useSherpa) sentences.map { SpeechChunk(it.text, it.voice, it.isParagraphEnd, 1) }
+            else chunkSentences(sentences, TextToSpeech.getMaxSpeechInputLength() - 100)
+            var sentencesDone = 0
 
             // 2. Stream PCM to a temp file (avoids holding entire chapter in memory)
             val tempFile = File(context.cacheDir, "tts_export_${System.currentTimeMillis()}.pcm")
@@ -296,18 +304,20 @@ class AudioExporter(
                     val paragraphSilenceSamples = (sampleRate * SILENCE_BETWEEN_PARAGRAPHS_MS) / 1000
                     val silenceBuffer = ByteArray(paragraphSilenceSamples * 2)
 
-                    for ((index, entry) in sentences.withIndex()) {
+                    for ((index, entry) in units.withIndex()) {
                         ensureActive()
 
-                        val progress = index.toFloat() / sentences.size
+                        val progress = sentencesDone.toFloat() / sentences.size
+                        val shown = minOf(sentencesDone + 1, sentences.size)
                         _exportState.value = ExportState.Exporting(
                             chapterId = chapterId,
                             progress = progress,
-                            currentSentence = index + 1,
+                            currentSentence = shown,
                             totalSentences = sentences.size
                         )
                         // Update notification so progress is visible even when user leaves the screen
-                        showExportNotification(chapterTitle, index + 1, sentences.size, progress)
+                        showExportNotification(chapterTitle, shown, sentences.size, progress)
+                        sentencesDone += entry.sentences
 
                         if (useSherpa) {
                             // ── Sherpa path: generate raw samples ──
@@ -414,6 +424,7 @@ class AudioExporter(
 
                 if (filePath != null) {
                     Logger.d(TAG, "Export complete: $filePath (${totalPcmBytes / 1024}KB PCM)")
+                    Logger.d(TAG, "Export timing: ${System.currentTimeMillis() - startedAt} ms for ${totalPcmBytes / 2.0 / sampleRate} s of audio")
                     _exportState.value = ExportState.Completed(chapterId, filePath)
                     showExportCompleteNotification(chapterTitle)
                     return@withContext true
@@ -443,6 +454,11 @@ class AudioExporter(
         }
     }
 
+    /** Local Piper/Kokoro exports run on more threads than playback does; see [SherpaOnnxEngine.withExportThreads]. */
+    private suspend fun <T> withFastSynthesis(block: suspend () -> T): T =
+        if (ttsManager.activeEngineId.value == SherpaOnnxEngine.ENGINE_ID) ttsManager.sherpaEngine.withExportThreads(block)
+        else block()
+
     /**
      * Launch a single chapter export in the exporter's own scope.
      * Survives ViewModel destruction — export continues even if user navigates away.
@@ -459,7 +475,9 @@ class AudioExporter(
         onComplete: ((Boolean) -> Unit)? = null
     ) {
         currentExportJob = exportScope.launch {
-            val success = exportChapter(chapterId, novelTitle, chapterTitle, voiceName, text, speakerId, speed, cast)
+            val success = withFastSynthesis {
+                exportChapter(chapterId, novelTitle, chapterTitle, voiceName, text, speakerId, speed, cast)
+            }
             onComplete?.invoke(success)
         }
     }
@@ -480,7 +498,7 @@ class AudioExporter(
         onAllDone: (() -> Unit)? = null
     ) {
         currentExportJob = exportScope.launch {
-            for (info in chapters) {
+            withFastSynthesis { for (info in chapters) {
                 if (info.chapterId in alreadyExported) continue
                 if (info.content.isBlank()) continue
 
@@ -503,7 +521,7 @@ class AudioExporter(
                 } catch (e: Exception) {
                     Logger.e(TAG, "Export failed for ${info.chapterTitle}", e)
                 }
-            }
+            } }
             onAllDone?.invoke()
         }
     }
@@ -534,13 +552,6 @@ class AudioExporter(
     }
 
     // ── Text splitting ───────────────────────────────────────────
-
-    private data class SentenceEntry(
-        val text: String,
-        val isParagraphEnd: Boolean,
-        /** The cast's voice for this line (speaker number, Piper model or system voice), or null for the export's own. */
-        val voice: String? = null
-    )
 
     private fun splitIntoSentences(text: String, cast: VoiceCast?): List<SentenceEntry> =
         Dialogue.pieces(text, cast?.characters?.keys?.toList().orEmpty(), voiced = cast?.enabled == true)

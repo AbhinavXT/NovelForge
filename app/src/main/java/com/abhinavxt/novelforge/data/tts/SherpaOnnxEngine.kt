@@ -12,6 +12,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
@@ -235,6 +236,42 @@ class SherpaOnnxEngine(
     /** Synthesize [line] for an export (waits for any playback generation to finish). */
     suspend fun synthesize(line: Line, speed: Float): GeneratedAudioData? =
         generateMutex.withLock { synthesizeLocked(line, speed) }
+
+    /**
+     * Runs [block] with the narrator model reloaded on more threads (thread count is fixed at creation),
+     * then reloads it at the playback count. The old instance is released first so a big model is never
+     * held twice. Playback during the export is safe: every generate goes through [generateMutex], and
+     * the swap happens under it; playback just uses the faster model until the export ends.
+     */
+    suspend fun <T> withExportThreads(block: suspend () -> T): T {
+        val boosted = swapMainModel(SherpaOnnxWrapper.exportThreads())
+        try {
+            return block()
+        } finally {
+            if (boosted != null) withContext(NonCancellable) {
+                generateMutex.withLock {
+                    // Not ours any more if the user loaded another model meanwhile (that path released it).
+                    if (ttsWrapper === boosted) { boosted.release(); ttsWrapper = reload(null) }
+                }
+            }
+        }
+    }
+
+    private suspend fun swapMainModel(threads: Int): SherpaOnnxWrapper? = generateMutex.withLock {
+        val old = ttsWrapper ?: return@withLock null
+        val dir = File(modelsDir, currentModelId ?: return@withLock null)
+        val config = detectModelConfig(dir) ?: return@withLock null
+        old.release()
+        val created = SherpaOnnxWrapper.create(config, threads) ?: SherpaOnnxWrapper.create(config)
+        ttsWrapper = created
+        created?.takeIf { it.threadsOverride }
+    }
+
+    private fun reload(threads: Int?): SherpaOnnxWrapper? {
+        val dir = File(modelsDir, currentModelId ?: return null)
+        val config = detectModelConfig(dir) ?: return null
+        return SherpaOnnxWrapper.create(config, threads)
+    }
 
     // ── Lifecycle ────────────────────────────────────────────────
 
@@ -759,7 +796,9 @@ data class SherpaModelConfig(
  */
 class SherpaOnnxWrapper private constructor(
     private val tts: OfflineTts,
-    val sampleRate: Int
+    val sampleRate: Int,
+    /** True when built with a raised thread count (an export instance). */
+    val threadsOverride: Boolean = false
 ) {
     /** A JNI call like the others; a model that can't say is treated as one speaker. */
     fun numSpeakers(): Int = runCatching { tts.numSpeakers() }.getOrDefault(1)
@@ -773,9 +812,9 @@ class SherpaOnnxWrapper private constructor(
          *
          * Returns null if the native library fails to load or config is invalid.
          */
-        fun create(config: SherpaModelConfig): SherpaOnnxWrapper? {
+        fun create(config: SherpaModelConfig, threads: Int? = null): SherpaOnnxWrapper? {
             return try {
-                val ttsConfig = buildConfig(config)
+                val ttsConfig = buildConfig(config, threads)
                 val tts = OfflineTts(config = ttsConfig)
 
                 // sampleRate() is also a JNI call — protect it
@@ -799,7 +838,7 @@ class SherpaOnnxWrapper private constructor(
                 }
 
                 Logger.d(TAG, "Created OfflineTts: sampleRate=$sr, type=${config.type}")
-                SherpaOnnxWrapper(tts, sr)
+                SherpaOnnxWrapper(tts, sr, threads != null)
             } catch (e: Exception) {
                 Logger.e(TAG, "Failed to create Sherpa-ONNX TTS", e)
                 null
@@ -821,9 +860,18 @@ class SherpaOnnxWrapper private constructor(
             }
         }
 
-        private fun buildConfig(config: SherpaModelConfig): OfflineTtsConfig {
-            val lightThreads = getOptimalThreadCount(isHeavyModel = false)
-            val heavyThreads = getOptimalThreadCount(isHeavyModel = true)
+        /** Export thread count: the fast cores (from sysfs max freqs), capped at 6, at least the playback count. */
+        fun exportThreads(): Int {
+            val cores = Runtime.getRuntime().availableProcessors()
+            val freqs = (0 until cores).mapNotNull {
+                runCatching { File("/sys/devices/system/cpu/cpu$it/cpufreq/cpuinfo_max_freq").readText().trim().toLong() }.getOrNull()
+            }
+            return exportThreadCount(freqs, cores, getOptimalThreadCount(isHeavyModel = true))
+        }
+
+        private fun buildConfig(config: SherpaModelConfig, threads: Int? = null): OfflineTtsConfig {
+            val lightThreads = maxOf(getOptimalThreadCount(isHeavyModel = false), threads ?: 0)
+            val heavyThreads = maxOf(getOptimalThreadCount(isHeavyModel = true), threads ?: 0)
             val cores = Runtime.getRuntime().availableProcessors()
             Logger.d(TAG, "CPU cores=$cores, threads: light=$lightThreads, heavy=$heavyThreads, model=${config.type}")
 
